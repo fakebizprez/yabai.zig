@@ -18,13 +18,14 @@ unless doc/zig-refactor-plan.md explicitly allows a change.
   `--message/-m`, `--config/-c`, `--verbose/-V`, `--version/-v`,
   `--help/-h`) plus the `man yabai` pointer.
 - `lipo -info ./bin/yabai`: fat file with `x86_64 arm64` slices.
-- Existing suite: `cd tests && make` runs 35 tests, all passing
+- Existing suite: `cd tests && make` runs 36 tests, all passing
   (2 display geometry + 8 socket wire-format/dispatcher characterization
   in tests/src/socket_frame.c + 3 geometry parity in
   tests/src/zig_geometry.c + 8 tokenizer/command-decoding parity in
   tests/src/zig_message.c + 6 view-tree parity in tests/src/zig_view.c
   + 5 pure-helper parity in tests/src/zig_util.c + 3 rule-effects
-  parity in tests/src/zig_rule.c).
+  parity in tests/src/zig_rule.c + 1 resize-math parity in
+  tests/src/zig_window.c).
 
 ## Step 2 boundary evidence
 
@@ -80,8 +81,13 @@ unless doc/zig-refactor-plan.md explicitly allows a change.
   directly (the only field the C version reads).
 - Window lookup slice (TDD): `view_find_window_node` composes the
   proven leaf-walk/contains exports internally against a 72-byte View
-  mirror (offset-asserted). 41 exports in the fat daemon; x86_64
-  slice verified.
+  mirror (offset-asserted).
+- Resize-math slice (TDD) in zig/window.zig: the pure frame math was
+  first extracted verbatim into `resize_frame_math()` in
+  src/window_manager.c (caller behavior unchanged), then ported with
+  exact f64 promotion/narrowing semantics, clamp and NaN pins.
+  42 exports in the fat daemon; x86_64 slice verified; window object
+  needs no Zig runtime.
 - Checked frame decoder (TDD) in zig/message.zig:
   `yabai_socket_frame_decode` validates the native length prefix and
   framing before exposing borrowed field pointers — the replacement
