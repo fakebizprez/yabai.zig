@@ -29,6 +29,9 @@ void yabai_area_from_cgrect(const CGRect *rect, struct area *out);
 void yabai_area_max_point(const struct area *area, CGPoint *out);
 void yabai_window_node_equalize(struct window_node *node, uint32_t axis_flag, float space_split_ratio);
 void yabai_window_node_balance(struct window_node *node, uint32_t axis_flag, struct balance_node *out);
+void yabai_area_make_pair_for_node(struct view *view, struct window_node *node, int space_split_type, float space_split_ratio);
+void yabai_window_node_split(struct view *view, struct window_node *node, uint32_t window_id, bool window_zoom_persist, int window_placement, int space_split_type, float space_split_ratio);
+void yabai_window_node_swap_window_list(struct window_node *a_node, struct window_node *b_node);
 
 struct yabai_view
 {
@@ -855,4 +858,473 @@ TEST_FUNC(zig_view_balance,
     TEST_CHECK(memcmp(&zn[1]->ratio, &exp_a, sizeof(float)), 0);
     TEST_CHECK(memcmp(&zn[0]->ratio, &exp_a, sizeof(float)), 0);
     free_test_pair(cn, zn);
+})
+
+static void make_pair_node(struct window_node **node, struct window_node **left, struct window_node **right)
+{
+    *node = make_test_node();
+    *left = make_test_node();
+    *right = make_test_node();
+    (*node)->left = *left;
+    (*node)->right = *right;
+    (*left)->parent = *node;
+    (*right)->parent = *node;
+}
+
+static int pair_for_node_case(struct view *v, int view_split, int space_split, float space_ratio, int node_split, float node_ratio, float w, float h, int gap)
+{
+    struct window_node *cn;
+    struct window_node *cl;
+    struct window_node *cr;
+    struct window_node *zn;
+    struct window_node *zl;
+    struct window_node *zr;
+    make_pair_node(&cn, &cl, &cr);
+    make_pair_node(&zn, &zl, &zr);
+
+    init_test_area(&cn->area, 0, 0, w, h);
+    init_test_area(&zn->area, 0, 0, w, h);
+    cn->split = node_split;
+    zn->split = node_split;
+    cn->ratio = node_ratio;
+    zn->ratio = node_ratio;
+    v->split_type = view_split;
+    v->window_gap = gap;
+    v->flags = gap ? VIEW_ENABLE_GAP : 0;
+    g_space_manager.split_type = space_split;
+    g_space_manager.split_ratio = space_ratio;
+
+    area_make_pair_for_node(v, cn);
+    yabai_area_make_pair_for_node(v, zn, g_space_manager.split_type, g_space_manager.split_ratio);
+
+    struct window_node *ca[3];
+    struct window_node *za[3];
+    ca[0] = cn;
+    ca[1] = cl;
+    ca[2] = cr;
+    za[0] = zn;
+    za[1] = zl;
+    za[2] = zr;
+    int ok = tree_struct_equal_n(ca, za, 3);
+    free(cn);
+    free(cl);
+    free(cr);
+    free(zn);
+    free(zl);
+    free(zr);
+    return ok;
+}
+
+TEST_FUNC(zig_view_area_pair_for_node,
+{
+    int saved_split = g_space_manager.split_type;
+    float saved_ratio = g_space_manager.split_ratio;
+
+    struct view *v = malloc(sizeof(struct view));
+    memset(v, 0, sizeof(struct view));
+
+    /* Oracle parity: explicit split, view split, space split, aspect
+     * fallback, in-range vs fallback ratio, gap on/off. */
+    TEST_CHECK(pair_for_node_case(v, SPLIT_NONE, SPLIT_AUTO, 0.5f, SPLIT_NONE, 0.0f, 200, 100, 0), 1);
+    TEST_CHECK(pair_for_node_case(v, SPLIT_NONE, SPLIT_AUTO, 0.5f, SPLIT_NONE, 0.0f, 100, 200, 0), 1);
+    TEST_CHECK(pair_for_node_case(v, SPLIT_X, SPLIT_Y, 0.5f, SPLIT_NONE, 0.0f, 200, 100, 0), 1);
+    TEST_CHECK(pair_for_node_case(v, SPLIT_NONE, SPLIT_X, 0.5f, SPLIT_NONE, 0.0f, 200, 100, 8), 1);
+    TEST_CHECK(pair_for_node_case(v, SPLIT_NONE, SPLIT_AUTO, 0.5f, SPLIT_Y, 0.3f, 200, 100, 4), 1);
+    TEST_CHECK(pair_for_node_case(v, SPLIT_NONE, SPLIT_AUTO, 0.7f, SPLIT_X, 0.05f, 100, 200, 4), 1);
+
+    /* Hand-computed: SPLIT_Y over (0,0,200,100), ratio 0.5, gap 10. */
+    struct window_node *n;
+    struct window_node *l;
+    struct window_node *r;
+    make_pair_node(&n, &l, &r);
+    init_test_area(&n->area, 0, 0, 200, 100);
+    n->split = SPLIT_Y;
+    n->ratio = 0.5f;
+    v->split_type = SPLIT_NONE;
+    v->window_gap = 10;
+    v->flags = VIEW_ENABLE_GAP;
+    yabai_area_make_pair_for_node(v, n, SPLIT_AUTO, 0.5f);
+    struct area exp_l;
+    struct area exp_r;
+    init_test_area(&exp_l, 0, 0, 95, 100);
+    init_test_area(&exp_r, 105, 0, 95, 100);
+    TEST_CHECK(memcmp(&l->area, &exp_l, sizeof(struct area)), 0);
+    TEST_CHECK(memcmp(&r->area, &exp_r, sizeof(struct area)), 0);
+    TEST_CHECK(n->split, SPLIT_Y);
+    TEST_CHECK(memcmp(&n->ratio, &(float){0.5f}, sizeof(float)), 0);
+    free(n);
+    free(l);
+    free(r);
+
+    /* Hand-computed: SPLIT_X over (0,0,100,200), ratio 0.5, gap 10. */
+    make_pair_node(&n, &l, &r);
+    init_test_area(&n->area, 0, 0, 100, 200);
+    n->split = SPLIT_X;
+    n->ratio = 0.5f;
+    v->window_gap = 10;
+    v->flags = VIEW_ENABLE_GAP;
+    yabai_area_make_pair_for_node(v, n, SPLIT_AUTO, 0.5f);
+    init_test_area(&exp_l, 0, 0, 100, 95);
+    init_test_area(&exp_r, 0, 105, 100, 95);
+    TEST_CHECK(memcmp(&l->area, &exp_l, sizeof(struct area)), 0);
+    TEST_CHECK(memcmp(&r->area, &exp_r, sizeof(struct area)), 0);
+    TEST_CHECK(n->split, SPLIT_X);
+    free(n);
+    free(l);
+    free(r);
+
+    free(v);
+    g_space_manager.split_type = saved_split;
+    g_space_manager.split_ratio = saved_ratio;
+})
+
+/* NULL-safe relative comparison of node + malloc'd children (+ parent
+ * slot when present on both sides). Guards the RED phase where the Zig
+ * split stub leaves children NULL. */
+static int split_pair_equal(struct window_node *cn, struct window_node *cpar, struct window_node *zn, struct window_node *zpar)
+{
+    if (!cn->left || !cn->right || !zn->left || !zn->right) return 0;
+    if ((cpar == NULL) != (zpar == NULL)) return 0;
+    struct window_node *ca[4];
+    struct window_node *za[4];
+    ca[0] = cn;
+    ca[1] = cn->left;
+    ca[2] = cn->right;
+    ca[3] = cpar;
+    za[0] = zn;
+    za[1] = zn->left;
+    za[2] = zn->right;
+    za[3] = zpar;
+    return tree_struct_equal_n(ca, za, cpar ? 4 : 3);
+}
+
+static void set_split_leaf(struct window_node *node, uint32_t w0, uint32_t w1, int child)
+{
+    node->window_list[0] = w0;
+    node->window_list[1] = w1;
+    node->window_order[0] = w0;
+    node->window_order[1] = w1;
+    node->window_count = 2;
+    node->child = child;
+    init_test_area(&node->area, 0, 0, 200, 100);
+}
+
+/* One oracle-parity split case. Both leaves start as {5,9}; the fresh
+ * window id is 42. Frees every malloc'd node and window. */
+static int node_split_case(int node_child, int placement, bool persist, int with_parent)
+{
+    struct view *cv = malloc(sizeof(struct view));
+    struct view *zv = malloc(sizeof(struct view));
+    memset(cv, 0, sizeof(struct view));
+    memset(zv, 0, sizeof(struct view));
+    struct window_node *cn = make_test_node();
+    struct window_node *zn = make_test_node();
+    struct window_node *cp = NULL;
+    struct window_node *zp = NULL;
+    if (with_parent) {
+        cp = make_test_node();
+        zp = make_test_node();
+        cn->parent = cp;
+        zn->parent = zp;
+    }
+    set_split_leaf(cn, 5, 9, node_child);
+    set_split_leaf(zn, 5, 9, node_child);
+    cv->split_type = SPLIT_NONE;
+    zv->split_type = SPLIT_NONE;
+    cv->root = with_parent ? cp : cn;
+    zv->root = with_parent ? zp : zn;
+
+    g_space_manager.window_placement = placement;
+    g_space_manager.window_zoom_persist = persist;
+    g_space_manager.split_type = SPLIT_AUTO;
+    g_space_manager.split_ratio = 0.5f;
+
+    struct window *cw = make_test_window(42);
+    window_node_split(cv, cn, cw);
+    yabai_window_node_split(zv, zn, 42, g_space_manager.window_zoom_persist, g_space_manager.window_placement, g_space_manager.split_type, g_space_manager.split_ratio);
+    free(cw);
+
+    int ok = split_pair_equal(cn, cp, zn, zp);
+    free(cn->left);
+    free(cn->right);
+    free(zn->left);
+    free(zn->right);
+    free(cn);
+    free(zn);
+    free(cp);
+    free(zp);
+    free(cv);
+    free(zv);
+    return ok;
+}
+
+TEST_FUNC(zig_view_node_split,
+{
+    int saved_placement = g_space_manager.window_placement;
+    bool saved_persist = g_space_manager.window_zoom_persist;
+    int saved_split = g_space_manager.split_type;
+    float saved_ratio = g_space_manager.split_ratio;
+
+    /* Placement matrix: explicit SECOND wins, else the lifted placement. */
+    TEST_CHECK(node_split_case(CHILD_SECOND, CHILD_FIRST, false, 0), 1);
+    TEST_CHECK(node_split_case(CHILD_NONE, CHILD_FIRST, false, 0), 1);
+    TEST_CHECK(node_split_case(CHILD_NONE, CHILD_SECOND, false, 0), 1);
+    TEST_CHECK(node_split_case(CHILD_FIRST, CHILD_SECOND, false, 0), 1);
+    /* Zoom persist on with no zoom: children stay NULL-zoomed. */
+    TEST_CHECK(node_split_case(CHILD_SECOND, CHILD_FIRST, true, 0), 1);
+    TEST_CHECK(node_split_case(CHILD_NONE, CHILD_SECOND, true, 0), 1);
+    /* Parent present (zoom still NULL on both sides). */
+    TEST_CHECK(node_split_case(CHILD_SECOND, CHILD_FIRST, false, 1), 1);
+
+    /* Zoom matrix with oracle parity on the resulting child zoom. */
+    struct view *cv = malloc(sizeof(struct view));
+    struct view *zv = malloc(sizeof(struct view));
+    memset(cv, 0, sizeof(struct view));
+    memset(zv, 0, sizeof(struct view));
+    struct window_node *cn = make_test_node();
+    struct window_node *zn = make_test_node();
+    struct window_node *cp = make_test_node();
+    struct window_node *zp = make_test_node();
+    set_split_leaf(cn, 5, 9, CHILD_SECOND);
+    set_split_leaf(zn, 5, 9, CHILD_SECOND);
+    cn->parent = cp;
+    zn->parent = zp;
+    cv->root = cp;
+    zv->root = zp;
+    g_space_manager.window_placement = CHILD_FIRST;
+    g_space_manager.split_type = SPLIT_AUTO;
+    g_space_manager.split_ratio = 0.5f;
+
+    /* persist=false with zoom set: zoom dropped on both sides. */
+    cn->zoom = cp;
+    zn->zoom = zp;
+    g_space_manager.window_zoom_persist = false;
+    struct window *cw = make_test_window(42);
+    window_node_split(cv, cn, cw);
+    yabai_window_node_split(zv, zn, 42, false, CHILD_FIRST, SPLIT_AUTO, 0.5f);
+    free(cw);
+    TEST_CHECK(split_pair_equal(cn, cp, zn, zp), 1);
+    if (zn->left && cn->left) {
+        TEST_CHECK(cn->left->zoom != zn->left->zoom, 0);
+        TEST_CHECK(cn->left->zoom, NULL);
+        TEST_CHECK(zn->left->zoom, NULL);
+    } else {
+        TEST_CHECK(zn->left != NULL, 1);
+    }
+    free(cn->left);
+    free(cn->right);
+    free(zn->left);
+    free(zn->right);
+    cn->left = NULL;
+    cn->right = NULL;
+    zn->left = NULL;
+    zn->right = NULL;
+    cn->window_count = 0;
+    zn->window_count = 0;
+
+    /* persist=true with zoom == parent: child zoom is the node itself. */
+    cn->zoom = cp;
+    zn->zoom = zp;
+    g_space_manager.window_zoom_persist = true;
+    cw = make_test_window(43);
+    window_node_split(cv, cn, cw);
+    yabai_window_node_split(zv, zn, 43, true, CHILD_FIRST, SPLIT_AUTO, 0.5f);
+    free(cw);
+    TEST_CHECK(split_pair_equal(cn, cp, zn, zp), 1);
+    if (zn->left && cn->left) {
+        TEST_CHECK(cn->left->zoom != cn, 0);
+        TEST_CHECK(zn->left->zoom != zn, 0);
+    } else {
+        TEST_CHECK(zn->left != NULL, 1);
+    }
+    free(cn->left);
+    free(cn->right);
+    free(zn->left);
+    free(zn->right);
+    cn->left = NULL;
+    cn->right = NULL;
+    zn->left = NULL;
+    zn->right = NULL;
+    cn->window_count = 0;
+    zn->window_count = 0;
+
+    /* persist=true with foreign zoom: child zoom is the view root. */
+    struct window_node *co = make_test_node();
+    struct window_node *zo = make_test_node();
+    cn->zoom = co;
+    zn->zoom = zo;
+    cw = make_test_window(44);
+    window_node_split(cv, cn, cw);
+    yabai_window_node_split(zv, zn, 44, true, CHILD_FIRST, SPLIT_AUTO, 0.5f);
+    free(cw);
+    TEST_CHECK(split_pair_equal(cn, cp, zn, zp), 1);
+    if (zn->left && cn->left) {
+        TEST_CHECK(cn->left->zoom != cv->root, 0);
+        TEST_CHECK(zn->left->zoom != zv->root, 0);
+    } else {
+        TEST_CHECK(zn->left != NULL, 1);
+    }
+    free(cn->left);
+    free(cn->right);
+    free(zn->left);
+    free(zn->right);
+    free(cn);
+    free(zn);
+    free(cp);
+    free(zp);
+    free(co);
+    free(zo);
+    free(cv);
+    free(zv);
+
+    /* Hand-computed: SECOND placement over (0,0,200,100), ratio 0.5. */
+    struct view *hv = malloc(sizeof(struct view));
+    memset(hv, 0, sizeof(struct view));
+    struct window_node *hn = make_test_node();
+    set_split_leaf(hn, 5, 9, CHILD_SECOND);
+    hv->root = hn;
+    yabai_window_node_split(hv, hn, 42, false, CHILD_FIRST, SPLIT_AUTO, 0.5f);
+    TEST_CHECK(hn->window_count, 0);
+    TEST_CHECK(hn->left != NULL, 1);
+    TEST_CHECK(hn->right != NULL, 1);
+    if (hn->left && hn->right) {
+        TEST_CHECK(hn->left->window_count, 2);
+        TEST_CHECK(hn->right->window_count, 1);
+        TEST_CHECK(hn->left->window_list[0], 5);
+        TEST_CHECK(hn->left->window_list[1], 9);
+        TEST_CHECK(hn->right->window_list[0], 42);
+        TEST_CHECK(hn->right->window_order[0], 42);
+        TEST_CHECK(hn->left->parent != hn, 0);
+        TEST_CHECK(hn->right->parent != hn, 0);
+        TEST_CHECK(hn->left->zoom, NULL);
+        TEST_CHECK(hn->right->zoom, NULL);
+        TEST_CHECK(hn->split, SPLIT_Y);
+        TEST_CHECK(memcmp(&hn->ratio, &(float){0.5f}, sizeof(float)), 0);
+        struct area exp_l;
+        struct area exp_r;
+        init_test_area(&exp_l, 0, 0, 100, 100);
+        init_test_area(&exp_r, 100, 0, 100, 100);
+        TEST_CHECK(memcmp(&hn->left->area, &exp_l, sizeof(struct area)), 0);
+        TEST_CHECK(memcmp(&hn->right->area, &exp_r, sizeof(struct area)), 0);
+    }
+    free(hn->left);
+    free(hn->right);
+    free(hn);
+    free(hv);
+
+    /* Hand-computed: FIRST placement puts the fresh window left. */
+    hv = malloc(sizeof(struct view));
+    memset(hv, 0, sizeof(struct view));
+    hn = make_test_node();
+    set_split_leaf(hn, 5, 9, CHILD_NONE);
+    hv->root = hn;
+    yabai_window_node_split(hv, hn, 42, false, CHILD_FIRST, SPLIT_AUTO, 0.5f);
+    if (hn->left && hn->right) {
+        TEST_CHECK(hn->left->window_count, 1);
+        TEST_CHECK(hn->left->window_list[0], 42);
+        TEST_CHECK(hn->right->window_count, 2);
+        TEST_CHECK(hn->right->window_list[0], 5);
+        TEST_CHECK(hn->right->window_list[1], 9);
+    } else {
+        TEST_CHECK(hn->left != NULL, 1);
+    }
+    free(hn->left);
+    free(hn->right);
+    free(hn);
+    free(hv);
+
+    g_space_manager.window_placement = saved_placement;
+    g_space_manager.window_zoom_persist = saved_persist;
+    g_space_manager.split_type = saved_split;
+    g_space_manager.split_ratio = saved_ratio;
+})
+
+static void set_swap_lists(struct window_node *node, uint32_t l0, uint32_t l1, uint32_t o0, uint32_t o1, int count)
+{
+    node->window_list[0] = l0;
+    node->window_list[1] = l1;
+    node->window_order[0] = o0;
+    node->window_order[1] = o1;
+    node->window_count = count;
+}
+
+TEST_FUNC(zig_view_swap_window_list,
+{
+    /* Oracle parity: uneven lists, orders, counts, zooms cleared. */
+    struct window_node *ca = make_test_node();
+    struct window_node *cb = make_test_node();
+    struct window_node *za = make_test_node();
+    struct window_node *zb = make_test_node();
+    init_test_area(&ca->area, 0, 0, 100, 100);
+    init_test_area(&cb->area, 0, 0, 100, 100);
+    init_test_area(&za->area, 0, 0, 100, 100);
+    init_test_area(&zb->area, 0, 0, 100, 100);
+    set_swap_lists(ca, 1, 2, 2, 1, 2);
+    set_swap_lists(cb, 3, 0, 3, 0, 1);
+    set_swap_lists(za, 1, 2, 2, 1, 2);
+    set_swap_lists(zb, 3, 0, 3, 0, 1);
+    ca->zoom = ca;
+    cb->zoom = cb;
+    za->zoom = za;
+    zb->zoom = zb;
+    window_node_swap_window_list(ca, cb);
+    yabai_window_node_swap_window_list(za, zb);
+    struct window_node *cc[2];
+    struct window_node *zz[2];
+    cc[0] = ca;
+    cc[1] = cb;
+    zz[0] = za;
+    zz[1] = zb;
+    TEST_CHECK(tree_struct_equal_n(cc, zz, 2), 1);
+    TEST_CHECK(za->window_count, 1);
+    TEST_CHECK(zb->window_count, 2);
+    TEST_CHECK(za->zoom, NULL);
+    TEST_CHECK(zb->zoom, NULL);
+    free(ca);
+    free(cb);
+    free(za);
+    free(zb);
+
+    /* Hand-computed vectors guard the seam after C delegates to Zig. */
+    struct window_node *a = make_test_node();
+    struct window_node *b = make_test_node();
+    set_swap_lists(a, 1, 2, 2, 1, 2);
+    set_swap_lists(b, 3, 0, 3, 0, 1);
+    a->zoom = a;
+    b->zoom = b;
+    yabai_window_node_swap_window_list(a, b);
+    TEST_CHECK(a->window_list[0], 3);
+    TEST_CHECK(a->window_order[0], 3);
+    TEST_CHECK(a->window_count, 1);
+    TEST_CHECK(b->window_list[0], 1);
+    TEST_CHECK(b->window_list[1], 2);
+    TEST_CHECK(b->window_order[0], 2);
+    TEST_CHECK(b->window_order[1], 1);
+    TEST_CHECK(b->window_count, 2);
+    TEST_CHECK(a->zoom, NULL);
+    TEST_CHECK(b->zoom, NULL);
+    free(a);
+    free(b);
+
+    /* Empty-vs-full edge. */
+    a = make_test_node();
+    b = make_test_node();
+    set_swap_lists(a, 0, 0, 0, 0, 0);
+    b->window_list[0] = 7;
+    b->window_list[1] = 8;
+    b->window_list[2] = 9;
+    b->window_order[0] = 9;
+    b->window_order[1] = 7;
+    b->window_order[2] = 8;
+    b->window_count = 3;
+    yabai_window_node_swap_window_list(a, b);
+    TEST_CHECK(a->window_list[0], 7);
+    TEST_CHECK(a->window_list[1], 8);
+    TEST_CHECK(a->window_list[2], 9);
+    TEST_CHECK(a->window_order[0], 9);
+    TEST_CHECK(a->window_order[2], 8);
+    TEST_CHECK(a->window_count, 3);
+    TEST_CHECK(b->window_count, 0);
+    free(a);
+    free(b);
 })

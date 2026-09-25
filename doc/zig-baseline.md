@@ -149,6 +149,14 @@ unless doc/zig-refactor-plan.md explicitly allows a change.
   manager-derived indices lifted in, libc snprintf numerics, and
   all escape buffers freed on every path. Whole-suite leaks gate
   still 0 leaks. 86 exports in the fat daemon; x86_64 verified.
+- Node surgery (TDD): `yabai_area_make_pair_for_node` (reuses shared
+  area_make_pair), `yabai_window_node_split` (libc-malloc'd children,
+  zoom/placement/ratio lifts), and `yabai_window_node_swap_window_list`
+  — the swap also delegates its C body in src/view.c. Leaks gate 0.
+- Insert selector (TDD): `yabai_parse_insert_selector` with a 32-byte
+  Selector mirror (union as u64 payload, zeroed where C leaves garbage)
+  and byte-identical DIR_SEL error bytes. 90 exports in the fat
+  daemon; x86_64 slices verified.
 - Pure-helper slice (TDD) in zig/util.zig: `balance_node_add`,
   `clampf_range` (incl. NaN bit-parity), `json_bool`,
   `json_optional_bool`, float+int `in_range_ii/ei/ie` for the exact

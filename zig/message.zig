@@ -492,3 +492,67 @@ export fn yabai_token_to_value(token: *const MsgToken, out: *TokenValue) void {
         out.type = TOKEN_TYPE_UNKNOWN;
     }
 }
+
+pub const DIR_NORTH: c_int = 360;
+pub const DIR_EAST: c_int = 90;
+pub const DIR_SOUTH: c_int = 180;
+pub const DIR_WEST: c_int = 270;
+pub const STACK: c_int = 111;
+
+pub const Selector = extern struct {
+    token: MsgToken,
+    did_parse: bool,
+    payload: u64,
+};
+
+comptime {
+    if (@sizeOf(Selector) != 32) @compileError("Selector size drift");
+    if (@offsetOf(Selector, "did_parse") != 16) @compileError("Selector.did_parse drift");
+    if (@offsetOf(Selector, "payload") != 24) @compileError("Selector.payload drift");
+}
+
+// Byte-identical equivalent of daemon_fail() for the parse_insert_selector
+// "value '%.*s' is not a valid option for DIR_SEL\n" emission: the 0x07
+// failure marker, the "value '" prefix, the token bytes, then the suffix.
+// Written with fwrite so no varargs ABI is involved.
+fn insertFail(rsp: ?*anyopaque, segment: [*]const u8, seg_len: usize) void {
+    @setRuntimeSafety(false);
+    const stream = rsp orelse return;
+    const marker: u8 = 0x07;
+    _ = fwrite(@ptrCast(&marker), 1, 1, stream);
+    const prefix: []const u8 = "value '";
+    _ = fwrite(@ptrCast(prefix.ptr), 1, prefix.len, stream);
+    if (seg_len > 0) {
+        _ = fwrite(@ptrCast(segment), 1, seg_len, stream);
+    }
+    const suffix: []const u8 = "' is not a valid option for DIR_SEL\n";
+    _ = fwrite(@ptrCast(suffix.ptr), 1, suffix.len, stream);
+}
+
+// Byte-identical port of parse_insert_selector() in src/message.c: consumes
+// one token from the message cursor via yabai_message_get_token, maps the
+// five direction keywords through yabai_token_equals, and emits the
+// daemon_fail bytes on any other input. The dir value is stored as the raw
+// 8-byte union payload (upper 32 bits zero, matching the C union init).
+export fn yabai_parse_insert_selector(rsp: ?*anyopaque, message: *[*:0]u8, out: *Selector) void {
+    @setRuntimeSafety(false);
+    yabai_message_get_token(message, &out.token);
+    out.did_parse = true;
+    out.payload = 0;
+    if (yabai_token_equals(&out.token, "north")) {
+        out.payload = @as(u64, @intCast(DIR_NORTH));
+    } else if (yabai_token_equals(&out.token, "east")) {
+        out.payload = @as(u64, @intCast(DIR_EAST));
+    } else if (yabai_token_equals(&out.token, "south")) {
+        out.payload = @as(u64, @intCast(DIR_SOUTH));
+    } else if (yabai_token_equals(&out.token, "west")) {
+        out.payload = @as(u64, @intCast(DIR_WEST));
+    } else if (yabai_token_equals(&out.token, "stack")) {
+        out.payload = @as(u64, @intCast(STACK));
+    } else {
+        out.did_parse = false;
+        const text: [*]const u8 = @ptrCast(out.token.text orelse unreachable);
+        const n: usize = @intCast(out.token.length);
+        insertFail(rsp, text, n);
+    }
+}
