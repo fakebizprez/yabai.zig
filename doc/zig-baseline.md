@@ -18,11 +18,12 @@ unless doc/zig-refactor-plan.md explicitly allows a change.
   `--message/-m`, `--config/-c`, `--verbose/-V`, `--version/-v`,
   `--help/-h`) plus the `man yabai` pointer.
 - `lipo -info ./bin/yabai`: fat file with `x86_64 arm64` slices.
-- Existing suite: `cd tests && make` runs 23 tests, all passing
+- Existing suite: `cd tests && make` runs 27 tests, all passing
   (2 display geometry + 8 socket wire-format/dispatcher characterization
   in tests/src/socket_frame.c + 3 geometry parity in
   tests/src/zig_geometry.c + 6 tokenizer/command-decoding parity in
-  tests/src/zig_message.c + 4 view-tree parity in tests/src/zig_view.c).
+  tests/src/zig_message.c + 4 view-tree parity in tests/src/zig_view.c
+  + 4 pure-helper parity in tests/src/zig_util.c).
 
 ## Step 2 boundary evidence
 
@@ -71,8 +72,12 @@ unless doc/zig-refactor-plan.md explicitly allows a change.
   both sides). Zero external symbols in the view object.
 - Tree-mutation slice (TDD): `rotate` (90/180/270), `mirror`, `fence`
   with structural tree comparison (pointer fields by position, since
-  the C and Zig trees live at different addresses). 26 exports in the
-  fat daemon; x86_64 slice verified.
+  the C and Zig trees live at different addresses).
+- Pure-helper slice (TDD) in zig/util.zig: `balance_node_add`,
+  `clampf_range` (incl. NaN bit-parity), `json_bool`,
+  `json_optional_bool`, float+int `in_range_ii/ei/ie` for the exact
+  combinations used in-repo, `rgba_color_from_hex`. 35 exports in the
+  fat daemon; x86_64 slice verified; util object needs no Zig runtime.
 
 ## Daemon linkage (universal objects)
 
