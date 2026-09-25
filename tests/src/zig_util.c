@@ -30,6 +30,7 @@ bool yabai_in_range_ii_i(int a, int b, int c);
 bool yabai_in_range_ei_f(float a, float b, float c);
 bool yabai_in_range_ie_i(int a, int b, int c);
 void yabai_rgba_color_from_hex(uint32_t color, struct yabai_rgba_color *out);
+int yabai_find_rank_in_list(uint32_t wid, const uint32_t *window_list, int window_count);
 
 _Static_assert(sizeof(struct balance_node) == 8, "C balance_node size drift");
 _Static_assert(sizeof(struct yabai_balance_node) == 8, "balance_node size drift");
@@ -165,4 +166,28 @@ TEST_FUNC(zig_util_rgba,
     struct yabai_rgba_color z_mix;
     yabai_rgba_color_from_hex(0x80402010, &z_mix);
     TEST_CHECK(memcmp(&c_mix, &z_mix, sizeof(struct rgba_color)), 0);
+})
+
+static uint32_t rank_list[] = { 11, 22, 33, 22, 44 };
+
+TEST_FUNC(zig_util_find_rank,
+{
+    int count = array_count(rank_list);
+    int i = 0;
+    for (i = 0; i < count; ++i) {
+        int c = window_manager_find_rank_of_window_in_list(rank_list[i], rank_list, count);
+        int z = yabai_find_rank_in_list(rank_list[i], rank_list, count);
+        TEST_CHECK(c != z, 0);
+        TEST_CHECK(c, i == 3 ? 1 : i);
+    }
+
+    int c_miss = window_manager_find_rank_of_window_in_list(99, rank_list, count);
+    int z_miss = yabai_find_rank_in_list(99, rank_list, count);
+    TEST_CHECK(c_miss != z_miss, 0);
+    TEST_CHECK(c_miss, INT_MAX);
+
+    int c_empty = window_manager_find_rank_of_window_in_list(11, rank_list, 0);
+    int z_empty = yabai_find_rank_in_list(11, rank_list, 0);
+    TEST_CHECK(c_empty != z_empty, 0);
+    TEST_CHECK(c_empty, INT_MAX);
 })
