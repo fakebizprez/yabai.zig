@@ -39,7 +39,9 @@ typedef TEST_SIG(function);
     TEST_ENTRY(zig_message_key_value)                            \
     TEST_ENTRY(zig_message_named_consts)                         \
     TEST_ENTRY(zig_view_leaf_walk)                               \
-    TEST_ENTRY(zig_view_window_lookup)
+    TEST_ENTRY(zig_view_window_lookup)                           \
+    TEST_ENTRY(zig_view_tree_mutate)                             \
+    TEST_ENTRY(zig_view_fence)
 
 static struct {
     char *name;
