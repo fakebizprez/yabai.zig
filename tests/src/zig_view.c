@@ -20,6 +20,29 @@ struct window_node *yabai_window_node_mirror(struct window_node *node, int axis)
 struct window_node *yabai_window_node_fence(struct window_node *node, int dir);
 void yabai_view_stack_window(struct window_node *node, uint32_t window_id);
 
+struct yabai_view
+{
+    void *uuid;
+    uint64_t sid;
+    struct window_node *root;
+    uint32_t insertion_point;
+    int layout;
+    int split_type;
+    int top_padding;
+    int bottom_padding;
+    int left_padding;
+    int right_padding;
+    int window_gap;
+    uint32_t auto_balance;
+    uint64_t flags;
+};
+
+struct window_node *yabai_view_find_window_node(const struct yabai_view *view, uint32_t window_id);
+
+_Static_assert(sizeof(struct view) == 72, "C view size drift");
+_Static_assert(sizeof(struct yabai_view) == 72, "view size drift");
+_Static_assert(offsetof(struct view, root) == 16, "C view.root drift");
+
 _Static_assert(sizeof(struct window_node) == 344, "window_node size drift");
 _Static_assert(sizeof(struct feedback_window) == 16, "feedback_window size drift");
 _Static_assert(offsetof(struct window_node, left) == 24, "window_node.left drift");
@@ -375,4 +398,35 @@ TEST_FUNC(zig_view_stack_window,
     TEST_CHECK(z_node->window_count, 4);
     free(c_node);
     free(z_node);
+})
+
+TEST_FUNC(zig_view_find_window_node,
+{
+    struct window_node *r;
+    struct window_node *a;
+    struct window_node *c;
+    struct window_node *d;
+    struct window_node *e;
+    make_test_tree(&r, &a, &c, &d, &e);
+
+    struct view *c_view = malloc(sizeof(struct view));
+    memset(c_view, 0, sizeof(struct view));
+    c_view->root = r;
+    c_view->sid = 3;
+
+    struct yabai_view *z_view = malloc(sizeof(struct yabai_view));
+    memset(z_view, 0, sizeof(struct yabai_view));
+    z_view->root = r;
+    z_view->sid = 3;
+
+    TEST_CHECK((void *) view_find_window_node(c_view, 9) != (void *) yabai_view_find_window_node(z_view, 9), 0);
+    TEST_CHECK((void *) view_find_window_node(c_view, 9) != (void *) d, 0);
+    TEST_CHECK((void *) view_find_window_node(c_view, 7) != (void *) yabai_view_find_window_node(z_view, 7), 0);
+    TEST_CHECK((void *) view_find_window_node(c_view, 7) != (void *) c, 0);
+    TEST_CHECK((void *) view_find_window_node(c_view, 12345) != (void *) yabai_view_find_window_node(z_view, 12345), 0);
+    TEST_CHECK(view_find_window_node(c_view, 12345) != yabai_view_find_window_node(z_view, 12345), 0);
+
+    free(c_view);
+    free(z_view);
+    free_test_tree(r, a, c, d, e);
 })
