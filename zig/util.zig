@@ -66,6 +66,23 @@ export fn yabai_in_range_ie_i(a: c_int, b: c_int, c: c_int) bool {
     return (a >= b) and (a < c);
 }
 
+export fn yabai_find_rank_in_list(wid: u32, window_list: [*]const u32, window_count: c_int) c_int {
+    @setRuntimeSafety(false);
+    var rank: c_int = 0;
+    var i: c_int = 0;
+    while (i < window_count) {
+        if (window_list[@intCast(i)] == wid) {
+            return rank;
+        } else {
+            rank += 1;
+        }
+        i += 1;
+    }
+    return std.math.maxInt(c_int);
+}
+
+const std = @import("std");
+
 export fn yabai_rgba_color_from_hex(color: u32, out: *RgbaColor) void {
     @setRuntimeSafety(false);
     out.p = color;

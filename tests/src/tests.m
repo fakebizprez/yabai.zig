@@ -46,7 +46,8 @@ typedef TEST_SIG(function);
     TEST_ENTRY(zig_util_balance_clamp)                           \
     TEST_ENTRY(zig_util_json_bool)                               \
     TEST_ENTRY(zig_util_in_range)                                \
-    TEST_ENTRY(zig_util_rgba)
+    TEST_ENTRY(zig_util_rgba)                                    \
+    TEST_ENTRY(zig_util_find_rank)
 
 static struct {
     char *name;
