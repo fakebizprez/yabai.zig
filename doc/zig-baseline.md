@@ -123,6 +123,13 @@ unless doc/zig-refactor-plan.md explicitly allows a change.
   window_can_resize, and window_is_undersized are thin delegates to
   the parity-proven Zig exports (signatures unchanged). The daemon
   still links fat x86_64+arm64 with --version unchanged.
+- Window-manager delegation: move_frame_math / resize_frame_math in
+  src/window_manager.c delegate to the Zig exports; call sites
+  unchanged.
+- Label parser (TDD): `yabai_parse_label` reuses the token ports,
+  mirrors the three reserved-keyword tables (macro-verified), mallocs
+  the label via libc, and emits byte-identical daemon_fail bytes.
+  69 exports in the fat daemon; x86_64 slices verified.
 - Pure-helper slice (TDD) in zig/util.zig: `balance_node_add`,
   `clampf_range` (incl. NaN bit-parity), `json_bool`,
   `json_optional_bool`, float+int `in_range_ii/ei/ie` for the exact

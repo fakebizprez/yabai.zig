@@ -38,6 +38,7 @@ struct yabai_properties
 
 bool yabai_parse_property(struct yabai_properties *properties, char *property, const uint64_t *property_val, char **property_str, int property_count);
 void yabai_parse_properties(FILE *rsp, const struct token *token, const uint64_t *property_val, char **property_str, int property_count, struct yabai_properties *out);
+bool yabai_parse_label(FILE *rsp, const struct token *token, int type, char **label);
 
 _Static_assert(sizeof(struct properties) == 32, "C properties size drift");
 _Static_assert(sizeof(struct yabai_properties) == 32, "properties size drift");
@@ -555,6 +556,203 @@ TEST_FUNC(zig_message_parse_properties,
     TEST_CHECK(hlen, strlen("\x07'bogus' is not a valid property.\n"));
     if (hlen > 0) TEST_CHECK(memcmp(hmsg, "\x07'bogus' is not a valid property.\n", hlen), 0);
     free(hmsg);
+})
+
+/* Pin the enum label_type values so a silent renumber breaks the build
+ * instead of silently re-pinning the parity vectors below. */
+_Static_assert(LABEL_DISPLAY == 0, "LABEL_DISPLAY drift");
+_Static_assert(LABEL_SPACE == 1, "LABEL_SPACE drift");
+_Static_assert(LABEL_WINDOW == 2, "LABEL_WINDOW drift");
+
+/* C-vs-Zig parity for parse_label() (src/message.c): return value,
+ * malloc'd label bytes plus NUL, untouched label on error paths, and
+ * byte-identical daemon_fail emission captured via open_memstream.
+ * Must FAIL against the stubbed Zig export (TDD red) and pass on the
+ * real one (green). Every allocated label is freed by the caller. */
+static int label_parity_n(char *input, int length, int type)
+{
+    char c_buf[128];
+    char z_buf[128];
+    if (length < 0 || length + 1 > (int) sizeof(c_buf)) return 0;
+    memcpy(c_buf, input, length + 1);
+    memcpy(z_buf, input, length + 1);
+
+    struct token c_tok = { c_buf, length };
+    struct token z_tok = { z_buf, length };
+
+    char *c_msg = NULL;
+    char *z_msg = NULL;
+    size_t c_mlen = 0;
+    size_t z_mlen = 0;
+    FILE *c_rsp = open_memstream(&c_msg, &c_mlen);
+    FILE *z_rsp = open_memstream(&z_msg, &z_mlen);
+    if (!c_rsp || !z_rsp) return 0;
+
+    char *c_label = NULL;
+    char *z_label = NULL;
+    bool c_ok = parse_label(c_rsp, c_tok, type, &c_label);
+    bool z_ok = yabai_parse_label(z_rsp, &z_tok, type, &z_label);
+
+    fflush(c_rsp);
+    fflush(z_rsp);
+    fclose(c_rsp);
+    fclose(z_rsp);
+
+    int ok = 1;
+    if (c_ok != z_ok) ok = 0;
+    if ((c_label == NULL) != (z_label == NULL)) ok = 0;
+    if (c_label && z_label) {
+        if (strcmp(c_label, z_label) != 0) ok = 0;
+        if (c_label[length] != '\0' || z_label[length] != '\0') ok = 0;
+        if (memcmp(c_label, z_label, length + 1) != 0) ok = 0;
+    }
+    if (c_mlen != z_mlen) ok = 0;
+    else if (c_mlen > 0 && memcmp(c_msg, z_msg, c_mlen) != 0) ok = 0;
+
+    free(c_label);
+    free(z_label);
+    free(c_msg);
+    free(z_msg);
+    return ok;
+}
+
+static int label_parity_case(char *input, int type)
+{
+    return label_parity_n(input, strlen(input), type);
+}
+
+static char *label_reserved_display[] = { "north", "east", "south", "west", "prev", "next", "first", "last", "recent", "mouse" };
+static char *label_reserved_space[] = { "prev", "next", "first", "last", "recent", "mouse" };
+static char *label_reserved_window[] = { "float", "sticky", "shadow", "split", "zoom-parent", "zoom-fullscreen", "windowed-fullscreen", "native-fullscreen", "expose", "pip", "recover" };
+
+struct label_hand_case
+{
+    char *input;
+    int type;
+    char *expected;
+};
+
+static struct label_hand_case label_hand_cases[] =
+{
+    { "42", LABEL_DISPLAY, "\x07'42' cannot be used as a label.\n" },
+    { "prev", LABEL_SPACE, "\x07'prev' is a reserved keyword and cannot be used as a label.\n" },
+    { "north", LABEL_DISPLAY, "\x07'north' is a reserved keyword and cannot be used as a label.\n" },
+    { "float", LABEL_WINDOW, "\x07'float' is a reserved keyword and cannot be used as a scratchpad.\n" },
+};
+
+TEST_FUNC(zig_message_parse_label,
+{
+    int i = 0;
+
+    /* Invalid tokens yield NULL with success and no emission. */
+    TEST_CHECK(label_parity_case("", LABEL_DISPLAY), 1);
+    TEST_CHECK(label_parity_case("", LABEL_SPACE), 1);
+    TEST_CHECK(label_parity_case("", LABEL_WINDOW), 1);
+
+    /* Non-string tokens fail with the label emission. */
+    TEST_CHECK(label_parity_case("42", LABEL_DISPLAY), 1);
+    TEST_CHECK(label_parity_case("0x2A", LABEL_SPACE), 1);
+    TEST_CHECK(label_parity_case("4.5", LABEL_WINDOW), 1);
+
+    /* Every reserved keyword fails for its own label type. */
+    for (i = 0; i < array_count(label_reserved_display); ++i) {
+        TEST_CHECK(label_parity_case(label_reserved_display[i], LABEL_DISPLAY), 1);
+    }
+    for (i = 0; i < array_count(label_reserved_space); ++i) {
+        TEST_CHECK(label_parity_case(label_reserved_space[i], LABEL_SPACE), 1);
+    }
+    for (i = 0; i < array_count(label_reserved_window); ++i) {
+        TEST_CHECK(label_parity_case(label_reserved_window[i], LABEL_WINDOW), 1);
+    }
+
+    /* Reserved for one type is a valid label for another. */
+    TEST_CHECK(label_parity_case("north", LABEL_SPACE), 1);
+    TEST_CHECK(label_parity_case("north", LABEL_WINDOW), 1);
+    TEST_CHECK(label_parity_case("float", LABEL_DISPLAY), 1);
+    TEST_CHECK(label_parity_case("float", LABEL_SPACE), 1);
+    TEST_CHECK(label_parity_case("prev", LABEL_WINDOW), 1);
+
+    /* Valid labels incl. malloc'd bytes and NUL. */
+    TEST_CHECK(label_parity_case("my-label_01", LABEL_DISPLAY), 1);
+    TEST_CHECK(label_parity_case("my-label_01", LABEL_SPACE), 1);
+    TEST_CHECK(label_parity_case("my-label_01", LABEL_WINDOW), 1);
+    TEST_CHECK(label_parity_case("a", LABEL_DISPLAY), 1);
+
+    /* Length-bounded segment: trailing bytes past the token are
+     * neither matched nor emitted. */
+    TEST_CHECK(label_parity_n("prevTRAILING", 4, LABEL_SPACE), 1);
+    TEST_CHECK(label_parity_n("42TRAILING", 2, LABEL_DISPLAY), 1);
+
+    /* NULL stream: same result as C, no emission, no crash. */
+    char c_null[64];
+    char z_null[64];
+    memcpy(c_null, "prev", 5);
+    memcpy(z_null, "prev", 5);
+    struct token c_ntok;
+    c_ntok.text = c_null;
+    c_ntok.length = 4;
+    struct token z_ntok;
+    z_ntok.text = z_null;
+    z_ntok.length = 4;
+    char *c_nlab = NULL;
+    char *z_nlab = NULL;
+    bool c_nok = parse_label(NULL, c_ntok, LABEL_SPACE, &c_nlab);
+    bool z_nok = yabai_parse_label(NULL, &z_ntok, LABEL_SPACE, &z_nlab);
+    TEST_CHECK(c_nok != z_nok, 0);
+    TEST_CHECK((c_nlab == NULL) != (z_nlab == NULL), 0);
+    free(c_nlab);
+    free(z_nlab);
+
+    memcpy(c_null, "fine", 5);
+    memcpy(z_null, "fine", 5);
+    c_ntok.length = 4;
+    z_ntok.length = 4;
+    c_nlab = NULL;
+    z_nlab = NULL;
+    c_nok = parse_label(NULL, c_ntok, LABEL_DISPLAY, &c_nlab);
+    z_nok = yabai_parse_label(NULL, &z_ntok, LABEL_DISPLAY, &z_nlab);
+    TEST_CHECK(c_nok != z_nok, 0);
+    TEST_CHECK((c_nlab == NULL) != (z_nlab == NULL), 0);
+    if (c_nlab && z_nlab) TEST_CHECK(strcmp(c_nlab, z_nlab), 0);
+    free(c_nlab);
+    free(z_nlab);
+
+    /* Hand-pinned error bytes, Zig side only. */
+    for (i = 0; i < array_count(label_hand_cases); ++i) {
+        char hbuf[64];
+        size_t hlen_in = strlen(label_hand_cases[i].input);
+        memcpy(hbuf, label_hand_cases[i].input, hlen_in + 1);
+        struct token htok;
+        htok.text = hbuf;
+        htok.length = hlen_in;
+        char *hmsg = NULL;
+        size_t hlen = 0;
+        FILE *hrsp = open_memstream(&hmsg, &hlen);
+        char *hlab = NULL;
+        bool hok = yabai_parse_label(hrsp, &htok, label_hand_cases[i].type, &hlab);
+        fflush(hrsp);
+        fclose(hrsp);
+        TEST_CHECK(hok, false);
+        TEST_CHECK(hlab == NULL, true);
+        TEST_CHECK(hlen, strlen(label_hand_cases[i].expected));
+        if (hlen > 0) TEST_CHECK(memcmp(hmsg, label_hand_cases[i].expected, hlen), 0);
+        free(hmsg);
+    }
+
+    /* Hand-pinned valid label: malloc'd copy with NUL. */
+    char vbuf[64];
+    memcpy(vbuf, "desk-1", 7);
+    struct token vtok;
+    vtok.text = vbuf;
+    vtok.length = 6;
+    char *vlab = NULL;
+    TEST_CHECK(yabai_parse_label(NULL, &vtok, LABEL_DISPLAY, &vlab), true);
+    TEST_CHECK(vlab == NULL, false);
+    if (vlab) {
+        TEST_CHECK(strcmp(vlab, "desk-1"), 0);
+        TEST_CHECK(vlab[6], '\0');
+    }
+    free(vlab);
 })
 
 TEST_FUNC(zig_message_named_consts,

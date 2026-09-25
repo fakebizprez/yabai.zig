@@ -6,6 +6,11 @@ extern struct process_manager g_process_manager;
 extern struct mouse_state g_mouse_state;
 extern double g_cv_host_clock_frequency;
 
+/* Zig delegates (zig/window.zig): parity-proven equivalents of the
+ * frame math below. Signatures and call sites are unchanged. */
+void yabai_move_frame_math(const CGRect *frame, int type, float dx, float dy, float *x, float *y, float *w, float *h);
+void yabai_resize_frame_math(const CGRect *frame, int direction, float dx, float dy, float *fx, float *fy, float *fw, float *fh);
+
 static TABLE_HASH_FUNC(hash_wm)
 {
     return *(uint32_t *) key;
@@ -329,15 +334,7 @@ enum window_op_error window_manager_adjust_window_ratio(struct window_manager *w
 
 static void move_frame_math(CGRect frame, int type, float dx, float dy, float *x, float *y, float *w, float *h)
 {
-    if (type == TYPE_REL) {
-        dx += frame.origin.x;
-        dy += frame.origin.y;
-    }
-
-    *x = dx;
-    *y = dy;
-    *w = frame.size.width;
-    *h = frame.size.height;
+    yabai_move_frame_math(&frame, type, dx, dy, x, y, w, h);
 }
 
 enum window_op_error window_manager_move_window_relative(struct window_manager *wm, struct window *window, int type, float dx, float dy)
@@ -356,13 +353,7 @@ enum window_op_error window_manager_move_window_relative(struct window_manager *
 
 static void resize_frame_math(CGRect frame, int direction, float dx, float dy, float *fx, float *fy, float *fw, float *fh)
 {
-    int x_mod = (direction & HANDLE_LEFT) ? -1 : (direction & HANDLE_RIGHT)  ? 1 : 0;
-    int y_mod = (direction & HANDLE_TOP)  ? -1 : (direction & HANDLE_BOTTOM) ? 1 : 0;
-
-    *fw = max(1, frame.size.width  + dx * x_mod);
-    *fh = max(1, frame.size.height + dy * y_mod);
-    *fx = (direction & HANDLE_LEFT) ? frame.origin.x + frame.size.width  - *fw : frame.origin.x;
-    *fy = (direction & HANDLE_TOP)  ? frame.origin.y + frame.size.height - *fh : frame.origin.y;
+    yabai_resize_frame_math(&frame, direction, dx, dy, fx, fy, fw, fh);
 }
 
 void window_manager_resize_window_relative_internal(struct window *window, CGRect frame, int direction, float dx, float dy, bool animate)
