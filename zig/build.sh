@@ -23,7 +23,7 @@ if [ "$actual" != "$pinned" ]; then
 fi
 
 mkdir -p "$BIN_DIR"
-for mod in geometry message view; do
+for mod in geometry message view util; do
   zig build-obj "$ZIG_DIR/$mod.zig" -target x86_64-macos.11.0 -O ReleaseSafe --name "$mod" -femit-bin="$BIN_DIR/$mod-x86_64.o"
   zig build-obj "$ZIG_DIR/$mod.zig" -target aarch64-macos.11.0 -O ReleaseSafe --name "$mod" -femit-bin="$BIN_DIR/$mod-arm64.o"
   lipo -create "$BIN_DIR/$mod-x86_64.o" "$BIN_DIR/$mod-arm64.o" -output "$ZIG_DIR/zig-$mod.o"

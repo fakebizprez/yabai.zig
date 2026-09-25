@@ -16,6 +16,7 @@ typedef TEST_SIG(function);
 #include "zig_geometry.c"
 #include "zig_message.c"
 #include "zig_view.c"
+#include "zig_util.c"
 
 #define TEST_ENTRY(name) { #name, test_##name },
 #define TEST_LIST                                              \
@@ -41,7 +42,11 @@ typedef TEST_SIG(function);
     TEST_ENTRY(zig_view_leaf_walk)                               \
     TEST_ENTRY(zig_view_window_lookup)                           \
     TEST_ENTRY(zig_view_tree_mutate)                             \
-    TEST_ENTRY(zig_view_fence)
+    TEST_ENTRY(zig_view_fence)                                   \
+    TEST_ENTRY(zig_util_balance_clamp)                           \
+    TEST_ENTRY(zig_util_json_bool)                               \
+    TEST_ENTRY(zig_util_in_range)                                \
+    TEST_ENTRY(zig_util_rgba)
 
 static struct {
     char *name;
