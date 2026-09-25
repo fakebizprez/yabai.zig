@@ -10,6 +10,8 @@ bool yabai_rule_check_flag(const struct rule *r, uint16_t flag);
 void yabai_rule_set_flag(struct rule *r, uint16_t flag);
 void yabai_rule_clear_flag(struct rule *r, uint16_t flag);
 void yabai_rule_destroy(struct rule *rule);
+char *yabai_ts_string_escape(const char *s);
+void yabai_rule_serialize(FILE *rsp, struct rule *rule, int index, int did_index, int sid_index);
 
 _Static_assert(sizeof(struct rule_effects) == 80, "rule_effects size drift");
 _Static_assert(offsetof(struct rule_effects, sid) == 8, "rule_effects.sid drift");
@@ -428,5 +430,488 @@ TEST_FUNC(zig_rule_destroy_parity,
             free(c_rule);
             free(z_rule);
         }
+    }
+})
+
+/* rule_serialize() (src/rule.c) + ts_string_escape() (src/misc/helpers.h)
+ * parity: Zig exports in zig/rule.zig must match the C oracle byte for
+ * byte via open_memstream. Must FAIL against stubs (TDD red) and pass on
+ * the real port (green). */
+
+_Static_assert(LAYER_AUTO == 0, "LAYER_AUTO drift");
+_Static_assert(LAYER_BELOW == 3, "LAYER_BELOW drift");
+_Static_assert(LAYER_NORMAL == 4, "LAYER_NORMAL drift");
+_Static_assert(LAYER_ABOVE == 5, "LAYER_ABOVE drift");
+
+static void ensure_ts_for_serialize(void)
+{
+    static bool ts_ready = false;
+    if (!ts_ready) {
+        ts_init(MEGABYTES(8));
+        ts_ready = true;
+    }
+    ts_reset();
+}
+
+static int escape_case_parity(char *input)
+{
+    ensure_ts_for_serialize();
+    char *c = ts_string_escape(input);
+    char *z = yabai_ts_string_escape(input);
+    int ok = 1;
+    if ((c == NULL) != (z == NULL)) ok = 0;
+    else if (c && z && strcmp(c, z) != 0) ok = 0;
+    else if (c && z && memcmp(c, z, strlen(c) + 1) != 0) ok = 0;
+    if (!ok) {
+        printf("escape mismatch input len %zu c %s z %s\n", strlen(input), c ? c : "(null)", z ? z : "(null)");
+    }
+    if (z) free(z);
+    ts_reset();
+    return ok;
+}
+
+TEST_FUNC(zig_ts_string_escape_parity,
+{
+    ensure_ts_for_serialize();
+    {
+        char plain[] = "hello";
+        TEST_CHECK(escape_case_parity(plain), 1);
+    }
+    {
+        char empty[] = "";
+        TEST_CHECK(escape_case_parity(empty), 1);
+    }
+    {
+        char utf8[] = "\303\251";
+        TEST_CHECK(escape_case_parity(utf8), 1);
+        TEST_CHECK(ts_string_escape(utf8) == NULL, true);
+        char *z = yabai_ts_string_escape(utf8);
+        TEST_CHECK(z == NULL, true);
+        if (z) free(z);
+        ts_reset();
+    }
+    {
+        char s1[] = "\"";
+        TEST_CHECK(escape_case_parity(s1), 1);
+        {
+            char *z = yabai_ts_string_escape(s1);
+            TEST_CHECK(z != NULL, true);
+            if (z) TEST_CHECK(strcmp(z, "\\\""), 0);
+            free(z);
+        }
+        ts_reset();
+    }
+    {
+        char s2[] = "\\";
+        TEST_CHECK(escape_case_parity(s2), 1);
+    }
+    {
+        char bs[] = "\010";
+        TEST_CHECK(escape_case_parity(bs), 1);
+        char *z = yabai_ts_string_escape(bs);
+        TEST_CHECK(z != NULL, true);
+        if (z) TEST_CHECK(strcmp(z, "\\b"), 0);
+        free(z);
+        ts_reset();
+    }
+    {
+        char ff[] = "\014";
+        TEST_CHECK(escape_case_parity(ff), 1);
+        char *z = yabai_ts_string_escape(ff);
+        TEST_CHECK(z != NULL, true);
+        if (z) TEST_CHECK(strcmp(z, "\\f"), 0);
+        free(z);
+        ts_reset();
+    }
+    {
+        char nl[] = "\n";
+        TEST_CHECK(escape_case_parity(nl), 1);
+    }
+    {
+        char cr[] = "\r";
+        TEST_CHECK(escape_case_parity(cr), 1);
+    }
+    {
+        char tab[] = "\t";
+        TEST_CHECK(escape_case_parity(tab), 1);
+    }
+    {
+        char c1[] = "\001";
+        TEST_CHECK(escape_case_parity(c1), 1);
+        char *z = yabai_ts_string_escape(c1);
+        TEST_CHECK(z != NULL, true);
+        if (z) TEST_CHECK(strcmp(z, "\\u0001"), 0);
+        free(z);
+        ts_reset();
+    }
+    {
+        char c2[] = "\002";
+        TEST_CHECK(escape_case_parity(c2), 1);
+    }
+    {
+        char bell[] = "\007";
+        TEST_CHECK(escape_case_parity(bell), 1);
+        char *z = yabai_ts_string_escape(bell);
+        TEST_CHECK(z != NULL, true);
+        if (z) TEST_CHECK(strcmp(z, "\\u0007"), 0);
+        free(z);
+        ts_reset();
+    }
+    {
+        char us[] = "\037";
+        TEST_CHECK(escape_case_parity(us), 1);
+        char *z = yabai_ts_string_escape(us);
+        TEST_CHECK(z != NULL, true);
+        if (z) TEST_CHECK(strcmp(z, "\\u001f"), 0);
+        free(z);
+        ts_reset();
+    }
+    {
+        char combo[] = "a\"\\\010\014\n\r\t\001\037end";
+        TEST_CHECK(escape_case_parity(combo), 1);
+    }
+    {
+        char mixed[] = "a\"b\\c\nd\te";
+        TEST_CHECK(escape_case_parity(mixed), 1);
+    }
+    {
+        char title[] = "line1\nline2";
+        TEST_CHECK(escape_case_parity(title), 1);
+    }
+})
+
+static int lifted_did_for(struct rule *r)
+{
+    return r->effects.did ? display_manager_display_id_arrangement(r->effects.did) : 0;
+}
+
+static int lifted_sid_for(struct rule *r)
+{
+    return r->effects.sid ? space_manager_mission_control_index(r->effects.sid) : 0;
+}
+
+static void free_serialize_rule_strings(struct rule *r)
+{
+    if (r->label) free(r->label);
+    if (r->app) free(r->app);
+    if (r->title) free(r->title);
+    if (r->role) free(r->role);
+    if (r->subrole) free(r->subrole);
+    if (r->effects.scratchpad) free(r->effects.scratchpad);
+    r->label = NULL;
+    r->app = NULL;
+    r->title = NULL;
+    r->role = NULL;
+    r->subrole = NULL;
+    r->effects.scratchpad = NULL;
+}
+
+static int serialize_parity(struct rule *r, int index)
+{
+    ensure_ts_for_serialize();
+    ts_reset();
+    int did_idx = lifted_did_for(r);
+    int sid_idx = lifted_sid_for(r);
+    char *c_msg = NULL;
+    size_t c_len = 0;
+    char *z_msg = NULL;
+    size_t z_len = 0;
+    FILE *c_rsp = open_memstream(&c_msg, &c_len);
+    FILE *z_rsp = open_memstream(&z_msg, &z_len);
+    if (!c_rsp || !z_rsp) {
+        if (c_rsp) fclose(c_rsp);
+        if (z_rsp) fclose(z_rsp);
+        free(c_msg);
+        free(z_msg);
+        return 0;
+    }
+    rule_serialize(c_rsp, r, index);
+    yabai_rule_serialize(z_rsp, r, index, did_idx, sid_idx);
+    fflush(c_rsp);
+    fflush(z_rsp);
+    fclose(c_rsp);
+    fclose(z_rsp);
+    int ok = 1;
+    if (c_len != z_len) ok = 0;
+    else if (c_len > 0 && memcmp(c_msg, z_msg, c_len) != 0) ok = 0;
+    if (!ok) {
+        printf("serialize mismatch index %d c_len %zu z_len %zu\n---C---\n%.*s\n---Z---\n%.*s\n",
+               index, c_len, z_len,
+               (int) c_len, c_msg ? c_msg : "(null)",
+               (int) z_len, z_msg ? z_msg : "(null)");
+    }
+    free(c_msg);
+    free(z_msg);
+    ts_reset();
+    return ok;
+}
+
+static void init_serialize_base(struct rule *r)
+{
+    memset(r, 0, sizeof(struct rule));
+    r->effects.opacity = 1.0f;
+}
+
+TEST_FUNC(zig_rule_serialize_parity,
+{
+    ensure_ts_for_serialize();
+    /* layer_str pins (runtime; indices pinned statically above). */
+    TEST_CHECK(strcmp(layer_str[LAYER_AUTO], "auto"), 0);
+    TEST_CHECK(strcmp(layer_str[LAYER_BELOW], "below"), 0);
+    TEST_CHECK(strcmp(layer_str[LAYER_NORMAL], "normal"), 0);
+    TEST_CHECK(strcmp(layer_str[LAYER_ABOVE], "above"), 0);
+
+    /* All-NULL rule. */
+    {
+        struct rule r;
+        init_serialize_base(&r);
+        r.effects.opacity = 1.0f;
+        TEST_CHECK(serialize_parity(&r, 0), 1);
+        free_serialize_rule_strings(&r);
+    }
+
+    /* Fully populated plain strings. */
+    {
+        struct rule r;
+        init_serialize_base(&r);
+        r.label = string_copy("my-label");
+        r.app = string_copy("Terminal");
+        r.title = string_copy("bash");
+        r.role = string_copy("AXWindow");
+        r.subrole = string_copy("AXStandardWindow");
+        r.effects.scratchpad = string_copy("pad1");
+        r.effects.manage = RULE_PROP_ON;
+        r.effects.sticky = RULE_PROP_OFF;
+        r.effects.mff = RULE_PROP_ON;
+        r.effects.fullscreen = RULE_PROP_OFF;
+        r.effects.opacity = 0.5f;
+        rule_effects_set_flag(&r.effects, RULE_OPACITY);
+        rule_effects_set_flag(&r.effects, RULE_FOLLOW_SPACE);
+        r.effects.grid[0] = 1;
+        r.effects.grid[1] = 2;
+        r.effects.grid[2] = 3;
+        r.effects.grid[3] = 4;
+        r.effects.grid[4] = 5;
+        r.effects.grid[5] = 6;
+        rule_set_flag(&r, RULE_ONE_SHOT);
+        TEST_CHECK(serialize_parity(&r, 7), 1);
+        free_serialize_rule_strings(&r);
+    }
+
+    /* Quotable fields: quotes, backslash, newline, controls. */
+    {
+        struct rule r;
+        init_serialize_base(&r);
+        r.app = string_copy("a\"b");
+        r.title = string_copy("a\\b");
+        r.role = string_copy("line1\nline2");
+        r.subrole = string_copy("tab\there");
+        TEST_CHECK(serialize_parity(&r, 1), 1);
+        free_serialize_rule_strings(&r);
+    }
+    {
+        struct rule r;
+        init_serialize_base(&r);
+        char ctrl_app[] = "x\001\002\037y";
+        char ctrl_title[] = "q\"\\\010\014\r";
+        r.app = string_copy(ctrl_app);
+        r.title = string_copy(ctrl_title);
+        r.role = string_copy("\b\f\n\r\t");
+        TEST_CHECK(serialize_parity(&r, 2), 1);
+        free_serialize_rule_strings(&r);
+    }
+    /* Label/scratchpad carry quotables raw (never escaped in C). */
+    {
+        struct rule r;
+        init_serialize_base(&r);
+        r.label = string_copy("lab\"el\\with\nnewline");
+        r.effects.scratchpad = string_copy("pad\"\\x");
+        TEST_CHECK(serialize_parity(&r, 3), 1);
+        free_serialize_rule_strings(&r);
+    }
+
+    /* follow_space on/off. */
+    {
+        struct rule r;
+        init_serialize_base(&r);
+        TEST_CHECK(serialize_parity(&r, 0), 1);
+        rule_effects_set_flag(&r.effects, RULE_FOLLOW_SPACE);
+        TEST_CHECK(serialize_parity(&r, 0), 1);
+        rule_effects_clear_flag(&r.effects, RULE_FOLLOW_SPACE);
+        TEST_CHECK(serialize_parity(&r, 0), 1);
+        free_serialize_rule_strings(&r);
+    }
+
+    /* manage/sticky/mff/fullscreen: UD(null)/ON(true)/OFF(false). */
+    {
+        int a = 0;
+        int b = 0;
+        for (a = 0; a < 3; ++a) {
+            for (b = 0; b < 3; ++b) {
+                struct rule r;
+                init_serialize_base(&r);
+                int va = a == 0 ? RULE_PROP_UD : (a == 1 ? RULE_PROP_ON : RULE_PROP_OFF);
+                int vb = b == 0 ? RULE_PROP_UD : (b == 1 ? RULE_PROP_ON : RULE_PROP_OFF);
+                r.effects.manage = va;
+                r.effects.sticky = vb;
+                r.effects.mff = va;
+                r.effects.fullscreen = vb;
+                TEST_CHECK(serialize_parity(&r, a * 3 + b), 1);
+                free_serialize_rule_strings(&r);
+            }
+        }
+    }
+
+    /* Layer flag clear (empty) vs set with each valid layer. */
+    {
+        int i = 0;
+        {
+            struct rule r;
+            init_serialize_base(&r);
+            r.effects.layer = LAYER_ABOVE;
+            TEST_CHECK(serialize_parity(&r, 0), 1);
+            free_serialize_rule_strings(&r);
+        }
+        for (i = 0; i < 4; ++i) {
+            struct rule r;
+            init_serialize_base(&r);
+            int lay = LAYER_AUTO;
+            if (i == 1) lay = LAYER_BELOW;
+            if (i == 2) lay = LAYER_NORMAL;
+            if (i == 3) lay = LAYER_ABOVE;
+            r.effects.layer = lay;
+            rule_effects_set_flag(&r.effects, RULE_LAYER);
+            TEST_CHECK(serialize_parity(&r, i), 1);
+            free_serialize_rule_strings(&r);
+        }
+    }
+
+    /* Grid: zero vs populated. */
+    {
+        struct rule r;
+        init_serialize_base(&r);
+        TEST_CHECK(serialize_parity(&r, 0), 1);
+        r.effects.grid[0] = 1;
+        r.effects.grid[1] = 1;
+        r.effects.grid[2] = 10;
+        r.effects.grid[3] = 20;
+        r.effects.grid[4] = 30;
+        r.effects.grid[5] = 40;
+        TEST_CHECK(serialize_parity(&r, 0), 1);
+        free_serialize_rule_strings(&r);
+    }
+
+    /* Opacity edge values (%.4f rounding). */
+    {
+        int i = 0;
+        for (i = 0; i < 10; ++i) {
+            struct rule r;
+            init_serialize_base(&r);
+            float op = 0.0f;
+            if (i == 1) op = 1.0f;
+            if (i == 2) op = 0.5f;
+            if (i == 3) op = 0.123456f;
+            if (i == 4) op = 2.0f;
+            if (i == 5) op = -0.5f;
+            if (i == 6) op = 0.00005f;
+            if (i == 7) op = 0.99995f;
+            if (i == 8) op = 0.1f;
+            if (i == 9) op = 0.33333f;
+            r.effects.opacity = op;
+            TEST_CHECK(serialize_parity(&r, i), 1);
+            free_serialize_rule_strings(&r);
+        }
+    }
+
+    /* Flags word: (effects.flags << 16) | flags, 0x%08x lowercase. */
+    {
+        struct rule r;
+        init_serialize_base(&r);
+        TEST_CHECK(serialize_parity(&r, 0), 1);
+        free_serialize_rule_strings(&r);
+    }
+    {
+        struct rule r;
+        init_serialize_base(&r);
+        r.effects.flags = 0x07;
+        r.flags = 0x3FF;
+        TEST_CHECK(serialize_parity(&r, 0), 1);
+        free_serialize_rule_strings(&r);
+    }
+    {
+        struct rule r;
+        init_serialize_base(&r);
+        r.effects.flags = 0xABCD;
+        r.flags = 0xEF01;
+        TEST_CHECK(serialize_parity(&r, 0), 1);
+        free_serialize_rule_strings(&r);
+    }
+    {
+        struct rule r;
+        init_serialize_base(&r);
+        rule_set_flag(&r, RULE_ONE_SHOT);
+        rule_effects_set_flag(&r.effects, RULE_FOLLOW_SPACE);
+        rule_effects_set_flag(&r.effects, RULE_OPACITY);
+        rule_effects_set_flag(&r.effects, RULE_LAYER);
+        r.effects.layer = LAYER_NORMAL;
+        TEST_CHECK(serialize_parity(&r, 5), 1);
+        free_serialize_rule_strings(&r);
+    }
+
+    /* Non-zero did/sid with lifted indices (manager-derived oracle). */
+    {
+        struct rule r;
+        init_serialize_base(&r);
+        r.effects.did = 5;
+        r.effects.sid = 0x1234;
+        TEST_CHECK(serialize_parity(&r, 0), 1);
+        free_serialize_rule_strings(&r);
+    }
+    /* Lifted-index seam: non-zero did/sid emit the lifted param;
+     * zero did/sid emit 0 even with non-zero lifted params. */
+    {
+        struct rule r;
+        init_serialize_base(&r);
+        r.effects.did = 9;
+        r.effects.sid = 99;
+        char *z_msg = NULL;
+        size_t z_len = 0;
+        FILE *z_rsp = open_memstream(&z_msg, &z_len);
+        yabai_rule_serialize(z_rsp, &r, 0, 2, 7);
+        fflush(z_rsp);
+        fclose(z_rsp);
+        TEST_CHECK(z_msg != NULL, true);
+        if (z_msg) {
+            TEST_CHECK(strstr(z_msg, "\"display\":2") != NULL, true);
+            TEST_CHECK(strstr(z_msg, "\"space\":7") != NULL, true);
+        }
+        free(z_msg);
+        free_serialize_rule_strings(&r);
+    }
+    {
+        struct rule r;
+        init_serialize_base(&r);
+        char *z_msg = NULL;
+        size_t z_len = 0;
+        FILE *z_rsp = open_memstream(&z_msg, &z_len);
+        yabai_rule_serialize(z_rsp, &r, 0, 2, 7);
+        fflush(z_rsp);
+        fclose(z_rsp);
+        TEST_CHECK(z_msg != NULL, true);
+        if (z_msg) {
+            TEST_CHECK(strstr(z_msg, "\"display\":0") != NULL, true);
+            TEST_CHECK(strstr(z_msg, "\"space\":0") != NULL, true);
+        }
+        free(z_msg);
+        free_serialize_rule_strings(&r);
+    }
+    /* NULL stream: Zig is a no-op that must not crash (C has no NULL
+     * guard, so only the Zig side is exercised here). */
+    {
+        struct rule r;
+        init_serialize_base(&r);
+        r.app = string_copy("hi");
+        yabai_rule_serialize(NULL, &r, 0, 0, 0);
+        free_serialize_rule_strings(&r);
     }
 })
