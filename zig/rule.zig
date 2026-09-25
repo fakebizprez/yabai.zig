@@ -1,8 +1,9 @@
 // Rule boundary for the yabai migration (step 3).
 //
-// Pinned toolchain: Zig 0.16.0. Mirrors rule_combine_effects() and
-// rule_destroy() in src/rule.c plus the rule flag helpers in
-// src/rule.h. RuleEffects mirrors struct rule_effects in src/rule.h
+// Pinned toolchain: Zig 0.16.0. Mirrors rule_combine_effects(),
+// rule_serialize() and rule_destroy() in src/rule.c plus the rule flag
+// helpers in src/rule.h and ts_string_escape() in
+// src/misc/helpers.h. RuleEffects mirrors struct rule_effects in src/rule.h
 // (80 bytes); Rule mirrors struct rule (256 bytes, regex_t fields as
 // opaque 32-byte arrays released via libc regfree under the same
 // VALID-flag guards as C). Offsets asserted here and in
@@ -191,6 +192,277 @@ export fn yabai_rule_set_flag(r: *Rule, flag: u16) void {
 export fn yabai_rule_clear_flag(r: *Rule, flag: u16) void {
     @setRuntimeSafety(false);
     r.flags &= ~flag;
+}
+
+pub const LAYER_AUTO: c_int = 0;
+pub const LAYER_BELOW: c_int = 3;
+pub const LAYER_NORMAL: c_int = 4;
+pub const LAYER_ABOVE: c_int = 5;
+
+comptime {
+    if (LAYER_AUTO != 0) @compileError("LAYER_AUTO drift");
+    if (LAYER_BELOW != 3) @compileError("LAYER_BELOW drift");
+    if (LAYER_NORMAL != 4) @compileError("LAYER_NORMAL drift");
+    if (LAYER_ABOVE != 5) @compileError("LAYER_ABOVE drift");
+}
+
+extern fn yabai_json_bool(value: bool) [*:0]const u8;
+extern fn yabai_json_optional_bool(value: c_int) [*:0]const u8;
+extern "c" fn snprintf(buf: [*]u8, n: usize, fmt: [*:0]const u8, ...) c_int;
+extern "c" fn fwrite(buf: *const anyopaque, size: usize, nmemb: usize, stream: ?*anyopaque) usize;
+
+fn strLenZ(s: [*:0]const u8) usize {
+    @setRuntimeSafety(false);
+    var len: usize = 0;
+    while (s[len] != 0) : (len += 1) {}
+    return len;
+}
+
+fn writeBytes(rsp: ?*anyopaque, s: []const u8) void {
+    @setRuntimeSafety(false);
+    const stream = rsp orelse return;
+    if (s.len == 0) return;
+    _ = fwrite(@ptrCast(s.ptr), 1, s.len, stream);
+}
+
+fn writeZ(rsp: ?*anyopaque, s: [*:0]const u8) void {
+    @setRuntimeSafety(false);
+    const stream = rsp orelse return;
+    const len = strLenZ(s);
+    if (len == 0) return;
+    _ = fwrite(@ptrCast(s), 1, len, stream);
+}
+
+fn writeInt(rsp: ?*anyopaque, v: c_int) void {
+    @setRuntimeSafety(false);
+    const stream = rsp orelse return;
+    var tmp: [32]u8 = undefined;
+    const n = snprintf(@ptrCast(&tmp), tmp.len, "%d", v);
+    if (n <= 0) return;
+    _ = fwrite(@ptrCast(&tmp), 1, @intCast(n), stream);
+}
+
+fn writeOpacity(rsp: ?*anyopaque, v: f32) void {
+    @setRuntimeSafety(false);
+    const stream = rsp orelse return;
+    var tmp: [512]u8 = undefined;
+    const d: f64 = v;
+    const n = snprintf(@ptrCast(&tmp), tmp.len, "%.4f", d);
+    if (n <= 0) return;
+    _ = fwrite(@ptrCast(&tmp), 1, @intCast(n), stream);
+}
+
+fn writeFlagsHex(rsp: ?*anyopaque, v: u32) void {
+    @setRuntimeSafety(false);
+    const stream = rsp orelse return;
+    var tmp: [32]u8 = undefined;
+    const u: c_uint = @intCast(v);
+    const n = snprintf(@ptrCast(&tmp), tmp.len, "0x%08x", u);
+    if (n <= 0) return;
+    _ = fwrite(@ptrCast(&tmp), 1, @intCast(n), stream);
+}
+
+fn writeGrid(rsp: ?*anyopaque, grid: [6]c_uint) void {
+    @setRuntimeSafety(false);
+    const stream = rsp orelse return;
+    var tmp: [256]u8 = undefined;
+    const g0: c_int = @intCast(grid[0]);
+    const g1: c_int = @intCast(grid[1]);
+    const g2: c_int = @intCast(grid[2]);
+    const g3: c_int = @intCast(grid[3]);
+    const g4: c_int = @intCast(grid[4]);
+    const g5: c_int = @intCast(grid[5]);
+    const n = snprintf(@ptrCast(&tmp), tmp.len, "%d:%d:%d:%d:%d:%d", g0, g1, g2, g3, g4, g5);
+    if (n <= 0) return;
+    _ = fwrite(@ptrCast(&tmp), 1, @intCast(n), stream);
+}
+
+fn layerStr(layer: c_int) [*:0]const u8 {
+    @setRuntimeSafety(false);
+    if (layer == LAYER_AUTO) return "auto";
+    if (layer == LAYER_BELOW) return "below";
+    if (layer == LAYER_NORMAL) return "normal";
+    if (layer == LAYER_ABOVE) return "above";
+    return "";
+}
+
+// Byte-identical port of ts_string_escape() in src/misc/helpers.h.
+// ts_alloc_unaligned() is a temp-storage bump allocator, not plain
+// malloc; the Zig port uses libc malloc for equivalent ownership here
+// (the serialize port frees these buffers, keeping the suite leak-clean)
+// and returns NULL when no replacements are needed, exactly like C.
+fn tsEscape(s: [*:0]const u8) ?[*:0]u8 {
+    @setRuntimeSafety(false);
+    var len: usize = 0;
+    var num_replacements: usize = 0;
+    while (s[len] != 0) {
+        const c = s[len];
+        if (c == '"' or c == '\\' or c == 0x08 or c == 0x0c or c == '\n' or c == '\r' or c == '\t') {
+            num_replacements += 1;
+        } else if (c <= 0x1f) {
+            num_replacements += 5;
+        }
+        len += 1;
+    }
+    if (num_replacements == 0) return null;
+    const total = len + num_replacements;
+    const mem = malloc(total + 1) orelse return null;
+    const out: [*]u8 = @ptrCast(mem);
+    var dst: usize = 0;
+    var i: usize = 0;
+    while (i < len) : (i += 1) {
+        const c = s[i];
+        if (c == '"') {
+            out[dst] = '\\';
+            dst += 1;
+            out[dst] = '"';
+            dst += 1;
+        } else if (c == '\\') {
+            out[dst] = '\\';
+            dst += 1;
+            out[dst] = '\\';
+            dst += 1;
+        } else if (c == 0x08) {
+            out[dst] = '\\';
+            dst += 1;
+            out[dst] = 'b';
+            dst += 1;
+        } else if (c == 0x0c) {
+            out[dst] = '\\';
+            dst += 1;
+            out[dst] = 'f';
+            dst += 1;
+        } else if (c == '\n') {
+            out[dst] = '\\';
+            dst += 1;
+            out[dst] = 'n';
+            dst += 1;
+        } else if (c == '\r') {
+            out[dst] = '\\';
+            dst += 1;
+            out[dst] = 'r';
+            dst += 1;
+        } else if (c == '\t') {
+            out[dst] = '\\';
+            dst += 1;
+            out[dst] = 't';
+            dst += 1;
+        } else if (c <= 0x1f) {
+            const hex = "0123456789abcdef";
+            out[dst] = '\\';
+            dst += 1;
+            out[dst] = 'u';
+            dst += 1;
+            out[dst] = '0';
+            dst += 1;
+            out[dst] = '0';
+            dst += 1;
+            out[dst] = hex[(c >> 4) & 0x0f];
+            dst += 1;
+            out[dst] = hex[c & 0x0f];
+            dst += 1;
+        } else {
+            out[dst] = c;
+            dst += 1;
+        }
+    }
+    out[dst] = 0;
+    return @ptrCast(mem);
+}
+
+export fn yabai_ts_string_escape(s: [*:0]const u8) ?[*:0]u8 {
+    @setRuntimeSafety(false);
+    return tsEscape(s);
+}
+
+// Byte-identical port of rule_serialize() in src/rule.c. The two
+// manager-derived indices are lifted in as did_index/sid_index (seam
+// pattern): C emits rule->effects.did ?
+// display_manager_display_id_arrangement(...) : 0 and the space
+// equivalent; Zig emits did_index/sid_index when did/sid are non-zero
+// and 0 otherwise. Label and scratchpad are raw (never escaped), exactly
+// like C. Numerics go through libc snprintf (%.4f, 0x%08x, %d) so float
+// rounding and hex padding match by construction; all emission uses
+// libc fwrite. json strings reuse yabai_json_bool/optional_bool.
+export fn yabai_rule_serialize(rsp: ?*anyopaque, rule: *const Rule, index: c_int, did_index: c_int, sid_index: c_int) void {
+    @setRuntimeSafety(false);
+    const app_src: [*:0]const u8 = if (rule.app) |p| @ptrCast(p) else "";
+    const title_src: [*:0]const u8 = if (rule.title) |p| @ptrCast(p) else "";
+    const role_src: [*:0]const u8 = if (rule.role) |p| @ptrCast(p) else "";
+    const subrole_src: [*:0]const u8 = if (rule.subrole) |p| @ptrCast(p) else "";
+    const esc_app = if (rule.app) |p| tsEscape(@ptrCast(p)) else null;
+    const esc_title = if (rule.title) |p| tsEscape(@ptrCast(p)) else null;
+    const esc_role = if (rule.role) |p| tsEscape(@ptrCast(p)) else null;
+    const esc_subrole = if (rule.subrole) |p| tsEscape(@ptrCast(p)) else null;
+    const app_out: [*:0]const u8 = if (esc_app) |e| e else app_src;
+    const title_out: [*:0]const u8 = if (esc_title) |e| e else title_src;
+    const role_out: [*:0]const u8 = if (esc_role) |e| e else role_src;
+    const subrole_out: [*:0]const u8 = if (esc_subrole) |e| e else subrole_src;
+    const label_out: [*:0]const u8 = if (rule.label) |p| @ptrCast(p) else "";
+    const scratch_out: [*:0]const u8 = if (rule.effects.scratchpad) |p| @ptrCast(p) else "";
+    const display: c_int = if (rule.effects.did != 0) did_index else 0;
+    const space: c_int = if (rule.effects.sid != 0) sid_index else 0;
+    const follow_out = yabai_json_bool((rule.effects.flags & RULE_FOLLOW_SPACE) != 0);
+    const manage_out = yabai_json_optional_bool(rule.effects.manage);
+    const sticky_out = yabai_json_optional_bool(rule.effects.sticky);
+    const mff_out = yabai_json_optional_bool(rule.effects.mff);
+    const layer_out: [*:0]const u8 = if ((rule.effects.flags & RULE_LAYER) != 0) layerStr(rule.effects.layer) else "";
+    const fullscreen_out = yabai_json_optional_bool(rule.effects.fullscreen);
+    const oneshot_out = yabai_json_bool((rule.flags & RULE_ONE_SHOT) != 0);
+    const flags_combined: u32 = (@as(u32, rule.effects.flags) << 16) | @as(u32, rule.flags);
+
+    const stream = rsp orelse {
+        if (esc_app) |e| free(@ptrCast(e));
+        if (esc_title) |e| free(@ptrCast(e));
+        if (esc_role) |e| free(@ptrCast(e));
+        if (esc_subrole) |e| free(@ptrCast(e));
+        return;
+    };
+
+    writeBytes(stream, "{\n\t\"index\":");
+    writeInt(stream, index);
+    writeBytes(stream, ",\n\t\"label\":\"");
+    writeZ(stream, label_out);
+    writeBytes(stream, "\",\n\t\"app\":\"");
+    writeZ(stream, app_out);
+    writeBytes(stream, "\",\n\t\"title\":\"");
+    writeZ(stream, title_out);
+    writeBytes(stream, "\",\n\t\"role\":\"");
+    writeZ(stream, role_out);
+    writeBytes(stream, "\",\n\t\"subrole\":\"");
+    writeZ(stream, subrole_out);
+    writeBytes(stream, "\",\n\t\"display\":");
+    writeInt(stream, display);
+    writeBytes(stream, ",\n\t\"space\":");
+    writeInt(stream, space);
+    writeBytes(stream, ",\n\t\"follow_space\":");
+    writeZ(stream, follow_out);
+    writeBytes(stream, ",\n\t\"opacity\":");
+    writeOpacity(stream, rule.effects.opacity);
+    writeBytes(stream, ",\n\t\"manage\":");
+    writeZ(stream, manage_out);
+    writeBytes(stream, ",\n\t\"sticky\":");
+    writeZ(stream, sticky_out);
+    writeBytes(stream, ",\n\t\"mouse_follows_focus\":");
+    writeZ(stream, mff_out);
+    writeBytes(stream, ",\n\t\"sub-layer\":\"");
+    writeZ(stream, layer_out);
+    writeBytes(stream, "\",\n\t\"native-fullscreen\":");
+    writeZ(stream, fullscreen_out);
+    writeBytes(stream, ",\n\t\"grid\":\"");
+    writeGrid(stream, rule.effects.grid);
+    writeBytes(stream, "\",\n\t\"scratchpad\":\"");
+    writeZ(stream, scratch_out);
+    writeBytes(stream, "\",\n\t\"one-shot\":");
+    writeZ(stream, oneshot_out);
+    writeBytes(stream, ",\n\t\"flags\":\"");
+    writeFlagsHex(stream, flags_combined);
+    writeBytes(stream, "\"\n}");
+
+    if (esc_app) |e| free(@ptrCast(e));
+    if (esc_title) |e| free(@ptrCast(e));
+    if (esc_role) |e| free(@ptrCast(e));
+    if (esc_subrole) |e| free(@ptrCast(e));
 }
 
 // Mirrors rule_destroy() in src/rule.c exactly: guarded regfree() on

@@ -142,6 +142,13 @@ unless doc/zig-refactor-plan.md explicitly allows a change.
   area/CGRect conversion, equalize, and balance composing the shared
   balance_node_add export. 83 exports in the fat daemon; x86_64
   slices verified.
+- Window-layer leaf (TDD): `yabai_window_layer` with lifted level
+  globals and LAYER_* pins; borrowed strings, no allocation.
+- Rule serialization (TDD): `yabai_ts_string_escape` (malloc'd
+  escapes, NULL when unneeded) and `yabai_rule_serialize` with
+  manager-derived indices lifted in, libc snprintf numerics, and
+  all escape buffers freed on every path. Whole-suite leaks gate
+  still 0 leaks. 86 exports in the fat daemon; x86_64 verified.
 - Pure-helper slice (TDD) in zig/util.zig: `balance_node_add`,
   `clampf_range` (incl. NaN bit-parity), `json_bool`,
   `json_optional_bool`, float+int `in_range_ii/ei/ie` for the exact

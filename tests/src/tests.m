@@ -67,6 +67,8 @@ typedef TEST_SIG(function);
     TEST_ENTRY(zig_rule_combine_scratchpad_props_grid)           \
     TEST_ENTRY(zig_rule_flag_parity)                             \
     TEST_ENTRY(zig_rule_destroy_parity)                          \
+    TEST_ENTRY(zig_ts_string_escape_parity)                      \
+    TEST_ENTRY(zig_rule_serialize_parity)                        \
     TEST_ENTRY(zig_window_resize_math)                           \
     TEST_ENTRY(zig_window_move_math)                             \
     TEST_ENTRY(zig_window_undersized_parity)                     \
