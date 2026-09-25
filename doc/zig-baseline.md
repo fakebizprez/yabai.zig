@@ -176,6 +176,10 @@ unless doc/zig-refactor-plan.md explicitly allows a change.
   fat slices, minos 11.0, plist section, frameworks, adhoc signing,
   OSAX/install/service unchanged; hardware-gated items listed as
   unverified. 96 exports; 62/62 tests; leaks 0; x86_64 verified.
+- View lifecycle (TDD): create/clear/destroy with a ViewDefaults seam
+  for the SLS/manager inputs; trailing view_updates omitted as proven
+  no-ops on zeroed roots; destroy calls live remove/feedback/CFRelease
+  exactly like C. 99 exports; 69/69 tests; leaks 0; x86_64 verified.
 - Pure-helper slice (TDD) in zig/util.zig: `balance_node_add`,
   `clampf_range` (incl. NaN bit-parity), `json_bool`,
   `json_optional_bool`, float+int `in_range_ii/ei/ie` for the exact

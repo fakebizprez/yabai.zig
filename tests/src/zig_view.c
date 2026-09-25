@@ -1342,6 +1342,8 @@ void yabai_window_node_clear_zoom(struct window_node *node);
 /* Pin the mirrored flag values (zig/view.zig VIEW_IS_VALID/DIRTY). */
 _Static_assert(VIEW_IS_VALID == 0x200, "VIEW_IS_VALID drift");
 _Static_assert(VIEW_IS_DIRTY == 0x400, "VIEW_IS_DIRTY drift");
+_Static_assert(VIEW_ENABLE_PADDING == 0x080, "VIEW_ENABLE_PADDING drift");
+_Static_assert(VIEW_FLOAT == 3, "VIEW_FLOAT drift");
 
 /* Builds an asymmetric fork: root -> (deep, shallow-leaf) when
  * deep_left is nonzero, root -> (shallow-leaf, deep) otherwise. The
@@ -1688,4 +1690,269 @@ TEST_FUNC(zig_view_find_window_list,
     free_test_tree(r, a, c, d, e);
 
     ts_reset();
+})
+
+/* View lifecycle parity: view_create() (src/view.c:973),
+ * view_clear() (view.c:1004), view_destroy() (view.c:1020) vs the Zig
+ * ports in zig/view.zig.
+ *
+ * Seams: the Zig create lifts the SLS-derived uuid and the
+ * g_space_manager defaults block as parameters (uuid + is_user +
+ * struct yabai_view_defaults), so the export only does
+ * malloc/memset/assign; the SLS-backed trailing view_update in create
+ * and clear stays with the caller. The C create/clear oracles cannot
+ * run headless (SLSSpaceCopyName aborts on g_connection == 0, probed
+ * in /tmp/vl_probe.m), so create/clear are pinned with hand vectors
+ * encoding C's exact field order and values, while destroy keeps full
+ * C-oracle parity (it only touches libc, the window table, and
+ * CFRelease, all headless-safe once the table below is initialized).
+ */
+
+struct yabai_view_defaults
+{
+    int layout;
+    int top_padding;
+    int bottom_padding;
+    int left_padding;
+    int right_padding;
+    int window_gap;
+    uint32_t auto_balance;
+    int split_type;
+};
+
+struct yabai_view *yabai_view_create(uint64_t sid, void *uuid, bool is_user, const struct yabai_view_defaults *defaults);
+void yabai_view_clear(struct yabai_view *view);
+void yabai_view_destroy(struct yabai_view *view);
+
+_Static_assert(sizeof(struct yabai_view_defaults) == 32, "view defaults size drift");
+
+/* Snapshots the live manager defaults the C user branch copies. */
+static void fill_view_defaults(struct yabai_view_defaults *d)
+{
+    d->layout = g_space_manager.layout;
+    d->top_padding = g_space_manager.top_padding;
+    d->bottom_padding = g_space_manager.bottom_padding;
+    d->left_padding = g_space_manager.left_padding;
+    d->right_padding = g_space_manager.right_padding;
+    d->window_gap = g_space_manager.window_gap;
+    d->auto_balance = g_space_manager.auto_balance;
+    d->split_type = g_space_manager.split_type;
+}
+
+/* The destroy/clear remove path needs a live managed_window table
+ * (a zeroed table would divide by zero in table_get_bucket). Mirrors
+ * the daemon init in window_manager.c:2737 exactly. */
+static unsigned long test_hash_wm(void *key)
+{
+    return *(uint32_t *) key;
+}
+
+static int test_compare_wm(void *key_a, void *key_b)
+{
+    return *(uint32_t *) key_a == *(uint32_t *) key_b;
+}
+
+static void ensure_managed_table(void)
+{
+    static bool ready = false;
+    if (!ready) {
+        table_init(&g_window_manager.managed_window, 150, test_hash_wm, test_compare_wm);
+        ready = true;
+    }
+}
+
+TEST_FUNC(zig_view_lifecycle_create,
+{
+    struct yabai_view_defaults d;
+    fill_view_defaults(&d);
+    uint64_t sid = 424242;
+
+    /* User branch: malloc/memset/assign of every C field in order.
+     * No view_update runs here (SLS aborts headless; the caller owns
+     * the refresh), so VALID/DIRTY stay clear and the root is zeroed. */
+    struct yabai_view *z = yabai_view_create(sid, NULL, true, &d);
+    TEST_CHECK(z != NULL, 1);
+    if (z) {
+        TEST_CHECK(z->uuid, NULL);
+        TEST_CHECK(z->sid != sid, 0);
+        TEST_CHECK(z->root != NULL, 1);
+        TEST_CHECK(z->insertion_point, 0);
+        TEST_CHECK(z->layout != d.layout, 0);
+        TEST_CHECK(z->top_padding != d.top_padding, 0);
+        TEST_CHECK(z->bottom_padding != d.bottom_padding, 0);
+        TEST_CHECK(z->left_padding != d.left_padding, 0);
+        TEST_CHECK(z->right_padding != d.right_padding, 0);
+        TEST_CHECK(z->window_gap != d.window_gap, 0);
+        TEST_CHECK(z->auto_balance != d.auto_balance, 0);
+        TEST_CHECK(z->split_type != d.split_type, 0);
+        TEST_CHECK(z->flags, (uint64_t)(VIEW_ENABLE_PADDING | VIEW_ENABLE_GAP));
+        struct window_node zero;
+        memset(&zero, 0, sizeof(zero));
+        TEST_CHECK(memcmp(z->root, &zero, sizeof(zero)), 0);
+        yabai_view_destroy(z);
+        free(z);
+    }
+
+    /* Non-NULL uuid assigns verbatim and releases on destroy: the +1
+     * here is balanced by the destroy path (leaks-clean under -atExit). */
+    CFStringRef owned = CFStringCreateWithCString(NULL, "yabai-test-uuid", kCFStringEncodingUTF8);
+    TEST_CHECK(owned != NULL, 1);
+    struct yabai_view *zu = yabai_view_create(sid, (void *) owned, true, &d);
+    TEST_CHECK(zu != NULL, 1);
+    if (zu) {
+        TEST_CHECK(zu->uuid != (void *) owned, 0);
+        TEST_CHECK(zu->sid != sid, 0);
+        TEST_CHECK(zu->layout != d.layout, 0);
+        yabai_view_destroy(zu);
+        free(zu);
+    } else if (owned) {
+        CFRelease(owned);
+    }
+
+    /* Non-user branch pins VIEW_FLOAT with zeroed tunables. */
+    struct yabai_view *zf = yabai_view_create(sid, NULL, false, &d);
+    TEST_CHECK(zf != NULL, 1);
+    if (zf) {
+        TEST_CHECK(zf->uuid, NULL);
+        TEST_CHECK(zf->sid != sid, 0);
+        TEST_CHECK(zf->root != NULL, 1);
+        TEST_CHECK(zf->insertion_point, 0);
+        TEST_CHECK(zf->layout, VIEW_FLOAT);
+        TEST_CHECK(zf->top_padding, 0);
+        TEST_CHECK(zf->bottom_padding, 0);
+        TEST_CHECK(zf->left_padding, 0);
+        TEST_CHECK(zf->right_padding, 0);
+        TEST_CHECK(zf->window_gap, 0);
+        TEST_CHECK(zf->auto_balance, 0);
+        TEST_CHECK(zf->split_type, 0);
+        TEST_CHECK(zf->flags, (uint64_t)(VIEW_ENABLE_PADDING | VIEW_ENABLE_GAP));
+        yabai_view_destroy(zf);
+        free(zf);
+    }
+})
+
+/* Grafts an identical populated fork onto a fresh root: the root holds
+ * two windows, each child holds its own list. Feedback ids stay 0 so
+ * the feedback destroy is a headless no-op on both sides. */
+static void graft_clear_tree(struct window_node *root, uint32_t base)
+{
+    struct window_node *l = make_test_node();
+    struct window_node *r = make_test_node();
+    l->parent = root;
+    r->parent = root;
+    root->left = l;
+    root->right = r;
+    l->window_list[0] = base;
+    l->window_list[1] = base + 1;
+    l->window_count = 2;
+    r->window_list[0] = base + 2;
+    r->window_count = 1;
+    root->window_list[0] = base + 3;
+    root->window_list[1] = base + 4;
+    root->window_count = 2;
+}
+
+TEST_FUNC(zig_view_lifecycle_clear,
+{
+    ensure_managed_table();
+    struct yabai_view_defaults d;
+    fill_view_defaults(&d);
+    uint64_t sid = 434343;
+
+    struct yabai_view *z = yabai_view_create(sid, NULL, true, &d);
+    graft_clear_tree(z->root, 50);
+    yabai_view_clear(z);
+
+    /* Cleared shape: children dropped, root zeroed for reuse,
+     * view scalars untouched. */
+    struct window_node zero;
+    memset(&zero, 0, sizeof(zero));
+    TEST_CHECK(memcmp(z->root, &zero, sizeof(zero)), 0);
+    TEST_CHECK(z->sid != sid, 0);
+    TEST_CHECK(z->layout != d.layout, 0);
+    TEST_CHECK(z->top_padding != d.top_padding, 0);
+    TEST_CHECK(z->window_gap != d.window_gap, 0);
+    TEST_CHECK(z->flags, (uint64_t)(VIEW_ENABLE_PADDING | VIEW_ENABLE_GAP));
+
+    /* Reuse after clear: stack onto the zeroed root, then clear again. */
+    yabai_view_stack_window(z->root, 77);
+    TEST_CHECK(z->root->window_count, 1);
+    TEST_CHECK(z->root->window_list[0], 77);
+    TEST_CHECK(z->root->window_order[0], 77);
+    yabai_view_clear(z);
+    TEST_CHECK(memcmp(z->root, &zero, sizeof(zero)), 0);
+    TEST_CHECK(z->root->window_count, 0);
+
+    /* NULL-root clear is a no-op. */
+    struct yabai_view *zn = malloc(sizeof(struct yabai_view));
+    memset(zn, 0, sizeof(struct yabai_view));
+    yabai_view_clear(zn);
+    TEST_CHECK(zn->root, NULL);
+    free(zn);
+
+    yabai_view_destroy(z);
+    free(z);
+})
+
+TEST_FUNC(zig_view_lifecycle_destroy,
+{
+    ensure_managed_table();
+    struct yabai_view_defaults d;
+    fill_view_defaults(&d);
+    uint64_t sid = 444444;
+
+    /* Full oracle parity: both sides destroy the same populated shape.
+     * The C views are built manually because view_create itself needs
+     * SLS; destroy only reads root/uuid, so the shape is faithful. */
+    struct view *c = malloc(sizeof(struct view));
+    memset(c, 0, sizeof(struct view));
+    c->sid = sid;
+    c->root = make_test_node();
+    graft_clear_tree(c->root, 60);
+    view_destroy(c);
+    free(c);
+
+    struct yabai_view *z = yabai_view_create(sid, NULL, true, &d);
+    graft_clear_tree(z->root, 60);
+    yabai_view_destroy(z);
+    free(z);
+
+    /* Owned uuids release exactly once on both sides. */
+    struct view *cu = malloc(sizeof(struct view));
+    memset(cu, 0, sizeof(struct view));
+    cu->root = make_test_node();
+    cu->uuid = CFStringCreateWithCString(NULL, "yabai-c-uuid", kCFStringEncodingUTF8);
+    view_destroy(cu);
+    free(cu);
+
+    struct yabai_view *zu = yabai_view_create(sid, CFStringCreateWithCString(NULL, "yabai-z-uuid", kCFStringEncodingUTF8), true, &d);
+    yabai_view_destroy(zu);
+    free(zu);
+
+    /* NULL root / NULL uuid edges. */
+    struct view *cn = malloc(sizeof(struct view));
+    memset(cn, 0, sizeof(struct view));
+    view_destroy(cn);
+    free(cn);
+    struct yabai_view *zn = malloc(sizeof(struct yabai_view));
+    memset(zn, 0, sizeof(struct yabai_view));
+    yabai_view_destroy(zn);
+    free(zn);
+
+    /* Repeated create/destroy cycles stay clean (checked under
+     * leaks -atExit): every malloc finds its free. */
+    int i = 0;
+    for (i = 0; i < 50; ++i) {
+        struct view *cv = malloc(sizeof(struct view));
+        memset(cv, 0, sizeof(struct view));
+        cv->sid = sid;
+        cv->root = make_test_node();
+        graft_clear_tree(cv->root, (uint32_t)(100 + i));
+        view_destroy(cv);
+        free(cv);
+        struct yabai_view *zv = yabai_view_create(sid, NULL, true, &d);
+        graft_clear_tree(zv->root, (uint32_t)(100 + i));
+        yabai_view_destroy(zv);
+        free(zv);
+    }
 })
