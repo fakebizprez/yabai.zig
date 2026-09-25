@@ -43,6 +43,7 @@ typedef TEST_SIG(function);
     TEST_ENTRY(zig_message_parse_property)                       \
     TEST_ENTRY(zig_message_parse_properties)                     \
     TEST_ENTRY(zig_message_parse_label)                          \
+    TEST_ENTRY(zig_message_parse_insert_selector)                \
     TEST_ENTRY(zig_message_key_value)                            \
     TEST_ENTRY(zig_message_named_consts)                         \
     TEST_ENTRY(zig_view_leaf_walk)                               \
@@ -56,6 +57,9 @@ typedef TEST_SIG(function);
     TEST_ENTRY(zig_view_area_convert)                               \
     TEST_ENTRY(zig_view_equalize)                                   \
     TEST_ENTRY(zig_view_balance)                                   \
+    TEST_ENTRY(zig_view_area_pair_for_node)                      \
+    TEST_ENTRY(zig_view_node_split)                              \
+    TEST_ENTRY(zig_view_swap_window_list)                        \
     TEST_ENTRY(zig_util_balance_clamp)                           \
     TEST_ENTRY(zig_util_json_bool)                               \
     TEST_ENTRY(zig_util_in_range)                                \

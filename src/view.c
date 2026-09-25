@@ -3,6 +3,10 @@ extern struct display_manager g_display_manager;
 extern struct space_manager g_space_manager;
 extern struct window_manager g_window_manager;
 
+/* Zig delegate (zig/view.zig): parity-proven equivalent of the swap
+ * below. Signature in src/view.h is unchanged. */
+void yabai_window_node_swap_window_list(struct window_node *a_node, struct window_node *b_node);
+
 #define INSERT_FEEDBACK_WIDTH 2
 #define INSERT_FEEDBACK_RADIUS 9
 void insert_feedback_show(struct window_node *node)
@@ -398,24 +402,7 @@ int window_node_index_of_window(struct window_node *node, uint32_t window_id)
 
 void window_node_swap_window_list(struct window_node *a_node, struct window_node *b_node)
 {
-    uint32_t tmp_window_list[NODE_MAX_WINDOW_COUNT];
-    uint32_t tmp_window_order[NODE_MAX_WINDOW_COUNT];
-    uint32_t tmp_window_count;
-
-    memcpy(tmp_window_list, a_node->window_list, sizeof(uint32_t) * a_node->window_count);
-    memcpy(tmp_window_order, a_node->window_order, sizeof(uint32_t) * a_node->window_count);
-    tmp_window_count = a_node->window_count;
-
-    memcpy(a_node->window_list, b_node->window_list, sizeof(uint32_t) * b_node->window_count);
-    memcpy(a_node->window_order, b_node->window_order, sizeof(uint32_t) * b_node->window_count);
-    a_node->window_count = b_node->window_count;
-
-    memcpy(b_node->window_list, tmp_window_list, sizeof(uint32_t) * tmp_window_count);
-    memcpy(b_node->window_order, tmp_window_order, sizeof(uint32_t) * tmp_window_count);
-    b_node->window_count = tmp_window_count;
-
-    a_node->zoom = NULL;
-    b_node->zoom = NULL;
+    yabai_window_node_swap_window_list(a_node, b_node);
 }
 
 struct window_node *window_node_find_first_leaf(struct window_node *root)

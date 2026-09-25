@@ -40,6 +40,26 @@ bool yabai_parse_property(struct yabai_properties *properties, char *property, c
 void yabai_parse_properties(FILE *rsp, const struct token *token, const uint64_t *property_val, char **property_str, int property_count, struct yabai_properties *out);
 bool yabai_parse_label(FILE *rsp, const struct token *token, int type, char **label);
 
+struct yabai_selector
+{
+    struct token token;
+    bool did_parse;
+    uint64_t payload;
+};
+
+void yabai_parse_insert_selector(FILE *rsp, char **message, struct yabai_selector *out);
+
+_Static_assert(sizeof(struct selector) == 32, "C selector size drift");
+_Static_assert(sizeof(struct yabai_selector) == 32, "yabai selector size drift");
+_Static_assert(offsetof(struct selector, did_parse) == 16, "C selector.did_parse drift");
+_Static_assert(offsetof(struct selector, dir) == 24, "C selector.dir drift");
+_Static_assert(offsetof(struct yabai_selector, payload) == 24, "yabai selector.payload drift");
+_Static_assert(DIR_NORTH == 360, "DIR_NORTH drift");
+_Static_assert(DIR_EAST == 90, "DIR_EAST drift");
+_Static_assert(DIR_SOUTH == 180, "DIR_SOUTH drift");
+_Static_assert(DIR_WEST == 270, "DIR_WEST drift");
+_Static_assert(STACK == 111, "STACK drift");
+
 _Static_assert(sizeof(struct properties) == 32, "C properties size drift");
 _Static_assert(sizeof(struct yabai_properties) == 32, "properties size drift");
 _Static_assert(offsetof(struct properties, flags) == 24, "C properties.flags drift");
@@ -773,4 +793,162 @@ TEST_FUNC(zig_message_named_consts,
         TEST_CHECK(c != resize_handle_cases[i].expected, 0);
         TEST_CHECK(c != z, 0);
     }
+})
+
+/* C-vs-Zig parity for parse_insert_selector() (src/message.c:1130):
+ * struct fields, message-cursor advance, and byte-identical
+ * daemon_fail emission captured via open_memstream. Must FAIL against
+ * the stubbed Zig export (TDD red) and pass on the real one (green). */
+static int insert_parity_case(char *input)
+{
+    char c_buf[128];
+    char z_buf[128];
+    size_t len = strlen(input);
+    if (len + 2 > sizeof(c_buf)) return 0;
+    memcpy(c_buf, input, len + 1);
+    c_buf[len + 1] = '\0';
+    memcpy(z_buf, input, len + 1);
+    z_buf[len + 1] = '\0';
+
+    char *c_cur = c_buf;
+    char *z_cur = z_buf;
+
+    char *c_msg = NULL;
+    char *z_msg = NULL;
+    size_t c_mlen = 0;
+    size_t z_mlen = 0;
+    FILE *c_rsp = open_memstream(&c_msg, &c_mlen);
+    FILE *z_rsp = open_memstream(&z_msg, &z_mlen);
+    if (!c_rsp || !z_rsp) return 0;
+
+    struct selector c_sel = parse_insert_selector(c_rsp, &c_cur);
+    struct yabai_selector z_sel;
+    memset(&z_sel, 0, sizeof(z_sel));
+    yabai_parse_insert_selector(z_rsp, &z_cur, &z_sel);
+
+    fflush(c_rsp);
+    fflush(z_rsp);
+    fclose(c_rsp);
+    fclose(z_rsp);
+
+    int ok = 1;
+    if (c_sel.did_parse != z_sel.did_parse) ok = 0;
+    if (c_sel.token.length != z_sel.token.length) ok = 0;
+    if (c_sel.token.length > 0 && c_sel.token.length == z_sel.token.length) {
+        if (!c_sel.token.text || !z_sel.token.text) ok = 0;
+        else if (memcmp(c_sel.token.text, z_sel.token.text, c_sel.token.length) != 0) ok = 0;
+    }
+    if ((c_cur - c_buf) != (z_cur - z_buf)) ok = 0;
+    if (c_sel.did_parse) {
+        if (c_sel.dir != (int) z_sel.payload) ok = 0;
+        if ((z_sel.payload >> 32) != 0) ok = 0;
+    } else {
+        if (z_sel.payload != 0) ok = 0;
+    }
+    if (c_mlen != z_mlen) ok = 0;
+    else if (c_mlen > 0 && memcmp(c_msg, z_msg, c_mlen) != 0) ok = 0;
+
+    free(c_msg);
+    free(z_msg);
+    return ok;
+}
+
+TEST_FUNC(zig_message_parse_insert_selector,
+{
+    TEST_CHECK(insert_parity_case("north"), 1);
+    TEST_CHECK(insert_parity_case("east"), 1);
+    TEST_CHECK(insert_parity_case("south"), 1);
+    TEST_CHECK(insert_parity_case("west"), 1);
+    TEST_CHECK(insert_parity_case("stack"), 1);
+
+    TEST_CHECK(insert_parity_case("bogus"), 1);
+    TEST_CHECK(insert_parity_case("NORTH"), 1);
+    TEST_CHECK(insert_parity_case("northx"), 1);
+    TEST_CHECK(insert_parity_case("stack."), 1);
+    TEST_CHECK(insert_parity_case("0"), 1);
+    TEST_CHECK(insert_parity_case(""), 1);
+
+    /* NULL stream: same struct result as C, no emission, no crash. */
+    char c_null[64];
+    char z_null[64];
+    memcpy(c_null, "north", 6);
+    c_null[6] = '\0';
+    memcpy(z_null, "north", 6);
+    z_null[6] = '\0';
+    char *c_ncur = c_null;
+    char *z_ncur = z_null;
+    struct selector c_np = parse_insert_selector(NULL, &c_ncur);
+    struct yabai_selector z_np;
+    memset(&z_np, 0, sizeof(z_np));
+    yabai_parse_insert_selector(NULL, &z_ncur, &z_np);
+    TEST_CHECK(c_np.did_parse != z_np.did_parse, 0);
+    TEST_CHECK(c_np.dir != (int) z_np.payload, 0);
+    TEST_CHECK((c_ncur - c_null) != (z_ncur - z_null), 0);
+
+    memcpy(c_null, "bogus", 6);
+    c_null[6] = '\0';
+    memcpy(z_null, "bogus", 6);
+    z_null[6] = '\0';
+    c_ncur = c_null;
+    z_ncur = z_null;
+    c_np = parse_insert_selector(NULL, &c_ncur);
+    memset(&z_np, 0, sizeof(z_np));
+    yabai_parse_insert_selector(NULL, &z_ncur, &z_np);
+    TEST_CHECK(c_np.did_parse != z_np.did_parse, 0);
+    TEST_CHECK(z_np.payload, 0);
+    TEST_CHECK((c_ncur - c_null) != (z_ncur - z_null), 0);
+
+    /* Hand-pinned dir values. */
+    char vbuf[64];
+    memcpy(vbuf, "north", 6);
+    vbuf[6] = '\0';
+    char *vcur = vbuf;
+    struct yabai_selector vsel;
+    memset(&vsel, 0, sizeof(vsel));
+    yabai_parse_insert_selector(NULL, &vcur, &vsel);
+    TEST_CHECK(vsel.did_parse, true);
+    TEST_CHECK(vsel.payload, (uint64_t) DIR_NORTH);
+
+    memcpy(vbuf, "stack", 6);
+    vbuf[6] = '\0';
+    vcur = vbuf;
+    memset(&vsel, 0, sizeof(vsel));
+    yabai_parse_insert_selector(NULL, &vcur, &vsel);
+    TEST_CHECK(vsel.did_parse, true);
+    TEST_CHECK(vsel.payload, (uint64_t) STACK);
+
+    /* Hand-pinned error bytes, Zig side only. */
+    char hbuf[64];
+    memcpy(hbuf, "bogus", 6);
+    hbuf[6] = '\0';
+    char *hcur = hbuf;
+    char *hmsg = NULL;
+    size_t hlen = 0;
+    FILE *hrsp = open_memstream(&hmsg, &hlen);
+    struct yabai_selector hz;
+    memset(&hz, 0, sizeof(hz));
+    yabai_parse_insert_selector(hrsp, &hcur, &hz);
+    fflush(hrsp);
+    fclose(hrsp);
+    TEST_CHECK(hz.did_parse, false);
+    TEST_CHECK(hz.payload, 0);
+    TEST_CHECK(hlen, strlen("\x07value 'bogus' is not a valid option for DIR_SEL\n"));
+    if (hlen > 0) TEST_CHECK(memcmp(hmsg, "\x07value 'bogus' is not a valid option for DIR_SEL\n", hlen), 0);
+    free(hmsg);
+
+    memcpy(hbuf, "", 1);
+    hbuf[1] = '\0';
+    hcur = hbuf;
+    hmsg = NULL;
+    hlen = 0;
+    hrsp = open_memstream(&hmsg, &hlen);
+    memset(&hz, 0, sizeof(hz));
+    yabai_parse_insert_selector(hrsp, &hcur, &hz);
+    fflush(hrsp);
+    fclose(hrsp);
+    TEST_CHECK(hz.did_parse, false);
+    TEST_CHECK(hz.payload, 0);
+    TEST_CHECK(hlen, strlen("\x07value '' is not a valid option for DIR_SEL\n"));
+    if (hlen > 0) TEST_CHECK(memcmp(hmsg, "\x07value '' is not a valid option for DIR_SEL\n", hlen), 0);
+    free(hmsg);
 })

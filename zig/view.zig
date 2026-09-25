@@ -414,3 +414,99 @@ export fn yabai_window_node_balance(node: *WindowNode, axis_flag: u32, out: *Bal
     @setRuntimeSafety(false);
     out.* = balanceInner(node, axis_flag);
 }
+
+// Shared pair geometry in zig/geometry.zig (extern pattern, like
+// yabai_balance_node_add): the split seam below reuses it instead of
+// duplicating the float-to-int rounding.
+extern fn yabai_area_make_pair(split: c_int, gap: c_int, ratio: f32, parent: *const Area, left: *Area, right: *Area) void;
+
+extern "c" fn malloc(size: usize) ?[*]u8;
+
+// Mirrors area_make_pair_for_node(): resolves split/ratio/gap through
+// the already-ported get_split/get_ratio/get_gap helpers (the space
+// split_type/split_ratio arrive lifted in), fans the area out through
+// the shared yabai_area_make_pair, and writes the resolved values back.
+export fn yabai_area_make_pair_for_node(view: *const View, node: *WindowNode, space_split_type: c_int, space_split_ratio: f32) void {
+    @setRuntimeSafety(false);
+    const split = yabai_window_node_get_split(view, node, space_split_type);
+    const ratio = yabai_window_node_get_ratio(node, space_split_ratio);
+    const gap = yabai_window_node_get_gap(view);
+    const left = node.left orelse unreachable;
+    const right = node.right orelse unreachable;
+    yabai_area_make_pair(split, gap, ratio, &node.area, &left.area, &right.area);
+    node.split = split;
+    node.ratio = ratio;
+}
+
+// Mirrors window_node_split(): two zeroed libc mallocs for the children,
+// zoom carried per window_zoom_persist (own node when the zoom was the
+// parent, else the view root), the existing windows kept on the placed
+// side (window_placement lifted in), the fresh window id alone on the
+// other side, then the area pair resolved as above.
+export fn yabai_window_node_split(view: *const View, node: *WindowNode, window_id: u32, window_zoom_persist: bool, window_placement: c_int, space_split_type: c_int, space_split_ratio: f32) void {
+    @setRuntimeSafety(false);
+    const left_mem = malloc(@sizeOf(WindowNode)) orelse unreachable;
+    const right_mem = malloc(@sizeOf(WindowNode)) orelse unreachable;
+    const left: *WindowNode = @ptrCast(@alignCast(left_mem));
+    const right: *WindowNode = @ptrCast(@alignCast(right_mem));
+    left.* = std.mem.zeroes(WindowNode);
+    right.* = std.mem.zeroes(WindowNode);
+
+    const zoom: ?*WindowNode = if (!window_zoom_persist) null else if (node.zoom == null) null else if (node.zoom == node.parent) node else view.root;
+
+    const count: usize = @intCast(node.window_count);
+    if (yabai_window_node_get_child(node, window_placement) == CHILD_SECOND) {
+        @memcpy(left.window_list[0..count], node.window_list[0..count]);
+        @memcpy(left.window_order[0..count], node.window_order[0..count]);
+        left.window_count = node.window_count;
+        left.zoom = zoom;
+
+        right.window_list[0] = window_id;
+        right.window_order[0] = window_id;
+        right.window_count = 1;
+    } else {
+        @memcpy(right.window_list[0..count], node.window_list[0..count]);
+        @memcpy(right.window_order[0..count], node.window_order[0..count]);
+        right.window_count = node.window_count;
+        right.zoom = zoom;
+
+        left.window_list[0] = window_id;
+        left.window_order[0] = window_id;
+        left.window_count = 1;
+    }
+
+    left.parent = node;
+    right.parent = node;
+
+    node.window_count = 0;
+    node.left = left;
+    node.right = right;
+    node.zoom = null;
+
+    yabai_area_make_pair_for_node(view, node, space_split_type, space_split_ratio);
+}
+
+// Mirrors window_node_swap_window_list(): exchanges both lists, both
+// orders, and the counts, then clears both zooms.
+export fn yabai_window_node_swap_window_list(a_node: *WindowNode, b_node: *WindowNode) void {
+    @setRuntimeSafety(false);
+    var tmp_list: [32]u32 = undefined;
+    var tmp_order: [32]u32 = undefined;
+    const a_count: usize = @intCast(a_node.window_count);
+    const b_count: usize = @intCast(b_node.window_count);
+    @memcpy(tmp_list[0..a_count], a_node.window_list[0..a_count]);
+    @memcpy(tmp_order[0..a_count], a_node.window_order[0..a_count]);
+    const tmp_count = a_node.window_count;
+
+    @memcpy(a_node.window_list[0..b_count], b_node.window_list[0..b_count]);
+    @memcpy(a_node.window_order[0..b_count], b_node.window_order[0..b_count]);
+    a_node.window_count = b_node.window_count;
+
+    const n: usize = @intCast(tmp_count);
+    @memcpy(b_node.window_list[0..n], tmp_list[0..n]);
+    @memcpy(b_node.window_order[0..n], tmp_order[0..n]);
+    b_node.window_count = tmp_count;
+
+    a_node.zoom = null;
+    b_node.zoom = null;
+}
