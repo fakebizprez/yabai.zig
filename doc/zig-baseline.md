@@ -105,6 +105,16 @@ unless doc/zig-refactor-plan.md explicitly allows a change.
   32-byte Properties mirror (offset-asserted), accumulation
   semantics, and case-sensitivity pins. 40 exports in the fat
   daemon; x86_64 slice verified.
+- Property-list driver (TDD): `yabai_parse_properties` ports the
+  comma-splitting loop with in-place NUL writes, flag accumulation,
+  and byte-identical daemon_fail emission via fwrite (no varargs
+  ABI). Parity-tested over 13 vectors plus a NULL-stream case and
+  hand-pinned 0x07 error bytes captured via open_memstream.
+- Window-pure slice (TDD): `yabai_window_is_undersized` (f64 frame
+  check vs 500.0), `yabai_window_can_move` /
+  `yabai_window_can_resize` (exhaustive over the full u8 flag byte
+  against the C oracle on a real struct window, incl. NaN width).
+  68 exports in the fat daemon; x86_64 slices verified.
 - Pure-helper slice (TDD) in zig/util.zig: `balance_node_add`,
   `clampf_range` (incl. NaN bit-parity), `json_bool`,
   `json_optional_bool`, float+int `in_range_ii/ei/ie` for the exact

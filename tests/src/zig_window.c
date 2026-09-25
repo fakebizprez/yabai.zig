@@ -11,6 +11,12 @@
 
 void yabai_resize_frame_math(const CGRect *frame, int direction, float dx, float dy, float *fx, float *fy, float *fw, float *fh);
 void yabai_move_frame_math(const CGRect *frame, int type, float dx, float dy, float *x, float *y, float *w, float *h);
+bool yabai_window_is_undersized(double w, double h);
+bool yabai_window_can_move(uint8_t flags);
+bool yabai_window_can_resize(uint8_t flags);
+
+_Static_assert(WINDOW_MOVABLE == 0x40, "WINDOW_MOVABLE drift");
+_Static_assert(WINDOW_RESIZABLE == 0x80, "WINDOW_RESIZABLE drift");
 
 _Static_assert(sizeof(CGRect) == 32, "CGRect size drift");
 
@@ -145,4 +151,93 @@ TEST_FUNC(zig_window_move_math,
         TEST_CHECK(c_w == move_cases[i].ew, 1);
         TEST_CHECK(c_h == move_cases[i].eh, 1);
     }
+})
+
+/* window_is_undersized() in src/window.c: pure frame-size check.
+ * The Zig export takes the two doubles directly (CGRect uses doubles;
+ * the 500.0f bound promotes to exactly 500.0). The C function on a
+ * real struct window is the oracle; hand-computed pins guard the seam. */
+
+struct undersized_case
+{
+    double w;
+    double h;
+    bool expected;
+};
+
+static struct undersized_case undersized_cases[] =
+{
+    { 800, 600, false },
+    { 100, 100, true },
+    { 500, 600, true },
+    { 500, 500, true },
+    { 501, 501, false },
+    { 501, 600, false },
+    { 800, 500, true },
+    { 0, 0, true },
+    { -10, 600, true },
+    { 1e9, 1e9, false },
+};
+
+TEST_FUNC(zig_window_undersized_parity,
+{
+    int count = array_count(undersized_cases);
+    int i = 0;
+    for (i = 0; i < count; ++i) {
+        struct window window;
+        memset(&window, 0, sizeof(window));
+        window.frame.size.width = undersized_cases[i].w;
+        window.frame.size.height = undersized_cases[i].h;
+
+        bool c = window_is_undersized(&window);
+        bool z = yabai_window_is_undersized(undersized_cases[i].w, undersized_cases[i].h);
+
+        TEST_CHECK(c != z, 0);
+        TEST_CHECK(c != undersized_cases[i].expected, 0);
+    }
+
+    /* NaN width: NaN <= 500.0f is false, so with a large height the
+     * window is not undersized in either implementation. */
+    float nan_v = strtof("nan", NULL);
+    struct window nan_window;
+    memset(&nan_window, 0, sizeof(nan_window));
+    nan_window.frame.size.width = nan_v;
+    nan_window.frame.size.height = 600;
+    bool c_nan = window_is_undersized(&nan_window);
+    bool z_nan = yabai_window_is_undersized(nan_v, 600);
+    TEST_CHECK(c_nan != z_nan, 0);
+    TEST_CHECK(c_nan, false);
+})
+
+/* window_can_move() / window_can_resize() in src/window.c: pure flag
+ * reads (flags & WINDOW_MOVABLE / WINDOW_RESIZABLE). Exhaustive over
+ * the full uint8 flag byte against the C oracle on a real struct. */
+
+TEST_FUNC(zig_window_flag_parity,
+{
+    unsigned f = 0;
+    for (f = 0; f < 0x100; ++f) {
+        struct window window;
+        memset(&window, 0, sizeof(window));
+        window.flags = (uint8_t) f;
+
+        bool c_move = window_can_move(&window);
+        bool z_move = yabai_window_can_move((uint8_t) f);
+        TEST_CHECK(c_move != z_move, 0);
+
+        bool c_resize = window_can_resize(&window);
+        bool z_resize = yabai_window_can_resize((uint8_t) f);
+        TEST_CHECK(c_resize != z_resize, 0);
+    }
+
+    TEST_CHECK(yabai_window_can_move(0x00), false);
+    TEST_CHECK(yabai_window_can_resize(0x00), false);
+    TEST_CHECK(yabai_window_can_move(0x40), true);
+    TEST_CHECK(yabai_window_can_resize(0x40), false);
+    TEST_CHECK(yabai_window_can_move(0x80), false);
+    TEST_CHECK(yabai_window_can_resize(0x80), true);
+    TEST_CHECK(yabai_window_can_move(0xC0), true);
+    TEST_CHECK(yabai_window_can_resize(0xC0), true);
+    TEST_CHECK(yabai_window_can_move(0xFF), true);
+    TEST_CHECK(yabai_window_can_resize(0xFF), true);
 })
