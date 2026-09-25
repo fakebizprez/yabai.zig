@@ -9,7 +9,9 @@ ASSET_PATH     = ./assets
 SMP_PATH       = ./examples
 ARCH_PATH      = ./archive
 OSAX_SRC       = ./src/osax/payload_bin.c ./src/osax/loader_bin.c
-YABAI_SRC      = ./src/manifest.m $(OSAX_SRC)
+ZIG_SRC        = ./zig/geometry.zig ./zig/message.zig
+ZIG_OBJ        = ./zig/zig-geometry.o ./zig/zig-message.o
+YABAI_SRC      = ./src/manifest.m $(OSAX_SRC) $(ZIG_OBJ)
 OSAX_PATH      = ./src/osax
 INFO_PLIST     = $(ASSET_PATH)/Info.plist
 BINS           = $(BUILD_PATH)/yabai
@@ -62,6 +64,10 @@ clean-build:
 
 clean: clean-build
 	rm -f $(OSAX_SRC)
+	rm -rf ./zig/bin ./zig/zig-*.o
+
+$(ZIG_OBJ): $(ZIG_SRC) ./zig/build.sh ./zig/ZIG_VERSION
+	./zig/build.sh
 
 $(BUILD_PATH)/yabai: $(YABAI_SRC)
 	mkdir -p $(BUILD_PATH)
