@@ -699,3 +699,216 @@ export fn yabai_view_destroy(view: *View) void {
     if (view.root) |r| destroyNode(r);
     if (view.uuid) |u| CFRelease(u);
 }
+
+// Mirrored SPACE_PROPERTY_* bits (src/view.h) and the layout enum order
+// behind view_type_str ("default", "bsp", "stack", "float").
+pub const SPACE_PROPERTY_ID: u64 = 0x001;
+pub const SPACE_PROPERTY_UUID: u64 = 0x002;
+pub const SPACE_PROPERTY_INDEX: u64 = 0x004;
+pub const SPACE_PROPERTY_LABEL: u64 = 0x008;
+pub const SPACE_PROPERTY_TYPE: u64 = 0x010;
+pub const SPACE_PROPERTY_DISPLAY: u64 = 0x020;
+pub const SPACE_PROPERTY_WINDOWS: u64 = 0x040;
+pub const SPACE_PROPERTY_FIRST_WINDOW: u64 = 0x080;
+pub const SPACE_PROPERTY_LAST_WINDOW: u64 = 0x100;
+pub const SPACE_PROPERTY_HAS_FOCUS: u64 = 0x200;
+pub const SPACE_PROPERTY_IS_VISIBLE: u64 = 0x400;
+pub const SPACE_PROPERTY_IS_FULLSCREEN: u64 = 0x800;
+
+pub const VIEW_DEFAULT: c_int = 0;
+pub const VIEW_BSP: c_int = 1;
+pub const VIEW_STACK: c_int = 2;
+
+comptime {
+    if (SPACE_PROPERTY_ID != 0x001) @compileError("SPACE_PROPERTY_ID drift");
+    if (SPACE_PROPERTY_UUID != 0x002) @compileError("SPACE_PROPERTY_UUID drift");
+    if (SPACE_PROPERTY_INDEX != 0x004) @compileError("SPACE_PROPERTY_INDEX drift");
+    if (SPACE_PROPERTY_LABEL != 0x008) @compileError("SPACE_PROPERTY_LABEL drift");
+    if (SPACE_PROPERTY_TYPE != 0x010) @compileError("SPACE_PROPERTY_TYPE drift");
+    if (SPACE_PROPERTY_DISPLAY != 0x020) @compileError("SPACE_PROPERTY_DISPLAY drift");
+    if (SPACE_PROPERTY_WINDOWS != 0x040) @compileError("SPACE_PROPERTY_WINDOWS drift");
+    if (SPACE_PROPERTY_FIRST_WINDOW != 0x080) @compileError("SPACE_PROPERTY_FIRST_WINDOW drift");
+    if (SPACE_PROPERTY_LAST_WINDOW != 0x100) @compileError("SPACE_PROPERTY_LAST_WINDOW drift");
+    if (SPACE_PROPERTY_HAS_FOCUS != 0x200) @compileError("SPACE_PROPERTY_HAS_FOCUS drift");
+    if (SPACE_PROPERTY_IS_VISIBLE != 0x400) @compileError("SPACE_PROPERTY_IS_VISIBLE drift");
+    if (SPACE_PROPERTY_IS_FULLSCREEN != 0x800) @compileError("SPACE_PROPERTY_IS_FULLSCREEN drift");
+    if (VIEW_DEFAULT != 0) @compileError("VIEW_DEFAULT drift");
+    if (VIEW_BSP != 1) @compileError("VIEW_BSP drift");
+    if (VIEW_STACK != 2) @compileError("VIEW_STACK drift");
+    if (VIEW_FLOAT != 3) @compileError("VIEW_FLOAT drift");
+}
+
+// Order mirrors view_type_str in src/view.h; indexed by view.layout
+// exactly like C.
+const view_type_str = [_][*:0]const u8{ "default", "bsp", "stack", "float" };
+
+extern fn yabai_json_bool(value: bool) [*:0]const u8;
+extern "c" fn snprintf(buf: [*]u8, n: usize, fmt: [*:0]const u8, ...) c_int;
+extern "c" fn fwrite(buf: *const anyopaque, size: usize, nmemb: usize, stream: ?*anyopaque) usize;
+
+fn viewStrLenZ(s: [*:0]const u8) usize {
+    @setRuntimeSafety(false);
+    var len: usize = 0;
+    while (s[len] != 0) : (len += 1) {}
+    return len;
+}
+
+fn viewWriteBytes(rsp: ?*anyopaque, s: []const u8) void {
+    @setRuntimeSafety(false);
+    const stream = rsp orelse return;
+    if (s.len == 0) return;
+    _ = fwrite(@ptrCast(s.ptr), 1, s.len, stream);
+}
+
+fn viewWriteZ(rsp: ?*anyopaque, s: [*:0]const u8) void {
+    @setRuntimeSafety(false);
+    const stream = rsp orelse return;
+    const len = viewStrLenZ(s);
+    if (len == 0) return;
+    _ = fwrite(@ptrCast(s), 1, len, stream);
+}
+
+fn viewWriteInt(rsp: ?*anyopaque, v: c_int) void {
+    @setRuntimeSafety(false);
+    const stream = rsp orelse return;
+    var tmp: [32]u8 = undefined;
+    const n = snprintf(@ptrCast(&tmp), tmp.len, "%d", v);
+    if (n <= 0) return;
+    _ = fwrite(@ptrCast(&tmp), 1, @intCast(n), stream);
+}
+
+fn viewWriteSid(rsp: ?*anyopaque, v: u64) void {
+    @setRuntimeSafety(false);
+    const stream = rsp orelse return;
+    var tmp: [32]u8 = undefined;
+    const n = snprintf(@ptrCast(&tmp), tmp.len, "%lld", @as(c_longlong, @bitCast(v)));
+    if (n <= 0) return;
+    _ = fwrite(@ptrCast(&tmp), 1, @intCast(n), stream);
+}
+
+// Mirrors view_serialize() in src/view.c. The eight manager-derived
+// inputs arrive lifted in (established seam pattern): uuid_str is the
+// ts_cfstring_copy result (NULL when the copy would yield NULL),
+// mission_index replaces space_manager_mission_control_index,
+// space_label_str replaces space_manager_get_label_for_space (NULL when
+// absent), display_index replaces
+// display_manager_display_id_arrangement(space_display_id(...)),
+// window_list/window_count replace space_window_list, and the three
+// bools replace the focus/visible/fullscreen derivations. First/last
+// leaves reuse the already-ported find_first/last_leaf, bools reuse
+// yabai_json_bool, and every byte goes out via libc fwrite/snprintf.
+// The trailing is-native-fullscreen branch omits did_output=true,
+// exactly like C.
+export fn yabai_view_serialize(rsp: ?*anyopaque, view: *const View, flags: u64, uuid_str: ?[*:0]const u8, mission_index: c_int, space_label_str: ?[*:0]const u8, display_index: c_int, window_list: ?[*]const u32, window_count: c_int, has_focus: bool, is_visible: bool, is_fullscreen: bool) void {
+    @setRuntimeSafety(false);
+    const stream = rsp orelse return;
+    var f = flags;
+    if (f == 0x0) f |= ~f;
+
+    var did_output = false;
+    viewWriteBytes(stream, "{\n");
+
+    if ((f & SPACE_PROPERTY_ID) != 0) {
+        viewWriteBytes(stream, "\t\"id\":");
+        viewWriteSid(stream, view.sid);
+        did_output = true;
+    }
+
+    if ((f & SPACE_PROPERTY_UUID) != 0) {
+        if (did_output) viewWriteBytes(stream, ",\n");
+        viewWriteBytes(stream, "\t\"uuid\":\"");
+        viewWriteZ(stream, if (uuid_str) |s| s else "<unknown>");
+        viewWriteBytes(stream, "\"");
+        did_output = true;
+    }
+
+    if ((f & SPACE_PROPERTY_INDEX) != 0) {
+        if (did_output) viewWriteBytes(stream, ",\n");
+        viewWriteBytes(stream, "\t\"index\":");
+        viewWriteInt(stream, mission_index);
+        did_output = true;
+    }
+
+    if ((f & SPACE_PROPERTY_LABEL) != 0) {
+        if (did_output) viewWriteBytes(stream, ",\n");
+        viewWriteBytes(stream, "\t\"label\":\"");
+        viewWriteZ(stream, if (space_label_str) |s| s else "");
+        viewWriteBytes(stream, "\"");
+        did_output = true;
+    }
+
+    if ((f & SPACE_PROPERTY_TYPE) != 0) {
+        if (did_output) viewWriteBytes(stream, ",\n");
+        viewWriteBytes(stream, "\t\"type\":\"");
+        viewWriteZ(stream, view_type_str[@intCast(view.layout)]);
+        viewWriteBytes(stream, "\"");
+        did_output = true;
+    }
+
+    if ((f & SPACE_PROPERTY_DISPLAY) != 0) {
+        if (did_output) viewWriteBytes(stream, ",\n");
+        viewWriteBytes(stream, "\t\"display\":");
+        viewWriteInt(stream, display_index);
+        did_output = true;
+    }
+
+    if ((f & SPACE_PROPERTY_WINDOWS) != 0) {
+        if (did_output) viewWriteBytes(stream, ",\n");
+        viewWriteBytes(stream, "\t\"windows\":[");
+        if (window_count > 0) {
+            const list = window_list orelse unreachable;
+            var i: c_int = 0;
+            while (i < window_count) : (i += 1) {
+                const wid: c_int = @bitCast(list[@intCast(i)]);
+                if (i < window_count - 1) {
+                    viewWriteInt(stream, wid);
+                    viewWriteBytes(stream, ", ");
+                } else {
+                    viewWriteInt(stream, wid);
+                }
+            }
+        }
+        viewWriteBytes(stream, "]");
+        did_output = true;
+    }
+
+    if ((f & SPACE_PROPERTY_FIRST_WINDOW) != 0) {
+        if (did_output) viewWriteBytes(stream, ",\n");
+        const first_leaf = yabai_window_node_find_first_leaf(view.root orelse unreachable);
+        const first: c_int = @bitCast(if (first_leaf) |l| l.window_order[0] else 0);
+        viewWriteBytes(stream, "\t\"first-window\":");
+        viewWriteInt(stream, first);
+        did_output = true;
+    }
+
+    if ((f & SPACE_PROPERTY_LAST_WINDOW) != 0) {
+        if (did_output) viewWriteBytes(stream, ",\n");
+        const last_leaf = yabai_window_node_find_last_leaf(view.root orelse unreachable);
+        const last: c_int = @bitCast(if (last_leaf) |l| l.window_order[0] else 0);
+        viewWriteBytes(stream, "\t\"last-window\":");
+        viewWriteInt(stream, last);
+        did_output = true;
+    }
+
+    if ((f & SPACE_PROPERTY_HAS_FOCUS) != 0) {
+        if (did_output) viewWriteBytes(stream, ",\n");
+        viewWriteBytes(stream, "\t\"has-focus\":");
+        viewWriteZ(stream, yabai_json_bool(has_focus));
+        did_output = true;
+    }
+
+    if ((f & SPACE_PROPERTY_IS_VISIBLE) != 0) {
+        if (did_output) viewWriteBytes(stream, ",\n");
+        viewWriteBytes(stream, "\t\"is-visible\":");
+        viewWriteZ(stream, yabai_json_bool(is_visible));
+        did_output = true;
+    }
+
+    if ((f & SPACE_PROPERTY_IS_FULLSCREEN) != 0) {
+        if (did_output) viewWriteBytes(stream, ",\n");
+        viewWriteBytes(stream, "\t\"is-native-fullscreen\":");
+        viewWriteZ(stream, yabai_json_bool(is_fullscreen));
+    }
+
+    viewWriteBytes(stream, "\n}");
+}

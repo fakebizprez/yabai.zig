@@ -1956,3 +1956,260 @@ TEST_FUNC(zig_view_lifecycle_destroy,
         free(zv);
     }
 })
+
+/* view_serialize() (src/view.c:847) vs yabai_view_serialize (zig/view.zig).
+ *
+ * Seam: the eight manager-derived inputs arrive lifted in so the export
+ * stays pure and headless-testable: uuid_str (NULL when ts_cfstring_copy
+ * would yield NULL), mission_index, space_label_str (NULL when
+ * space_manager_get_label_for_space yields NULL), display_index,
+ * window_list + window_count, and the has_focus/is_visible/is_fullscreen
+ * bools. First/last leaves reuse the already-ported find_first/last_leaf;
+ * bools reuse yabai_json_bool. Emission is libc fwrite/snprintf exactly
+ * (%lld sid, did_output comma chain; the trailing is-native-fullscreen
+ * branch omits did_output=true, exactly like C).
+ *
+ * Oracle scope (probed in /tmp/vs_probe.m): with g_connection == 0 the
+ * SLS-backed branches (INDEX, DISPLAY, WINDOWS, IS_VISIBLE, IS_FULLSCREEN)
+ * abort inside CGSConnectionByID, so the C oracle only covers the
+ * SLS-free flags (ID, UUID, LABEL, TYPE, FIRST_WINDOW, LAST_WINDOW,
+ * HAS_FOCUS). SLS-backed branches, all-flags, and flags==0 are pinned
+ * with hand vectors transcribed from the C format strings. Must FAIL
+ * against the stub (TDD red) and pass on the real port (green).
+ */
+
+void yabai_view_serialize(FILE *rsp, const struct yabai_view *view, uint64_t flags, const char *uuid_str, int mission_index, const char *space_label_str, int display_index, const uint32_t *window_list, int window_count, bool has_focus, bool is_visible, bool is_fullscreen);
+
+static const uint32_t ser_wins[3] = { 5, 9, 7 };
+
+/* Temp-pool init for the C uuid oracle (mirrors zig_rule.c). */
+static void ensure_ts_for_view_serialize(void)
+{
+    static bool ts_ready = false;
+    if (!ts_ready) {
+        ts_init(MEGABYTES(8));
+        ts_ready = true;
+    }
+}
+
+/* Pin the mirrored SPACE_PROPERTY_* bits and the layout/type table. */
+_Static_assert(SPACE_PROPERTY_ID == 0x001, "SPACE_PROPERTY_ID drift");
+_Static_assert(SPACE_PROPERTY_UUID == 0x002, "SPACE_PROPERTY_UUID drift");
+_Static_assert(SPACE_PROPERTY_INDEX == 0x004, "SPACE_PROPERTY_INDEX drift");
+_Static_assert(SPACE_PROPERTY_LABEL == 0x008, "SPACE_PROPERTY_LABEL drift");
+_Static_assert(SPACE_PROPERTY_TYPE == 0x010, "SPACE_PROPERTY_TYPE drift");
+_Static_assert(SPACE_PROPERTY_DISPLAY == 0x020, "SPACE_PROPERTY_DISPLAY drift");
+_Static_assert(SPACE_PROPERTY_WINDOWS == 0x040, "SPACE_PROPERTY_WINDOWS drift");
+_Static_assert(SPACE_PROPERTY_FIRST_WINDOW == 0x080, "SPACE_PROPERTY_FIRST_WINDOW drift");
+_Static_assert(SPACE_PROPERTY_LAST_WINDOW == 0x100, "SPACE_PROPERTY_LAST_WINDOW drift");
+_Static_assert(SPACE_PROPERTY_HAS_FOCUS == 0x200, "SPACE_PROPERTY_HAS_FOCUS drift");
+_Static_assert(SPACE_PROPERTY_IS_VISIBLE == 0x400, "SPACE_PROPERTY_IS_VISIBLE drift");
+_Static_assert(SPACE_PROPERTY_IS_FULLSCREEN == 0x800, "SPACE_PROPERTY_IS_FULLSCREEN drift");
+_Static_assert(VIEW_DEFAULT == 0, "VIEW_DEFAULT drift");
+_Static_assert(VIEW_BSP == 1, "VIEW_BSP drift");
+_Static_assert(VIEW_STACK == 2, "VIEW_STACK drift");
+
+static void init_serialize_views(struct view *c_view, struct yabai_view *z_view, uint64_t sid, void *uuid, struct window_node *root, int layout)
+{
+    memset(c_view, 0, sizeof(*c_view));
+    memset(z_view, 0, sizeof(*z_view));
+    c_view->sid = sid;
+    z_view->sid = sid;
+    c_view->uuid = uuid;
+    z_view->uuid = uuid;
+    c_view->root = root;
+    z_view->root = root;
+    c_view->layout = layout;
+    z_view->layout = layout;
+}
+
+/* C-oracle parity over SLS-free flags. The lifted args must mirror what
+ * C derives: uuid_str echoes the view uuid bytes, label_str echoes the
+ * registered label (or NULL), has_focus echoes sid == current_space_id. */
+static int serialize_view_parity(struct view *c_view, struct yabai_view *z_view, uint64_t flags, const char *uuid_str, const char *label_str, bool has_focus)
+{
+    char *c_msg = NULL;
+    size_t c_len = 0;
+    char *z_msg = NULL;
+    size_t z_len = 0;
+    FILE *c_rsp = open_memstream(&c_msg, &c_len);
+    FILE *z_rsp = open_memstream(&z_msg, &z_len);
+    if (!c_rsp || !z_rsp) {
+        if (c_rsp) fclose(c_rsp);
+        if (z_rsp) fclose(z_rsp);
+        free(c_msg);
+        free(z_msg);
+        return 0;
+    }
+    view_serialize(c_rsp, c_view, flags);
+    yabai_view_serialize(z_rsp, z_view, flags, uuid_str, 0, label_str, 0, NULL, 0, has_focus, false, false);
+    fflush(c_rsp);
+    fflush(z_rsp);
+    fclose(c_rsp);
+    fclose(z_rsp);
+    int ok = 1;
+    if (c_len != z_len) ok = 0;
+    else if (c_len > 0 && memcmp(c_msg, z_msg, c_len) != 0) ok = 0;
+    if (!ok) {
+        printf("view serialize mismatch flags 0x%llx c_len %zu z_len %zu\n---C---\n%.*s\n---Z---\n%.*s\n",
+               (unsigned long long) flags, c_len, z_len,
+               (int) c_len, c_msg ? c_msg : "(null)",
+               (int) z_len, z_msg ? z_msg : "(null)");
+    }
+    free(c_msg);
+    free(z_msg);
+    return ok;
+}
+
+/* Zig-only hand vector for SLS-backed flags, all-flags, and flags==0. */
+static int serialize_view_zig_only(struct yabai_view *z_view, uint64_t flags, const char *uuid_str, int mission_index, const char *label_str, int display_index, const uint32_t *window_list, int window_count, bool has_focus, bool is_visible, bool is_fullscreen, const char *expected)
+{
+    char *z_msg = NULL;
+    size_t z_len = 0;
+    FILE *z_rsp = open_memstream(&z_msg, &z_len);
+    if (!z_rsp) {
+        free(z_msg);
+        return 0;
+    }
+    yabai_view_serialize(z_rsp, z_view, flags, uuid_str, mission_index, label_str, display_index, window_list, window_count, has_focus, is_visible, is_fullscreen);
+    fflush(z_rsp);
+    fclose(z_rsp);
+    int ok = z_msg && strcmp(z_msg, expected) == 0;
+    if (!ok) {
+        printf("view serialize zig-only mismatch flags 0x%llx\n---got---\n%s\n---want---\n%s\n",
+               (unsigned long long) flags, z_msg ? z_msg : "(null)", expected);
+    }
+    free(z_msg);
+    return ok;
+}
+
+TEST_FUNC(zig_view_serialize,
+{
+    ensure_ts_for_view_serialize();
+
+    /* view_type_str order pins against the layout enum. */
+    TEST_CHECK(strcmp(view_type_str[VIEW_DEFAULT], "default"), 0);
+    TEST_CHECK(strcmp(view_type_str[VIEW_BSP], "bsp"), 0);
+    TEST_CHECK(strcmp(view_type_str[VIEW_STACK], "stack"), 0);
+    TEST_CHECK(strcmp(view_type_str[VIEW_FLOAT], "float"), 0);
+
+    uint64_t saved_current = g_space_manager.current_space_id;
+
+    struct view c_view;
+    struct yabai_view z_view;
+    CFStringRef uuid = CFStringCreateWithCString(NULL, "test-uuid-1", kCFStringEncodingUTF8);
+    TEST_CHECK(uuid != NULL, 1);
+
+    /* Single leaf with a nonzero window; sid above 32 bits for %lld. */
+    struct window_node *solo = make_test_node();
+    solo->window_list[0] = 7;
+    solo->window_order[0] = 7;
+    solo->window_count = 1;
+    init_serialize_views(&c_view, &z_view, 98765432101ull, (void *) uuid, solo, VIEW_BSP);
+
+    /* Each SLS-free property alone. */
+    TEST_CHECK(serialize_view_parity(&c_view, &z_view, SPACE_PROPERTY_ID, "test-uuid-1", NULL, false), 1);
+    TEST_CHECK(serialize_view_parity(&c_view, &z_view, SPACE_PROPERTY_UUID, "test-uuid-1", NULL, false), 1);
+    TEST_CHECK(serialize_view_parity(&c_view, &z_view, SPACE_PROPERTY_LABEL, "test-uuid-1", NULL, false), 1);
+    TEST_CHECK(serialize_view_parity(&c_view, &z_view, SPACE_PROPERTY_TYPE, "test-uuid-1", NULL, false), 1);
+    TEST_CHECK(serialize_view_parity(&c_view, &z_view, SPACE_PROPERTY_FIRST_WINDOW, "test-uuid-1", NULL, false), 1);
+    TEST_CHECK(serialize_view_parity(&c_view, &z_view, SPACE_PROPERTY_LAST_WINDOW, "test-uuid-1", NULL, false), 1);
+
+    /* has-focus both polarities via current_space_id. */
+    g_space_manager.current_space_id = 98765432101ull;
+    TEST_CHECK(serialize_view_parity(&c_view, &z_view, SPACE_PROPERTY_HAS_FOCUS, "test-uuid-1", NULL, true), 1);
+    g_space_manager.current_space_id = 98765432101ull + 1;
+    TEST_CHECK(serialize_view_parity(&c_view, &z_view, SPACE_PROPERTY_HAS_FOCUS, "test-uuid-1", NULL, false), 1);
+
+    /* Label present vs absent. */
+    space_manager_set_label_for_space(&g_space_manager, 98765432101ull, string_copy("test-label"));
+    TEST_CHECK(serialize_view_parity(&c_view, &z_view, SPACE_PROPERTY_LABEL, "test-uuid-1", "test-label", false), 1);
+    TEST_CHECK(serialize_view_parity(&c_view, &z_view, SPACE_PROPERTY_ID | SPACE_PROPERTY_UUID | SPACE_PROPERTY_LABEL, "test-uuid-1", "test-label", false), 1);
+    space_manager_remove_label_for_space(&g_space_manager, 98765432101ull);
+
+    /* Comma chains: pairs, triples, and the full SLS-free set. */
+    TEST_CHECK(serialize_view_parity(&c_view, &z_view, SPACE_PROPERTY_ID | SPACE_PROPERTY_UUID, "test-uuid-1", NULL, false), 1);
+    TEST_CHECK(serialize_view_parity(&c_view, &z_view, SPACE_PROPERTY_UUID | SPACE_PROPERTY_TYPE | SPACE_PROPERTY_LAST_WINDOW, "test-uuid-1", NULL, false), 1);
+    g_space_manager.current_space_id = 98765432101ull;
+    TEST_CHECK(serialize_view_parity(&c_view, &z_view,
+               SPACE_PROPERTY_ID | SPACE_PROPERTY_UUID | SPACE_PROPERTY_LABEL | SPACE_PROPERTY_TYPE |
+               SPACE_PROPERTY_FIRST_WINDOW | SPACE_PROPERTY_LAST_WINDOW | SPACE_PROPERTY_HAS_FOCUS,
+               "test-uuid-1", NULL, true), 1);
+
+    /* TYPE across every layout. */
+    int layout = 0;
+    for (layout = VIEW_DEFAULT; layout <= VIEW_FLOAT; ++layout) {
+        c_view.layout = layout;
+        z_view.layout = layout;
+        TEST_CHECK(serialize_view_parity(&c_view, &z_view, SPACE_PROPERTY_TYPE, "test-uuid-1", NULL, false), 1);
+    }
+    c_view.layout = VIEW_BSP;
+    z_view.layout = VIEW_BSP;
+
+    /* Empty leaf: first/last fall back to 0. */
+    struct window_node *empty = make_test_node();
+    init_serialize_views(&c_view, &z_view, 1, (void *) uuid, empty, VIEW_FLOAT);
+    TEST_CHECK(serialize_view_parity(&c_view, &z_view, SPACE_PROPERTY_FIRST_WINDOW | SPACE_PROPERTY_LAST_WINDOW, "test-uuid-1", NULL, false), 1);
+
+    /* Multi-leaf tree with nonzero orders: first=5, last=7. */
+    struct window_node *r;
+    struct window_node *a;
+    struct window_node *c;
+    struct window_node *d;
+    struct window_node *e;
+    make_test_tree(&r, &a, &c, &d, &e);
+    d->window_order[0] = 5;
+    c->window_order[0] = 7;
+    init_serialize_views(&c_view, &z_view, 4242, (void *) uuid, r, VIEW_STACK);
+    TEST_CHECK(serialize_view_parity(&c_view, &z_view, SPACE_PROPERTY_FIRST_WINDOW | SPACE_PROPERTY_LAST_WINDOW, "test-uuid-1", NULL, false), 1);
+    TEST_CHECK(serialize_view_parity(&c_view, &z_view, SPACE_PROPERTY_ID | SPACE_PROPERTY_TYPE | SPACE_PROPERTY_FIRST_WINDOW | SPACE_PROPERTY_LAST_WINDOW, "test-uuid-1", NULL, false), 1);
+
+    /* Zig-only: each SLS-backed property alone. */
+    init_serialize_views(&c_view, &z_view, 98765432101ull, (void *) uuid, solo, VIEW_BSP);
+    TEST_CHECK(serialize_view_zig_only(&z_view, SPACE_PROPERTY_INDEX, "test-uuid-1", 3, NULL, 0, NULL, 0, false, false, false,
+               "{\n\t\"index\":3\n}"), 1);
+    TEST_CHECK(serialize_view_zig_only(&z_view, SPACE_PROPERTY_DISPLAY, "test-uuid-1", 0, NULL, 2, NULL, 0, false, false, false,
+               "{\n\t\"display\":2\n}"), 1);
+    TEST_CHECK(serialize_view_zig_only(&z_view, SPACE_PROPERTY_WINDOWS, "test-uuid-1", 0, NULL, 0, ser_wins, 3, false, false, false,
+               "{\n\t\"windows\":[5, 9, 7]\n}"), 1);
+    TEST_CHECK(serialize_view_zig_only(&z_view, SPACE_PROPERTY_WINDOWS, "test-uuid-1", 0, NULL, 0, ser_wins, 1, false, false, false,
+               "{\n\t\"windows\":[5]\n}"), 1);
+    TEST_CHECK(serialize_view_zig_only(&z_view, SPACE_PROPERTY_WINDOWS, "test-uuid-1", 0, NULL, 0, NULL, 0, false, false, false,
+               "{\n\t\"windows\":[]\n}"), 1);
+    TEST_CHECK(serialize_view_zig_only(&z_view, SPACE_PROPERTY_IS_VISIBLE, "test-uuid-1", 0, NULL, 0, NULL, 0, false, true, false,
+               "{\n\t\"is-visible\":true\n}"), 1);
+    TEST_CHECK(serialize_view_zig_only(&z_view, SPACE_PROPERTY_IS_VISIBLE, "test-uuid-1", 0, NULL, 0, NULL, 0, false, false, false,
+               "{\n\t\"is-visible\":false\n}"), 1);
+    TEST_CHECK(serialize_view_zig_only(&z_view, SPACE_PROPERTY_IS_FULLSCREEN, "test-uuid-1", 0, NULL, 0, NULL, 0, false, false, true,
+               "{\n\t\"is-native-fullscreen\":true\n}"), 1);
+    TEST_CHECK(serialize_view_zig_only(&z_view, SPACE_PROPERTY_IS_FULLSCREEN, "test-uuid-1", 0, NULL, 0, NULL, 0, false, false, false,
+               "{\n\t\"is-native-fullscreen\":false\n}"), 1);
+
+    /* Zig-only: NULL uuid_str renders <unknown>, NULL label renders "". */
+    TEST_CHECK(serialize_view_zig_only(&z_view, SPACE_PROPERTY_UUID, NULL, 0, NULL, 0, NULL, 0, false, false, false,
+               "{\n\t\"uuid\":\"<unknown>\"\n}"), 1);
+    TEST_CHECK(serialize_view_zig_only(&z_view, SPACE_PROPERTY_LABEL, "test-uuid-1", 0, NULL, 0, NULL, 0, false, false, false,
+               "{\n\t\"label\":\"\"\n}"), 1);
+
+    /* Zig-only: all-flags and flags==0 expand to the same full document. */
+    {
+        uint64_t all = SPACE_PROPERTY_ID | SPACE_PROPERTY_UUID | SPACE_PROPERTY_INDEX | SPACE_PROPERTY_LABEL |
+                       SPACE_PROPERTY_TYPE | SPACE_PROPERTY_DISPLAY | SPACE_PROPERTY_WINDOWS |
+                       SPACE_PROPERTY_FIRST_WINDOW | SPACE_PROPERTY_LAST_WINDOW |
+                       SPACE_PROPERTY_HAS_FOCUS | SPACE_PROPERTY_IS_VISIBLE | SPACE_PROPERTY_IS_FULLSCREEN;
+        const char *full = "{\n\t\"id\":98765432101,\n\t\"uuid\":\"test-uuid-1\",\n\t\"index\":3,\n\t\"label\":\"test-label\",\n\t\"type\":\"bsp\",\n\t\"display\":2,\n\t\"windows\":[5, 9, 7],\n\t\"first-window\":7,\n\t\"last-window\":7,\n\t\"has-focus\":true,\n\t\"is-visible\":false,\n\t\"is-native-fullscreen\":true\n}";
+        TEST_CHECK(serialize_view_zig_only(&z_view, all, "test-uuid-1", 3, "test-label", 2, ser_wins, 3, true, false, true, full), 1);
+        TEST_CHECK(serialize_view_zig_only(&z_view, 0, "test-uuid-1", 3, "test-label", 2, ser_wins, 3, true, false, true, full), 1);
+
+        /* Degenerate full expansion: NULL strings, empty windows/leaf, all false. */
+        init_serialize_views(&c_view, &z_view, 1, (void *) uuid, empty, VIEW_DEFAULT);
+        const char *bare = "{\n\t\"id\":1,\n\t\"uuid\":\"<unknown>\",\n\t\"index\":0,\n\t\"label\":\"\",\n\t\"type\":\"default\",\n\t\"display\":0,\n\t\"windows\":[],\n\t\"first-window\":0,\n\t\"last-window\":0,\n\t\"has-focus\":false,\n\t\"is-visible\":false,\n\t\"is-native-fullscreen\":false\n}";
+        TEST_CHECK(serialize_view_zig_only(&z_view, 0, NULL, 0, NULL, 0, NULL, 0, false, false, false, bare), 1);
+    }
+
+    free(solo);
+    free(empty);
+    free_test_tree(r, a, c, d, e);
+    if (uuid) CFRelease(uuid);
+    g_space_manager.current_space_id = saved_current;
+})

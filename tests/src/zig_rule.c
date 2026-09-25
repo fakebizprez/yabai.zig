@@ -905,6 +905,93 @@ TEST_FUNC(zig_rule_serialize_parity,
         free(z_msg);
         free_serialize_rule_strings(&r);
     }
+    /* Hand-pinned full-JSON golden: one fixed heap rule covering
+     * quotables (label raw, app/title/role/subrole escaped), grid,
+     * opacity 0.5, manage/sticky/mff/fullscreen variants, layer,
+     * scratchpad, one-shot and flags. Expectation computed by hand
+     * from the fprintf format in src/rule.c (json_bool: true/false;
+     * json_optional_bool: UD->null ON->true OFF->false; layer via
+     * layer_str when RULE_LAYER set; opacity %.4f; grid %d:...;
+     * flags 0x%08x of (effects.flags<<16)|flags). did/sid are 0 so
+     * display/space are 0 with no manager dependency. Both C and Zig
+     * outputs must match these exact bytes. */
+    {
+        struct rule r;
+        memset(&r, 0, sizeof(r));
+        r.label = string_copy("g\"lden");
+        r.app = string_copy("A\"p\\p");
+        r.title = string_copy("ti\ntle");
+        r.role = string_copy("ro\ttle");
+        r.subrole = string_copy("sub\001role");
+        r.effects.scratchpad = string_copy("pad1");
+        r.effects.opacity = 0.5f;
+        r.effects.manage = RULE_PROP_ON;
+        r.effects.sticky = RULE_PROP_OFF;
+        r.effects.mff = RULE_PROP_UD;
+        r.effects.fullscreen = RULE_PROP_ON;
+        r.effects.layer = LAYER_ABOVE;
+        rule_effects_set_flag(&r.effects, RULE_FOLLOW_SPACE);
+        rule_effects_set_flag(&r.effects, RULE_OPACITY);
+        rule_effects_set_flag(&r.effects, RULE_LAYER);
+        r.effects.grid[0] = 2;
+        r.effects.grid[1] = 2;
+        r.effects.grid[2] = 10;
+        r.effects.grid[3] = 20;
+        r.effects.grid[4] = 30;
+        r.effects.grid[5] = 40;
+        rule_set_flag(&r, RULE_ONE_SHOT);
+        static const char *expected =
+            "{\n"
+            "\t\"index\":3,\n"
+            "\t\"label\":\"g\"lden\",\n"
+            "\t\"app\":\"A\\\"p\\\\p\",\n"
+            "\t\"title\":\"ti\\ntle\",\n"
+            "\t\"role\":\"ro\\ttle\",\n"
+            "\t\"subrole\":\"sub\\u0001role\",\n"
+            "\t\"display\":0,\n"
+            "\t\"space\":0,\n"
+            "\t\"follow_space\":true,\n"
+            "\t\"opacity\":0.5000,\n"
+            "\t\"manage\":true,\n"
+            "\t\"sticky\":false,\n"
+            "\t\"mouse_follows_focus\":null,\n"
+            "\t\"sub-layer\":\"above\",\n"
+            "\t\"native-fullscreen\":true,\n"
+            "\t\"grid\":\"2:2:10:20:30:40\",\n"
+            "\t\"scratchpad\":\"pad1\",\n"
+            "\t\"one-shot\":true,\n"
+            "\t\"flags\":\"0x00070100\"\n"
+            "}";
+        size_t exp_len = strlen(expected);
+        ts_reset();
+        char *c_msg = NULL;
+        size_t c_len = 0;
+        FILE *c_rsp = open_memstream(&c_msg, &c_len);
+        rule_serialize(c_rsp, &r, 3);
+        fflush(c_rsp);
+        fclose(c_rsp);
+        TEST_CHECK(c_msg != NULL, true);
+        if (c_msg) {
+            TEST_CHECK(c_len, exp_len);
+            TEST_CHECK(strcmp(c_msg, expected), 0);
+        }
+        free(c_msg);
+        ts_reset();
+        char *z_msg = NULL;
+        size_t z_len = 0;
+        FILE *z_rsp = open_memstream(&z_msg, &z_len);
+        yabai_rule_serialize(z_rsp, &r, 3, 0, 0);
+        fflush(z_rsp);
+        fclose(z_rsp);
+        TEST_CHECK(z_msg != NULL, true);
+        if (z_msg) {
+            TEST_CHECK(z_len, exp_len);
+            TEST_CHECK(strcmp(z_msg, expected), 0);
+        }
+        free(z_msg);
+        free_serialize_rule_strings(&r);
+        ts_reset();
+    }
     /* NULL stream: Zig is a no-op that must not crash (C has no NULL
      * guard, so only the Zig side is exercised here). */
     {

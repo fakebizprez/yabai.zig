@@ -1,63 +1,17 @@
 extern struct space_manager g_space_manager;
 extern struct window_manager g_window_manager;
 
+/* Zig delegate (zig/rule.zig): parity-proven equivalent of the JSON
+ * emission below. Signature in src/rule.h is unchanged. */
+void yabai_rule_serialize(FILE *rsp, struct rule *rule, int index, int did_index, int sid_index);
+
 void rule_serialize(FILE *rsp, struct rule *rule, int index)
 {
     TIME_FUNCTION;
 
-    char *app   = rule->app;
-    char *title = rule->title;
-    char *role  = rule->role;
-    char *srole = rule->subrole;
-
-    char *escaped_app   = app   ? ts_string_escape(app)   : NULL;
-    char *escaped_title = title ? ts_string_escape(title) : NULL;
-    char *escaped_role  = role  ? ts_string_escape(role)  : NULL;
-    char *escaped_srole = srole ? ts_string_escape(srole) : NULL;
-
-    fprintf(rsp,
-            "{\n"
-            "\t\"index\":%d,\n"
-            "\t\"label\":\"%s\",\n"
-            "\t\"app\":\"%s\",\n"
-            "\t\"title\":\"%s\",\n"
-            "\t\"role\":\"%s\",\n"
-            "\t\"subrole\":\"%s\",\n"
-            "\t\"display\":%d,\n"
-            "\t\"space\":%d,\n"
-            "\t\"follow_space\":%s,\n"
-            "\t\"opacity\":%.4f,\n"
-            "\t\"manage\":%s,\n"
-            "\t\"sticky\":%s,\n"
-            "\t\"mouse_follows_focus\":%s,\n"
-            "\t\"sub-layer\":\"%s\",\n"
-            "\t\"native-fullscreen\":%s,\n"
-            "\t\"grid\":\"%d:%d:%d:%d:%d:%d\",\n"
-            "\t\"scratchpad\":\"%s\",\n"
-            "\t\"one-shot\":%s,\n"
-            "\t\"flags\":\"0x%08x\"\n"
-            "}",
-            index,
-            rule->label ? rule->label : "",
-            escaped_app ? escaped_app : app ? app : "",
-            escaped_title ? escaped_title : title ? title : "",
-            escaped_role ? escaped_role : role ? role : "",
-            escaped_srole ? escaped_srole : srole ? srole : "",
-            rule->effects.did ? display_manager_display_id_arrangement(rule->effects.did) : 0,
-            rule->effects.sid ? space_manager_mission_control_index(rule->effects.sid) : 0,
-            json_bool(rule_effects_check_flag(&rule->effects, RULE_FOLLOW_SPACE)),
-            rule->effects.opacity,
-            json_optional_bool(rule->effects.manage),
-            json_optional_bool(rule->effects.sticky),
-            json_optional_bool(rule->effects.mff),
-            rule_effects_check_flag(&rule->effects, RULE_LAYER) ? layer_str[rule->effects.layer] : "",
-            json_optional_bool(rule->effects.fullscreen),
-            rule->effects.grid[0], rule->effects.grid[1],
-            rule->effects.grid[2], rule->effects.grid[3],
-            rule->effects.grid[4], rule->effects.grid[5],
-            rule->effects.scratchpad ? rule->effects.scratchpad : "",
-            json_bool(rule_check_flag(rule, RULE_ONE_SHOT)),
-            (uint32_t)(rule->effects.flags << 16) | (uint32_t)rule->flags);
+    yabai_rule_serialize(rsp, rule, index,
+                         rule->effects.did ? display_manager_display_id_arrangement(rule->effects.did) : 0,
+                         rule->effects.sid ? space_manager_mission_control_index(rule->effects.sid) : 0);
 }
 
 void rule_combine_effects(struct rule_effects *effects, struct rule_effects *result)
