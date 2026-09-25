@@ -44,6 +44,7 @@ typedef TEST_SIG(function);
     TEST_ENTRY(zig_view_window_lookup)                           \
     TEST_ENTRY(zig_view_tree_mutate)                             \
     TEST_ENTRY(zig_view_fence)                                   \
+    TEST_ENTRY(zig_view_stack_window)                                   \
     TEST_ENTRY(zig_util_balance_clamp)                           \
     TEST_ENTRY(zig_util_json_bool)                               \
     TEST_ENTRY(zig_util_in_range)                                \
