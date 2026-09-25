@@ -1561,3 +1561,131 @@ TEST_FUNC(zig_view_clear_zoom,
     TEST_CHECK(e->zoom, NULL);
     free_test_tree(r, a, c, d, e);
 })
+
+uint32_t *yabai_view_find_window_list(const struct yabai_view *view, int *window_count);
+
+/* Temp-pool init for the C oracle (mirrors zig_rule.c): the Zig side
+ * uses libc malloc and never touches the pool. */
+static void ensure_ts_for_window_list(void)
+{
+    static bool ts_ready = false;
+    if (!ts_ready) {
+        ts_init(MEGABYTES(8));
+        ts_ready = true;
+    }
+    ts_reset();
+}
+
+/* Fills a leaf with `count` sequential ids starting at `base`. */
+static void set_leaf_windows(struct window_node *node, uint32_t base, int count)
+{
+    int i = 0;
+    for (i = 0; i < count; ++i) {
+        node->window_list[i] = base + (uint32_t) i;
+    }
+    node->window_count = count;
+}
+
+/* Oracle parity: the C temp-pool list vs the Zig malloc'd list. Compares
+ * the count and the out bytes with memcmp, then frees only the Zig side
+ * (the C side is temp-pool memory the caller never frees). */
+static int window_list_case(struct window_node *root, int expected_count)
+{
+    struct view *c_view = malloc(sizeof(struct view));
+    memset(c_view, 0, sizeof(struct view));
+    c_view->root = root;
+    struct yabai_view *z_view = malloc(sizeof(struct yabai_view));
+    memset(z_view, 0, sizeof(struct yabai_view));
+    z_view->root = root;
+
+    int c_count = -1;
+    int z_count = -2;
+    uint32_t *c_list = view_find_window_list(c_view, &c_count);
+    uint32_t *z_list = yabai_view_find_window_list(z_view, &z_count);
+
+    int ok = 1;
+    if (c_count != expected_count) ok = 0;
+    if (z_count != expected_count) ok = 0;
+    if (c_count != z_count) ok = 0;
+    if (ok && c_count > 0) {
+        if (!c_list || !z_list) ok = 0;
+        else if (memcmp(c_list, z_list, (size_t) c_count * sizeof(uint32_t)) != 0) ok = 0;
+    }
+
+    if (z_list) free(z_list);
+    free(c_view);
+    free(z_view);
+    return ok;
+}
+
+TEST_FUNC(zig_view_find_window_list,
+{
+    ensure_ts_for_window_list();
+
+    /* Empty single leaf. */
+    struct window_node *solo = make_test_node();
+    TEST_CHECK(window_list_case(solo, 0), 1);
+    free(solo);
+
+    /* Single leaf with a few windows. */
+    solo = make_test_node();
+    set_leaf_windows(solo, 101, 3);
+    TEST_CHECK(window_list_case(solo, 3), 1);
+    free(solo);
+
+    /* Empty multi-leaf tree: every leaf holds nothing. */
+    struct window_node *r;
+    struct window_node *a;
+    struct window_node *c;
+    struct window_node *d;
+    struct window_node *e;
+    make_test_tree(&r, &a, &c, &d, &e);
+    d->window_count = 0;
+    c->window_count = 0;
+    TEST_CHECK(window_list_case(r, 0), 1);
+
+    /* Stacked multi-window leaves: D:{5,9}, E empty, C:{7}. */
+    set_test_windows(d, 5, 9, 2);
+    set_test_windows(c, 7, 0, 1);
+    TEST_CHECK(window_list_case(r, 3), 1);
+
+    /* Hand vector: leaf visit order is D, E, C. */
+    struct view *c_view = malloc(sizeof(struct view));
+    memset(c_view, 0, sizeof(struct view));
+    c_view->root = r;
+    struct yabai_view *z_view = malloc(sizeof(struct yabai_view));
+    memset(z_view, 0, sizeof(struct yabai_view));
+    z_view->root = r;
+    int z_count = -1;
+    uint32_t *z_list = yabai_view_find_window_list(z_view, &z_count);
+    TEST_CHECK(z_count, 3);
+    if (z_list) {
+        TEST_CHECK(z_list[0], 5);
+        TEST_CHECK(z_list[1], 9);
+        TEST_CHECK(z_list[2], 7);
+        free(z_list);
+    } else {
+        TEST_CHECK(z_list != NULL, 1);
+    }
+    free(c_view);
+    free(z_view);
+    free_test_tree(r, a, c, d, e);
+
+    /* Growth past 13: 7 + 7 + 1 windows force the 13 -> 26 doubling. */
+    make_test_tree(&r, &a, &c, &d, &e);
+    set_leaf_windows(d, 1, 7);
+    set_leaf_windows(e, 101, 7);
+    set_leaf_windows(c, 201, 1);
+    TEST_CHECK(window_list_case(r, 15), 1);
+    free_test_tree(r, a, c, d, e);
+
+    /* Growth past 26: 10 + 10 + 10 windows force 13 -> 26 -> 52. */
+    make_test_tree(&r, &a, &c, &d, &e);
+    set_leaf_windows(d, 1, 10);
+    set_leaf_windows(e, 101, 10);
+    set_leaf_windows(c, 201, 10);
+    TEST_CHECK(window_list_case(r, 30), 1);
+    free_test_tree(r, a, c, d, e);
+
+    ts_reset();
+})

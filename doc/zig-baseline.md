@@ -169,6 +169,13 @@ unless doc/zig-refactor-plan.md explicitly allows a change.
   proven in zero-state only; MsgToken/DIR mirrors are duplicated
   across objects pending a shared-types pass. Leaks gate 0.
   95 exports in the fat daemon; 61/61 tests; x86_64 verified.
+- Window-list walk (TDD): `yabai_view_find_window_list` reusing the
+  ported leaf walk, exact 13-double growth via libc realloc, with a
+  documented ownership asymmetry (C returns pool memory, Zig returns
+  caller-frees malloc). Release audit recorded in doc/zig-release.md:
+  fat slices, minos 11.0, plist section, frameworks, adhoc signing,
+  OSAX/install/service unchanged; hardware-gated items listed as
+  unverified. 96 exports; 62/62 tests; leaks 0; x86_64 verified.
 - Pure-helper slice (TDD) in zig/util.zig: `balance_node_add`,
   `clampf_range` (incl. NaN bit-parity), `json_bool`,
   `json_optional_bool`, float+int `in_range_ii/ei/ie` for the exact
