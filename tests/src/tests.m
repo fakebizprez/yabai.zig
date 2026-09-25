@@ -12,11 +12,29 @@ typedef TEST_SIG(function);
 #define TEST_CHECK(r, e) if ((r) != (e)) { printf("                   \e[1;33m%s\e[m\e[1;31m#%d %s == %s\e[m \e[1;31m(%d == %d)\e[m\n", test_name, __LINE__, #r, #e, r, e); result = false; }
 
 #include "area.c"
+#include "socket_frame.c"
+#include "zig_geometry.c"
+#include "zig_message.c"
 
 #define TEST_ENTRY(name) { #name, test_##name },
 #define TEST_LIST                                              \
     TEST_ENTRY(display_area_is_in_direction)                   \
-    TEST_ENTRY(closest_display_in_direction)
+    TEST_ENTRY(closest_display_in_direction)                   \
+    TEST_ENTRY(socket_frame_valid_args)                        \
+    TEST_ENTRY(socket_frame_byte_exact)                        \
+    TEST_ENTRY(socket_frame_malformed)                         \
+    TEST_ENTRY(socket_frame_unknown_domain_fails)                \
+    TEST_ENTRY(socket_frame_unknown_command_fails)               \
+    TEST_ENTRY(socket_frame_rule_list_ok)                        \
+    TEST_ENTRY(socket_frame_signal_list_ok)                      \
+    TEST_ENTRY(socket_frame_failure_marker)                      \
+    TEST_ENTRY(zig_area_make_pair_parity)                        \
+    TEST_ENTRY(zig_area_direction_parity)                      \
+    TEST_ENTRY(zig_area_make_pair_rounding)                      \
+    TEST_ENTRY(zig_message_token_stream)                         \
+    TEST_ENTRY(zig_message_token_compare)                        \
+    TEST_ENTRY(zig_message_token_numbers)                        \
+    TEST_ENTRY(zig_message_token_to_value)
 
 static struct {
     char *name;
