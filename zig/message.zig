@@ -154,6 +154,65 @@ export fn yabai_token_is_float(token: *const MsgToken, value: *f32) bool {
     return true;
 }
 
+// Byte-identical port of parse_key_value_pair(), including the in-place
+// NUL write and the untouched-exclusion-flag paths.
+export fn yabai_parse_key_value_pair(token: [*:0]u8, key: *?[*]u8, value: *?[*]u8, exclusion: *bool) void {
+    @setRuntimeSafety(false);
+    key.* = token;
+    var t = token;
+    while (t[0] != 0) {
+        const fst = t[0];
+        const snd = t[1];
+        if (fst == '!' and snd == '=') break;
+        if (fst == '=') break;
+        t += 1;
+    }
+    const index: usize = if (t[0] == '!' and t[1] == '=') 2 else 1;
+    const check: u8 = if (index == 2) '!' else '=';
+    if (t[0] != check) {
+        key.* = null;
+        value.* = null;
+    } else if (t[index] != 0) {
+        t[0] = 0;
+        value.* = t + index;
+        exclusion.* = index == 2;
+    } else {
+        value.* = null;
+    }
+}
+
+// NUL-terminated comparison against a known literal, mirroring
+// string_equals() for the non-null inputs these parsers receive.
+fn litEqual(text: [*:0]const u8, comptime lit: []const u8) bool {
+    @setRuntimeSafety(false);
+    var i: usize = 0;
+    while (i < lit.len) : (i += 1) {
+        if (text[i] != lit[i]) return false;
+    }
+    return text[i] == 0;
+}
+
+export fn yabai_parse_value_type(typ: [*:0]const u8) u8 {
+    @setRuntimeSafety(false);
+    if (litEqual(typ, "abs")) return 0x1;
+    if (litEqual(typ, "rel")) return 0x2;
+    return 0;
+}
+
+export fn yabai_parse_resize_handle(handle: [*:0]const u8) u8 {
+    @setRuntimeSafety(false);
+    if (litEqual(handle, "top")) return 0x01;
+    if (litEqual(handle, "bottom")) return 0x02;
+    if (litEqual(handle, "left")) return 0x04;
+    if (litEqual(handle, "right")) return 0x08;
+    if (litEqual(handle, "top_left")) return 0x01 | 0x04;
+    if (litEqual(handle, "top_right")) return 0x01 | 0x08;
+    if (litEqual(handle, "bottom_left")) return 0x02 | 0x04;
+    if (litEqual(handle, "bottom_right")) return 0x02 | 0x08;
+    if (litEqual(handle, "abs")) return 0x10;
+    return 0;
+}
+
 export fn yabai_token_to_value(token: *const MsgToken, out: *TokenValue) void {
     @setRuntimeSafety(false);
     out.* = std.mem.zeroes(TokenValue);

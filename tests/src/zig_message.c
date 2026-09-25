@@ -14,6 +14,9 @@ bool yabai_token_is_positive_integer(const struct token *token, int *value);
 bool yabai_token_is_hexadecimal(const struct token *token, uint32_t *value);
 bool yabai_token_is_float(const struct token *token, float *value);
 void yabai_token_to_value(const struct token *token, struct token_value *out);
+void yabai_parse_key_value_pair(char *token, char **key, char **value, bool *exclusion);
+uint8_t yabai_parse_value_type(char *type);
+uint8_t yabai_parse_resize_handle(char *handle);
 
 _Static_assert(sizeof(struct token) == 16, "struct token must stay 16 bytes");
 _Static_assert(sizeof(struct token_value) == 32, "struct token_value must stay 32 bytes");
@@ -206,5 +209,98 @@ TEST_FUNC(zig_message_token_to_value,
         if (cv.type == TOKEN_TYPE_U32) TEST_CHECK(cv.u32_value != zv.u32_value, 0);
         if (cv.type == TOKEN_TYPE_FLOAT) TEST_CHECK(memcmp(&cv.float_value, &zv.float_value, sizeof(float)), 0);
         if (cv.type == TOKEN_TYPE_STRING) TEST_CHECK(cv.string_value != zv.string_value, 0);
+    }
+})
+
+static char *kv_inputs[] = { "app=Terminal", "title!=foo", "space=", "manage", "=floating", "!=", "a!=b=c", "x==", "==", "!", "label=one=two" };
+
+TEST_FUNC(zig_message_key_value,
+{
+    int count = array_count(kv_inputs);
+    int i = 0;
+    for (i = 0; i < count; ++i) {
+        int len = strlen(kv_inputs[i]);
+        char c_buf[64];
+        char z_buf[64];
+        memcpy(c_buf, kv_inputs[i], len + 1);
+        memcpy(z_buf, kv_inputs[i], len + 1);
+
+        char *c_key;
+        char *c_value;
+        bool c_exc = true;
+        char *z_key;
+        char *z_value;
+        bool z_exc = true;
+        parse_key_value_pair(c_buf, &c_key, &c_value, &c_exc);
+        yabai_parse_key_value_pair(z_buf, &z_key, &z_value, &z_exc);
+
+        TEST_CHECK((c_key == NULL) != (z_key == NULL), 0);
+        if (c_key && z_key) TEST_CHECK(strcmp(c_key, z_key), 0);
+        TEST_CHECK((c_value == NULL) != (z_value == NULL), 0);
+        if (c_value && z_value) TEST_CHECK(strcmp(c_value, z_value), 0);
+        TEST_CHECK(c_exc != z_exc, 0);
+        TEST_CHECK(memcmp(c_buf, z_buf, len + 1), 0);
+    }
+
+    char hand[] = "app=Terminal";
+    char *hkey = NULL;
+    char *hval = NULL;
+    bool hexc = true;
+    yabai_parse_key_value_pair(hand, &hkey, &hval, &hexc);
+    TEST_CHECK(hkey == NULL, 0);
+    TEST_CHECK(hval == NULL, 0);
+    if (hkey) TEST_CHECK(strcmp(hkey, "app"), 0);
+    if (hval) TEST_CHECK(strcmp(hval, "Terminal"), 0);
+    TEST_CHECK(hexc, false);
+})
+
+struct named_const_case
+{
+    char *name;
+    uint8_t expected;
+};
+
+static struct named_const_case value_type_cases[] =
+{
+    { "abs", 0x1 },
+    { "rel", 0x2 },
+    { "", 0 },
+    { "ABS", 0 },
+    { "absolute", 0 },
+};
+
+static struct named_const_case resize_handle_cases[] =
+{
+    { "top", 0x01 },
+    { "bottom", 0x02 },
+    { "left", 0x04 },
+    { "right", 0x08 },
+    { "top_left", 0x05 },
+    { "top_right", 0x09 },
+    { "bottom_left", 0x06 },
+    { "bottom_right", 0x0A },
+    { "abs", 0x10 },
+    { "", 0 },
+    { "center", 0 },
+    { "TOP", 0 },
+};
+
+TEST_FUNC(zig_message_named_consts,
+{
+    int count = array_count(value_type_cases);
+    int i = 0;
+    for (i = 0; i < count; ++i) {
+        uint8_t c = parse_value_type(value_type_cases[i].name);
+        uint8_t z = yabai_parse_value_type(value_type_cases[i].name);
+        TEST_CHECK(c != value_type_cases[i].expected, 0);
+        TEST_CHECK(c != z, 0);
+    }
+
+    count = array_count(resize_handle_cases);
+    for (i = 0; i < count; ++i) {
+        uint8_t c = parse_resize_handle(resize_handle_cases[i].name);
+        uint8_t z = yabai_parse_resize_handle(resize_handle_cases[i].name);
+        TEST_CHECK(c != resize_handle_cases[i].expected, 0);
+        TEST_CHECK(c != z, 0);
     }
 })

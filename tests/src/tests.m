@@ -34,7 +34,9 @@ typedef TEST_SIG(function);
     TEST_ENTRY(zig_message_token_stream)                         \
     TEST_ENTRY(zig_message_token_compare)                        \
     TEST_ENTRY(zig_message_token_numbers)                        \
-    TEST_ENTRY(zig_message_token_to_value)
+    TEST_ENTRY(zig_message_token_to_value)                       \
+    TEST_ENTRY(zig_message_key_value)                            \
+    TEST_ENTRY(zig_message_named_consts)
 
 static struct {
     char *name;
