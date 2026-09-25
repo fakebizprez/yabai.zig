@@ -13,13 +13,39 @@ pub const FeedbackWindow = extern struct {
     context: ?*anyopaque,
 };
 
+pub const Area = extern struct {
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+};
+
+pub const CgRect = extern struct {
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+};
+
+pub const CgPoint = extern struct {
+    x: f64,
+    y: f64,
+};
+
+pub const BalanceNode = extern struct {
+    y_count: c_int,
+    x_count: c_int,
+};
+
+comptime {
+    if (@sizeOf(Area) != 16) @compileError("Area size drift");
+    if (@sizeOf(CgRect) != 32) @compileError("CgRect size drift");
+    if (@sizeOf(CgPoint) != 16) @compileError("CgPoint size drift");
+    if (@sizeOf(BalanceNode) != 8) @compileError("BalanceNode size drift");
+}
+
 pub const WindowNode = extern struct {
-    area: extern struct {
-        x: f32,
-        y: f32,
-        w: f32,
-        h: f32,
-    },
+    area: Area,
     parent: ?*WindowNode,
     left: ?*WindowNode,
     right: ?*WindowNode,
@@ -128,8 +154,14 @@ export fn yabai_window_node_contains_window(node: *const WindowNode, window_id: 
     return false;
 }
 
+pub const SPLIT_NONE: c_int = 0;
 pub const SPLIT_Y: c_int = 1;
 pub const SPLIT_X: c_int = 2;
+pub const SPLIT_AUTO: c_int = 3;
+pub const CHILD_NONE: c_int = 0;
+pub const CHILD_SECOND: c_int = 1;
+pub const CHILD_FIRST: c_int = 2;
+pub const VIEW_ENABLE_GAP: u64 = 0x100;
 pub const DIR_NORTH: c_int = 360;
 pub const DIR_EAST: c_int = 90;
 pub const DIR_SOUTH: c_int = 180;
@@ -259,4 +291,126 @@ export fn yabai_window_node_index_of_window(node: *const WindowNode, window_id: 
         i += 1;
     }
     return 0;
+}
+
+// Mirrors window_node_is_occupied(): occupied when the node holds windows.
+export fn yabai_window_node_is_occupied(node: *const WindowNode) bool {
+    @setRuntimeSafety(false);
+    return node.window_count != 0;
+}
+
+// Mirrors window_node_is_intermediate(): intermediate when it has a parent.
+export fn yabai_window_node_is_intermediate(node: *const WindowNode) bool {
+    @setRuntimeSafety(false);
+    return node.parent != null;
+}
+
+// Mirrors window_node_get_child(): explicit child wins, otherwise the
+// space placement is lifted in as window_placement so the export stays pure.
+export fn yabai_window_node_get_child(node: *const WindowNode, window_placement: c_int) c_int {
+    @setRuntimeSafety(false);
+    if (node.child != CHILD_NONE) return node.child;
+    return window_placement;
+}
+
+// Mirrors window_node_get_split(): node split wins, then explicit view
+// split, then the space split_type (lifted in), then area aspect fallback.
+export fn yabai_window_node_get_split(view: *const View, node: *const WindowNode, space_split_type: c_int) c_int {
+    @setRuntimeSafety(false);
+    if (node.split != SPLIT_NONE) return node.split;
+    if (view.split_type != SPLIT_NONE) {
+        if (view.split_type != SPLIT_AUTO) return view.split_type;
+    } else if (space_split_type != SPLIT_AUTO) {
+        return space_split_type;
+    }
+    return if (node.area.w >= node.area.h) SPLIT_Y else SPLIT_X;
+}
+
+// Mirrors window_node_get_ratio(): in-range ratio wins, otherwise the
+// space split_ratio lifted in as space_split_ratio.
+export fn yabai_window_node_get_ratio(node: *const WindowNode, space_split_ratio: f32) f32 {
+    @setRuntimeSafety(false);
+    if (node.ratio >= 0.1 and node.ratio <= 0.9) return node.ratio;
+    return space_split_ratio;
+}
+
+// Mirrors window_node_get_gap(): gap gated by VIEW_ENABLE_GAP.
+export fn yabai_window_node_get_gap(view: *const View) c_int {
+    @setRuntimeSafety(false);
+    if ((view.flags & VIEW_ENABLE_GAP) != 0) return view.window_gap;
+    return 0;
+}
+
+// Mirrors area_from_cgrect(): narrows the CGRect doubles to float areas.
+export fn yabai_area_from_cgrect(rect: *const CgRect, out: *Area) void {
+    @setRuntimeSafety(false);
+    out.x = @floatCast(rect.x);
+    out.y = @floatCast(rect.y);
+    out.w = @floatCast(rect.w);
+    out.h = @floatCast(rect.h);
+}
+
+// Mirrors area_max_point(): float math first, then widened to double,
+// exactly as the C promotion rules dictate.
+export fn yabai_area_max_point(area: *const Area, out: *CgPoint) void {
+    @setRuntimeSafety(false);
+    const mx: f32 = area.x + area.w - 1;
+    const my: f32 = area.y + area.h - 1;
+    out.x = mx;
+    out.y = my;
+}
+
+// Mirrors window_node_equalize(): resets matching-axis ratios to the
+// space split_ratio lifted in as space_split_ratio.
+export fn yabai_window_node_equalize(node: *WindowNode, axis_flag: u32, space_split_ratio: f32) void {
+    @setRuntimeSafety(false);
+    if (node.left) |l| yabai_window_node_equalize(l, axis_flag, space_split_ratio);
+    if (node.right) |r| yabai_window_node_equalize(r, axis_flag, space_split_ratio);
+    const y_mask: u32 = @intCast(SPLIT_Y);
+    const x_mask: u32 = @intCast(SPLIT_X);
+    if ((axis_flag & y_mask) != 0 and node.split == SPLIT_Y) {
+        node.ratio = space_split_ratio;
+    }
+    if ((axis_flag & x_mask) != 0 and node.split == SPLIT_X) {
+        node.ratio = space_split_ratio;
+    }
+}
+
+extern fn yabai_balance_node_add(a: *const BalanceNode, b: *const BalanceNode, out: *BalanceNode) void;
+
+fn balanceInner(node: *WindowNode, axis_flag: u32) BalanceNode {
+    @setRuntimeSafety(false);
+    if (isLeaf(node)) {
+        const y: c_int = if (node.parent) |p| (if (p.split == SPLIT_Y) 1 else 0) else 0;
+        const x: c_int = if (node.parent) |p| (if (p.split == SPLIT_X) 1 else 0) else 0;
+        return .{ .y_count = y, .x_count = x };
+    }
+    const left_node = node.left orelse unreachable;
+    const right_node = node.right orelse unreachable;
+    const left_leafs = balanceInner(left_node, axis_flag);
+    const right_leafs = balanceInner(right_node, axis_flag);
+    var total: BalanceNode = undefined;
+    yabai_balance_node_add(&left_leafs, &right_leafs, &total);
+    const y_mask: u32 = @intCast(SPLIT_Y);
+    const x_mask: u32 = @intCast(SPLIT_X);
+    if ((axis_flag & y_mask) != 0 and node.split == SPLIT_Y) {
+        node.ratio = @as(f32, @floatFromInt(left_leafs.y_count)) / @as(f32, @floatFromInt(total.y_count));
+        total.y_count -= 1;
+    }
+    if ((axis_flag & x_mask) != 0 and node.split == SPLIT_X) {
+        node.ratio = @as(f32, @floatFromInt(left_leafs.x_count)) / @as(f32, @floatFromInt(total.x_count));
+        total.x_count -= 1;
+    }
+    if (node.parent) |p| {
+        total.y_count += if (p.split == SPLIT_Y) 1 else 0;
+        total.x_count += if (p.split == SPLIT_X) 1 else 0;
+    }
+    return total;
+}
+
+// Mirrors window_node_balance(): leaf counts bubble up through the
+// already-ported balance_node_add, ratios split by left/total shares.
+export fn yabai_window_node_balance(node: *WindowNode, axis_flag: u32, out: *BalanceNode) void {
+    @setRuntimeSafety(false);
+    out.* = balanceInner(node, axis_flag);
 }

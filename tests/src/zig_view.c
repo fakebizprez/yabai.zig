@@ -19,6 +19,16 @@ void yabai_window_node_rotate(struct window_node *node, int degrees);
 struct window_node *yabai_window_node_mirror(struct window_node *node, int axis);
 struct window_node *yabai_window_node_fence(struct window_node *node, int dir);
 void yabai_view_stack_window(struct window_node *node, uint32_t window_id);
+bool yabai_window_node_is_occupied(struct window_node *node);
+bool yabai_window_node_is_intermediate(struct window_node *node);
+int yabai_window_node_get_child(struct window_node *node, int window_placement);
+int yabai_window_node_get_split(struct view *view, struct window_node *node, int space_split_type);
+float yabai_window_node_get_ratio(struct window_node *node, float space_split_ratio);
+int yabai_window_node_get_gap(struct view *view);
+void yabai_area_from_cgrect(const CGRect *rect, struct area *out);
+void yabai_area_max_point(const struct area *area, CGPoint *out);
+void yabai_window_node_equalize(struct window_node *node, uint32_t axis_flag, float space_split_ratio);
+void yabai_window_node_balance(struct window_node *node, uint32_t axis_flag, struct balance_node *out);
 
 struct yabai_view
 {
@@ -429,4 +439,420 @@ TEST_FUNC(zig_view_find_window_node,
     free(c_view);
     free(z_view);
     free_test_tree(r, a, c, d, e);
+})
+
+TEST_FUNC(zig_view_occupancy_intermediate,
+{
+    struct window_node *r;
+    struct window_node *a;
+    struct window_node *c;
+    struct window_node *d;
+    struct window_node *e;
+    make_test_tree(&r, &a, &c, &d, &e);
+
+    /* d:{5,9} count=2 occupied, c:{7} count=1 occupied, e empty. */
+    TEST_CHECK(window_node_is_occupied(d) != yabai_window_node_is_occupied(d), 0);
+    TEST_CHECK(window_node_is_occupied(d), true);
+    TEST_CHECK(yabai_window_node_is_occupied(d), true);
+    TEST_CHECK(window_node_is_occupied(c) != yabai_window_node_is_occupied(c), 0);
+    TEST_CHECK(window_node_is_occupied(c), true);
+    TEST_CHECK(window_node_is_occupied(e) != yabai_window_node_is_occupied(e), 0);
+    TEST_CHECK(window_node_is_occupied(e), false);
+    TEST_CHECK(yabai_window_node_is_occupied(e), false);
+    TEST_CHECK(window_node_is_occupied(r) != yabai_window_node_is_occupied(r), 0);
+    TEST_CHECK(window_node_is_occupied(r), false);
+
+    /* Hand vector: bump count on a leaf. */
+    e->window_count = 1;
+    TEST_CHECK(window_node_is_occupied(e) != yabai_window_node_is_occupied(e), 0);
+    TEST_CHECK(window_node_is_occupied(e), true);
+    e->window_count = 0;
+
+    TEST_CHECK(window_node_is_intermediate(r) != yabai_window_node_is_intermediate(r), 0);
+    TEST_CHECK(window_node_is_intermediate(r), false);
+    TEST_CHECK(yabai_window_node_is_intermediate(r), false);
+    TEST_CHECK(window_node_is_intermediate(a) != yabai_window_node_is_intermediate(a), 0);
+    TEST_CHECK(window_node_is_intermediate(a), true);
+    TEST_CHECK(window_node_is_intermediate(d) != yabai_window_node_is_intermediate(d), 0);
+    TEST_CHECK(window_node_is_intermediate(d), true);
+    TEST_CHECK(window_node_is_intermediate(c) != yabai_window_node_is_intermediate(c), 0);
+
+    struct window_node *solo = make_test_node();
+    TEST_CHECK(window_node_is_intermediate(solo) != yabai_window_node_is_intermediate(solo), 0);
+    TEST_CHECK(window_node_is_intermediate(solo), false);
+    TEST_CHECK(window_node_is_occupied(solo) != yabai_window_node_is_occupied(solo), 0);
+    TEST_CHECK(window_node_is_occupied(solo), false);
+    free(solo);
+
+    free_test_tree(r, a, c, d, e);
+})
+
+TEST_FUNC(zig_view_child_split_ratio_gap,
+{
+    int saved_placement = g_space_manager.window_placement;
+    int saved_split = g_space_manager.split_type;
+    float saved_ratio = g_space_manager.split_ratio;
+
+    struct window_node *n = make_test_node();
+
+    /* get_child: explicit child wins, NONE falls back to placement. */
+    n->child = CHILD_SECOND;
+    g_space_manager.window_placement = CHILD_FIRST;
+    TEST_CHECK(window_node_get_child(n) != yabai_window_node_get_child(n, g_space_manager.window_placement), 0);
+    TEST_CHECK(window_node_get_child(n), CHILD_SECOND);
+    TEST_CHECK(yabai_window_node_get_child(n, CHILD_FIRST), CHILD_SECOND);
+    n->child = CHILD_FIRST;
+    TEST_CHECK(window_node_get_child(n) != yabai_window_node_get_child(n, g_space_manager.window_placement), 0);
+    TEST_CHECK(yabai_window_node_get_child(n, CHILD_SECOND), CHILD_FIRST);
+    n->child = CHILD_NONE;
+    TEST_CHECK(window_node_get_child(n) != yabai_window_node_get_child(n, g_space_manager.window_placement), 0);
+    TEST_CHECK(window_node_get_child(n), CHILD_FIRST);
+    TEST_CHECK(yabai_window_node_get_child(n, CHILD_FIRST), CHILD_FIRST);
+    g_space_manager.window_placement = CHILD_SECOND;
+    TEST_CHECK(window_node_get_child(n) != yabai_window_node_get_child(n, g_space_manager.window_placement), 0);
+    TEST_CHECK(window_node_get_child(n), CHILD_SECOND);
+    TEST_CHECK(yabai_window_node_get_child(n, CHILD_SECOND), CHILD_SECOND);
+
+    /* get_split branches. */
+    struct view *v = malloc(sizeof(struct view));
+    memset(v, 0, sizeof(struct view));
+    struct window_node *sn = make_test_node();
+
+    sn->split = SPLIT_Y;
+    v->split_type = SPLIT_X;
+    g_space_manager.split_type = SPLIT_X;
+    init_test_area(&sn->area, 0, 0, 100, 200);
+    TEST_CHECK(window_node_get_split(v, sn) != yabai_window_node_get_split(v, sn, g_space_manager.split_type), 0);
+    TEST_CHECK(window_node_get_split(v, sn), SPLIT_Y);
+    TEST_CHECK(yabai_window_node_get_split(v, sn, SPLIT_X), SPLIT_Y);
+
+    sn->split = SPLIT_NONE;
+    v->split_type = SPLIT_X;
+    TEST_CHECK(window_node_get_split(v, sn) != yabai_window_node_get_split(v, sn, g_space_manager.split_type), 0);
+    TEST_CHECK(window_node_get_split(v, sn), SPLIT_X);
+    TEST_CHECK(yabai_window_node_get_split(v, sn, SPLIT_Y), SPLIT_X);
+
+    sn->split = SPLIT_NONE;
+    v->split_type = SPLIT_AUTO;
+    init_test_area(&sn->area, 0, 0, 200, 100);
+    g_space_manager.split_type = SPLIT_X;
+    TEST_CHECK(window_node_get_split(v, sn) != yabai_window_node_get_split(v, sn, g_space_manager.split_type), 0);
+    TEST_CHECK(window_node_get_split(v, sn), SPLIT_Y);
+    TEST_CHECK(yabai_window_node_get_split(v, sn, SPLIT_X), SPLIT_Y);
+    init_test_area(&sn->area, 0, 0, 100, 200);
+    TEST_CHECK(window_node_get_split(v, sn) != yabai_window_node_get_split(v, sn, g_space_manager.split_type), 0);
+    TEST_CHECK(window_node_get_split(v, sn), SPLIT_X);
+
+    v->split_type = SPLIT_NONE;
+    g_space_manager.split_type = SPLIT_Y;
+    TEST_CHECK(window_node_get_split(v, sn) != yabai_window_node_get_split(v, sn, g_space_manager.split_type), 0);
+    TEST_CHECK(window_node_get_split(v, sn), SPLIT_Y);
+    TEST_CHECK(yabai_window_node_get_split(v, sn, SPLIT_Y), SPLIT_Y);
+    g_space_manager.split_type = SPLIT_X;
+    TEST_CHECK(window_node_get_split(v, sn) != yabai_window_node_get_split(v, sn, g_space_manager.split_type), 0);
+    TEST_CHECK(window_node_get_split(v, sn), SPLIT_X);
+
+    v->split_type = SPLIT_NONE;
+    g_space_manager.split_type = SPLIT_AUTO;
+    init_test_area(&sn->area, 0, 0, 200, 100);
+    TEST_CHECK(window_node_get_split(v, sn) != yabai_window_node_get_split(v, sn, g_space_manager.split_type), 0);
+    TEST_CHECK(window_node_get_split(v, sn), SPLIT_Y);
+    TEST_CHECK(yabai_window_node_get_split(v, sn, SPLIT_AUTO), SPLIT_Y);
+    init_test_area(&sn->area, 0, 0, 100, 200);
+    TEST_CHECK(window_node_get_split(v, sn) != yabai_window_node_get_split(v, sn, g_space_manager.split_type), 0);
+    TEST_CHECK(window_node_get_split(v, sn), SPLIT_X);
+    TEST_CHECK(yabai_window_node_get_split(v, sn, SPLIT_AUTO), SPLIT_X);
+
+    /* get_ratio: in-range passes through, out-of-range falls back. */
+    g_space_manager.split_ratio = 0.5f;
+    sn->ratio = 0.3f;
+    TEST_CHECK(memcmp(&(float){window_node_get_ratio(sn)}, &(float){yabai_window_node_get_ratio(sn, g_space_manager.split_ratio)}, sizeof(float)), 0);
+    TEST_CHECK(memcmp(&(float){0.3f}, &(float){yabai_window_node_get_ratio(sn, 0.5f)}, sizeof(float)), 0);
+    sn->ratio = 0.05f;
+    TEST_CHECK(memcmp(&(float){window_node_get_ratio(sn)}, &(float){yabai_window_node_get_ratio(sn, g_space_manager.split_ratio)}, sizeof(float)), 0);
+    TEST_CHECK(memcmp(&(float){0.5f}, &(float){yabai_window_node_get_ratio(sn, 0.5f)}, sizeof(float)), 0);
+    sn->ratio = 0.95f;
+    TEST_CHECK(memcmp(&(float){window_node_get_ratio(sn)}, &(float){yabai_window_node_get_ratio(sn, g_space_manager.split_ratio)}, sizeof(float)), 0);
+    sn->ratio = 0.1f;
+    TEST_CHECK(memcmp(&(float){window_node_get_ratio(sn)}, &(float){yabai_window_node_get_ratio(sn, g_space_manager.split_ratio)}, sizeof(float)), 0);
+    TEST_CHECK(memcmp(&(float){0.1f}, &(float){yabai_window_node_get_ratio(sn, 0.5f)}, sizeof(float)), 0);
+    sn->ratio = 0.9f;
+    TEST_CHECK(memcmp(&(float){window_node_get_ratio(sn)}, &(float){yabai_window_node_get_ratio(sn, g_space_manager.split_ratio)}, sizeof(float)), 0);
+    sn->ratio = 0.09f;
+    TEST_CHECK(memcmp(&(float){0.5f}, &(float){yabai_window_node_get_ratio(sn, 0.5f)}, sizeof(float)), 0);
+    sn->ratio = 0.91f;
+    TEST_CHECK(memcmp(&(float){0.5f}, &(float){yabai_window_node_get_ratio(sn, 0.5f)}, sizeof(float)), 0);
+
+    /* get_gap: flag gates window_gap; paddings pinned to prove no influence. */
+    v->top_padding = 5;
+    v->bottom_padding = 6;
+    v->left_padding = 7;
+    v->right_padding = 8;
+    v->window_gap = 10;
+    v->flags = VIEW_ENABLE_GAP;
+    TEST_CHECK(window_node_get_gap(v) != yabai_window_node_get_gap(v), 0);
+    TEST_CHECK(window_node_get_gap(v), 10);
+    TEST_CHECK(yabai_window_node_get_gap(v), 10);
+    v->flags = 0;
+    TEST_CHECK(window_node_get_gap(v) != yabai_window_node_get_gap(v), 0);
+    TEST_CHECK(window_node_get_gap(v), 0);
+    TEST_CHECK(yabai_window_node_get_gap(v), 0);
+    v->window_gap = 0;
+    v->flags = VIEW_ENABLE_GAP;
+    TEST_CHECK(window_node_get_gap(v) != yabai_window_node_get_gap(v), 0);
+    TEST_CHECK(yabai_window_node_get_gap(v), 0);
+
+    free(v);
+    free(sn);
+    free(n);
+    g_space_manager.window_placement = saved_placement;
+    g_space_manager.split_type = saved_split;
+    g_space_manager.split_ratio = saved_ratio;
+})
+
+TEST_FUNC(zig_view_area_convert,
+{
+    CGRect rect;
+    rect.origin.x = 0;
+    rect.origin.y = 0;
+    rect.size.width = 1920;
+    rect.size.height = 1080;
+    struct area c_a = area_from_cgrect(rect);
+    struct area z_a;
+    yabai_area_from_cgrect(&rect, &z_a);
+    TEST_CHECK(memcmp(&c_a, &z_a, sizeof(struct area)), 0);
+    struct area expected;
+    init_test_area(&expected, 0, 0, 1920, 1080);
+    TEST_CHECK(memcmp(&z_a, &expected, sizeof(struct area)), 0);
+
+    rect.origin.x = 10.5;
+    rect.origin.y = 20.25;
+    rect.size.width = 100.75;
+    rect.size.height = 200.5;
+    c_a = area_from_cgrect(rect);
+    yabai_area_from_cgrect(&rect, &z_a);
+    TEST_CHECK(memcmp(&c_a, &z_a, sizeof(struct area)), 0);
+    init_test_area(&expected, 10.5f, 20.25f, 100.75f, 200.5f);
+    TEST_CHECK(memcmp(&z_a, &expected, sizeof(struct area)), 0);
+
+    rect.origin.x = -5.5;
+    rect.origin.y = -10.25;
+    rect.size.width = 50.5;
+    rect.size.height = 60.75;
+    c_a = area_from_cgrect(rect);
+    yabai_area_from_cgrect(&rect, &z_a);
+    TEST_CHECK(memcmp(&c_a, &z_a, sizeof(struct area)), 0);
+
+    struct area a;
+    init_test_area(&a, 0, 0, 100, 100);
+    CGPoint c_p = area_max_point(a);
+    CGPoint z_p;
+    yabai_area_max_point(&a, &z_p);
+    TEST_CHECK(memcmp(&c_p, &z_p, sizeof(CGPoint)), 0);
+    TEST_CHECK(c_p.x == 99, 1);
+    TEST_CHECK(c_p.y == 99, 1);
+    TEST_CHECK(z_p.x == 99, 1);
+    TEST_CHECK(z_p.y == 99, 1);
+
+    init_test_area(&a, 10, 20, 30, 40);
+    c_p = area_max_point(a);
+    yabai_area_max_point(&a, &z_p);
+    TEST_CHECK(memcmp(&c_p, &z_p, sizeof(CGPoint)), 0);
+    TEST_CHECK(c_p.x == 39, 1);
+    TEST_CHECK(c_p.y == 59, 1);
+
+    init_test_area(&a, 0.5f, 1.5f, 100, 100);
+    c_p = area_max_point(a);
+    yabai_area_max_point(&a, &z_p);
+    TEST_CHECK(memcmp(&c_p, &z_p, sizeof(CGPoint)), 0);
+    TEST_CHECK(c_p.x == 99.5, 1);
+    TEST_CHECK(c_p.y == 100.5, 1);
+
+    init_test_area(&a, 0, 0, 1, 1);
+    c_p = area_max_point(a);
+    yabai_area_max_point(&a, &z_p);
+    TEST_CHECK(memcmp(&c_p, &z_p, sizeof(CGPoint)), 0);
+    TEST_CHECK(c_p.x == 0, 1);
+    TEST_CHECK(c_p.y == 0, 1);
+})
+
+static void make_equalize_pair(struct window_node **cr, struct window_node **cl, struct window_node **crr, struct window_node **zr, struct window_node **zl, struct window_node **zrr)
+{
+    *cr = make_test_node();
+    *cl = make_test_node();
+    *crr = make_test_node();
+    (*cr)->left = *cl;
+    (*cr)->right = *crr;
+    (*cl)->parent = *cr;
+    (*crr)->parent = *cr;
+    *zr = make_test_node();
+    *zl = make_test_node();
+    *zrr = make_test_node();
+    (*zr)->left = *zl;
+    (*zr)->right = *zrr;
+    (*zl)->parent = *zr;
+    (*zrr)->parent = *zr;
+}
+
+TEST_FUNC(zig_view_equalize,
+{
+    float saved_ratio = g_space_manager.split_ratio;
+    g_space_manager.split_ratio = 0.5f;
+
+    struct window_node *cr;
+    struct window_node *cl;
+    struct window_node *crr;
+    struct window_node *zr;
+    struct window_node *zl;
+    struct window_node *zrr;
+    make_equalize_pair(&cr, &cl, &crr, &zr, &zl, &zrr);
+    cr->split = SPLIT_Y;
+    cr->ratio = 0.3f;
+    zr->split = SPLIT_Y;
+    zr->ratio = 0.3f;
+    window_node_equalize(cr, SPLIT_Y);
+    yabai_window_node_equalize(zr, SPLIT_Y, g_space_manager.split_ratio);
+    TEST_CHECK(memcmp(&cr->ratio, &zr->ratio, sizeof(float)), 0);
+    TEST_CHECK(memcmp(&zr->ratio, &(float){0.5f}, sizeof(float)), 0);
+    free(cr);
+    free(cl);
+    free(crr);
+    free(zr);
+    free(zl);
+    free(zrr);
+
+    make_equalize_pair(&cr, &cl, &crr, &zr, &zl, &zrr);
+    cr->split = SPLIT_Y;
+    cr->ratio = 0.3f;
+    zr->split = SPLIT_Y;
+    zr->ratio = 0.3f;
+    window_node_equalize(cr, SPLIT_X);
+    yabai_window_node_equalize(zr, SPLIT_X, g_space_manager.split_ratio);
+    TEST_CHECK(memcmp(&cr->ratio, &zr->ratio, sizeof(float)), 0);
+    TEST_CHECK(memcmp(&zr->ratio, &(float){0.3f}, sizeof(float)), 0);
+    free(cr);
+    free(cl);
+    free(crr);
+    free(zr);
+    free(zl);
+    free(zrr);
+
+    /* Mixed splits: Y-only resets Y nodes, X-only resets X nodes. */
+    struct window_node *cn[5];
+    struct window_node *zn[5];
+    make_test_pair(cn, zn);
+    cn[0]->split = SPLIT_Y;
+    cn[0]->ratio = 0.2f;
+    cn[1]->split = SPLIT_X;
+    cn[1]->ratio = 0.8f;
+    zn[0]->split = SPLIT_Y;
+    zn[0]->ratio = 0.2f;
+    zn[1]->split = SPLIT_X;
+    zn[1]->ratio = 0.8f;
+    window_node_equalize(cn[0], SPLIT_Y);
+    yabai_window_node_equalize(zn[0], SPLIT_Y, g_space_manager.split_ratio);
+    TEST_CHECK(tree_struct_equal(cn, zn), 1);
+    TEST_CHECK(memcmp(&zn[0]->ratio, &(float){0.5f}, sizeof(float)), 0);
+    TEST_CHECK(memcmp(&zn[1]->ratio, &(float){0.8f}, sizeof(float)), 0);
+    free_test_pair(cn, zn);
+
+    make_test_pair(cn, zn);
+    cn[0]->split = SPLIT_Y;
+    cn[0]->ratio = 0.2f;
+    cn[1]->split = SPLIT_X;
+    cn[1]->ratio = 0.8f;
+    zn[0]->split = SPLIT_Y;
+    zn[0]->ratio = 0.2f;
+    zn[1]->split = SPLIT_X;
+    zn[1]->ratio = 0.8f;
+    window_node_equalize(cn[0], SPLIT_X);
+    yabai_window_node_equalize(zn[0], SPLIT_X, g_space_manager.split_ratio);
+    TEST_CHECK(tree_struct_equal(cn, zn), 1);
+    TEST_CHECK(memcmp(&zn[0]->ratio, &(float){0.2f}, sizeof(float)), 0);
+    TEST_CHECK(memcmp(&zn[1]->ratio, &(float){0.5f}, sizeof(float)), 0);
+    free_test_pair(cn, zn);
+
+    g_space_manager.split_ratio = saved_ratio;
+})
+
+static void make_balance_trio(struct window_node **r, struct window_node **l, struct window_node **rr)
+{
+    *r = make_test_node();
+    *l = make_test_node();
+    *rr = make_test_node();
+    (*r)->left = *l;
+    (*r)->right = *rr;
+    (*l)->parent = *r;
+    (*rr)->parent = *r;
+}
+
+TEST_FUNC(zig_view_balance,
+{
+    /* Two-leaf Y tree, axis Y: ratio 1/2, total {1,0}. */
+    struct window_node *cr;
+    struct window_node *cl;
+    struct window_node *crr;
+    struct window_node *zr;
+    struct window_node *zl;
+    struct window_node *zrr;
+    make_balance_trio(&cr, &cl, &crr);
+    make_balance_trio(&zr, &zl, &zrr);
+    cr->split = SPLIT_Y;
+    cr->ratio = 0.9f;
+    zr->split = SPLIT_Y;
+    zr->ratio = 0.9f;
+    struct balance_node c_out = window_node_balance(cr, SPLIT_Y);
+    struct balance_node z_out;
+    yabai_window_node_balance(zr, SPLIT_Y, &z_out);
+    TEST_CHECK(memcmp(&c_out, &z_out, sizeof(struct balance_node)), 0);
+    TEST_CHECK(memcmp(&cr->ratio, &zr->ratio, sizeof(float)), 0);
+    TEST_CHECK(memcmp(&zr->ratio, &(float){0.5f}, sizeof(float)), 0);
+    TEST_CHECK(z_out.y_count, 1);
+    TEST_CHECK(z_out.x_count, 0);
+    free(cr);
+    free(cl);
+    free(crr);
+    free(zr);
+    free(zl);
+    free(zrr);
+
+    /* Five-node R(Y) -> (A(Y) -> (D,E), C), axis Y: A=1/2, R=2/3. */
+    struct window_node *cn[5];
+    struct window_node *zn[5];
+    make_test_pair(cn, zn);
+    cn[0]->split = SPLIT_Y;
+    cn[0]->ratio = 0.9f;
+    cn[1]->split = SPLIT_Y;
+    cn[1]->ratio = 0.9f;
+    zn[0]->split = SPLIT_Y;
+    zn[0]->ratio = 0.9f;
+    zn[1]->split = SPLIT_Y;
+    zn[1]->ratio = 0.9f;
+    c_out = window_node_balance(cn[0], SPLIT_Y);
+    yabai_window_node_balance(zn[0], SPLIT_Y, &z_out);
+    TEST_CHECK(memcmp(&c_out, &z_out, sizeof(struct balance_node)), 0);
+    TEST_CHECK(tree_struct_equal(cn, zn), 1);
+    float exp_a = 1.0f / 2.0f;
+    float exp_r = 2.0f / 3.0f;
+    TEST_CHECK(memcmp(&zn[1]->ratio, &exp_a, sizeof(float)), 0);
+    TEST_CHECK(memcmp(&zn[0]->ratio, &exp_r, sizeof(float)), 0);
+    free_test_pair(cn, zn);
+
+    /* Mixed R(Y) -> (A(X) -> (D,E), C), axis both: A=1/2, R=1/2. */
+    make_test_pair(cn, zn);
+    cn[0]->split = SPLIT_Y;
+    cn[0]->ratio = 0.9f;
+    cn[1]->split = SPLIT_X;
+    cn[1]->ratio = 0.9f;
+    zn[0]->split = SPLIT_Y;
+    zn[0]->ratio = 0.9f;
+    zn[1]->split = SPLIT_X;
+    zn[1]->ratio = 0.9f;
+    c_out = window_node_balance(cn[0], SPLIT_Y | SPLIT_X);
+    yabai_window_node_balance(zn[0], SPLIT_Y | SPLIT_X, &z_out);
+    TEST_CHECK(memcmp(&c_out, &z_out, sizeof(struct balance_node)), 0);
+    TEST_CHECK(tree_struct_equal(cn, zn), 1);
+    TEST_CHECK(memcmp(&zn[1]->ratio, &exp_a, sizeof(float)), 0);
+    TEST_CHECK(memcmp(&zn[0]->ratio, &exp_a, sizeof(float)), 0);
+    free_test_pair(cn, zn);
 })

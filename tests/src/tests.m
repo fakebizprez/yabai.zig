@@ -51,6 +51,11 @@ typedef TEST_SIG(function);
     TEST_ENTRY(zig_view_fence)                                   \
     TEST_ENTRY(zig_view_stack_window)                            \
     TEST_ENTRY(zig_view_find_window_node)                                   \
+    TEST_ENTRY(zig_view_occupancy_intermediate)                     \
+    TEST_ENTRY(zig_view_child_split_ratio_gap)                      \
+    TEST_ENTRY(zig_view_area_convert)                               \
+    TEST_ENTRY(zig_view_equalize)                                   \
+    TEST_ENTRY(zig_view_balance)                                   \
     TEST_ENTRY(zig_util_balance_clamp)                           \
     TEST_ENTRY(zig_util_json_bool)                               \
     TEST_ENTRY(zig_util_in_range)                                \
