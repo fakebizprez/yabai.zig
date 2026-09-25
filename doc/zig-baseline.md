@@ -18,10 +18,10 @@ unless doc/zig-refactor-plan.md explicitly allows a change.
   `--message/-m`, `--config/-c`, `--verbose/-V`, `--version/-v`,
   `--help/-h`) plus the `man yabai` pointer.
 - `lipo -info ./bin/yabai`: fat file with `x86_64 arm64` slices.
-- Existing suite: `cd tests && make` runs 17 tests, all passing
+- Existing suite: `cd tests && make` runs 19 tests, all passing
   (2 display geometry + 8 socket wire-format/dispatcher characterization
   in tests/src/socket_frame.c + 3 geometry parity in
-  tests/src/zig_geometry.c + 4 tokenizer parity in
+  tests/src/zig_geometry.c + 6 tokenizer/command-decoding parity in
   tests/src/zig_message.c).
 
 ## Step 2 boundary evidence
@@ -58,6 +58,12 @@ unless doc/zig-refactor-plan.md explicitly allows a change.
 - Live dispatcher checks merged from the parallel baseline worker and
   passing: unknown domain/command yield the 0x07 failure prefix,
   `rule --list` yields `[]`, `signal --list` yields a JSON list.
+- Key/value + named-constant slice (TDD) in zig/message.zig:
+  `parse_key_value_pair` (incl. in-place NUL write and untouched-flag
+  paths), `parse_value_type`, `parse_resize_handle`. Parity tests cover
+  11 separator edge cases with byte-compared mutated buffers, plus
+  hand-pinned constant tables. 14 exports in the daemon; x86_64 slice
+  verified.
 
 ## Daemon linkage (universal objects)
 
