@@ -915,3 +915,357 @@ TEST_FUNC(zig_rule_serialize_parity,
         free_serialize_rule_strings(&r);
     }
 })
+
+/* parse_rule() (src/message.c) + yabai_parse_rule (zig/rule.zig) parity.
+ *
+ * The C static is the oracle: this file is #included into tests.m after
+ * src/message.c, so parse_rule/get_token are directly callable. Message
+ * buffers are NUL-joined token arrays plus a final NUL, matching the
+ * daemon wire frame; each side gets its own copy because parsing writes
+ * NULs in place. Rules start zeroed like handle_domain_rule's stack rule
+ * and both sides are destroyed after every case (leaks gate). Token arrays
+ * use parenthesized compound literals: TEST_FUNC/TEST_CHECK macro arguments
+ * split on commas inside braces but not inside parens.
+ *
+ * display=/space= keys never reach the C oracle here: parse_rule evaluates
+ * display_manager_active_display_id()/space_manager_active_space() eagerly
+ * and the former asserts on a NULL SLS uuid in-process. Those branches run
+ * Zig-only with the acting ids lifted in (same seam as
+ * yabai_rule_serialize's did_index/sid_index) against hand-pinned bytes. */
+
+bool yabai_parse_rule(FILE *rsp, char **message, struct rule *rule, const struct token *token, uint32_t acting_did, uint64_t acting_sid);
+
+_Static_assert(offsetof(struct display_manager, last_display_id) == 4, "display_manager.last_display_id drift");
+_Static_assert(offsetof(struct space_manager, last_space_id) == 48, "space_manager.last_space_id drift");
+_Static_assert(offsetof(struct display_label, did) == 0, "display_label.did drift");
+_Static_assert(offsetof(struct space_label, sid) == 0, "space_label.sid drift");
+_Static_assert(RULE_PROP_UD == 0, "RULE_PROP_UD drift");
+_Static_assert(RULE_PROP_ON == 1, "RULE_PROP_ON drift");
+_Static_assert(RULE_PROP_OFF == 2, "RULE_PROP_OFF drift");
+_Static_assert(TOKEN_TYPE_INVALID == 0, "TOKEN_TYPE_INVALID drift");
+_Static_assert(TOKEN_TYPE_INT == 2, "TOKEN_TYPE_INT drift");
+_Static_assert(TOKEN_TYPE_STRING == 5, "TOKEN_TYPE_STRING drift");
+_Static_assert(REG_EXTENDED == 1, "REG_EXTENDED drift");
+
+static const char *rsv_words[] = {
+    ARGUMENT_WINDOW_TOGGLE_FLOAT, ARGUMENT_WINDOW_TOGGLE_STICKY,
+    ARGUMENT_WINDOW_TOGGLE_SHADOW, ARGUMENT_WINDOW_TOGGLE_SPLIT,
+    ARGUMENT_WINDOW_TOGGLE_PARENT, ARGUMENT_WINDOW_TOGGLE_FULLSC,
+    ARGUMENT_WINDOW_TOGGLE_WINDOWED, ARGUMENT_WINDOW_TOGGLE_NATIVE,
+    ARGUMENT_WINDOW_TOGGLE_EXPOSE, ARGUMENT_WINDOW_TOGGLE_PIP,
+    ARGUMENT_WINDOW_SCRATCHPAD_RECOVER
+};
+
+static const char *onoff_keys[] = { "manage", "sticky", "mouse_follows_focus", "native-fullscreen" };
+static const char *layer_vals[] = { "below", "normal", "above", "auto", "middle" };
+
+static char *rule_msg_join(const char **toks, int n)
+{
+    size_t total = 1;
+    int i = 0;
+    for (i = 0; i < n; ++i) total += strlen(toks[i]) + 1;
+    char *buf = malloc(total);
+    char *p = buf;
+    for (i = 0; i < n; ++i) {
+        size_t l = strlen(toks[i]) + 1;
+        memcpy(p, toks[i], l);
+        p += l;
+    }
+    *p = 0;
+    return buf;
+}
+
+static int rule_str_eq(char *a, char *b)
+{
+    if ((a == NULL) != (b == NULL)) return 0;
+    if (a && strcmp(a, b) != 0) return 0;
+    return 1;
+}
+
+static int rule_fx_eq(struct rule_effects *a, struct rule_effects *b)
+{
+    if (a->did != b->did) return 0;
+    if (a->sid != b->sid) return 0;
+    if (memcmp(&a->opacity, &b->opacity, sizeof(float)) != 0) return 0;
+    if (a->manage != b->manage) return 0;
+    if (a->sticky != b->sticky) return 0;
+    if (a->mff != b->mff) return 0;
+    if (a->layer != b->layer) return 0;
+    if (a->fullscreen != b->fullscreen) return 0;
+    if (memcmp(a->grid, b->grid, sizeof(a->grid)) != 0) return 0;
+    if (!rule_str_eq(a->scratchpad, b->scratchpad)) return 0;
+    if (a->flags != b->flags) return 0;
+    return 1;
+}
+
+static int rules_equal(struct rule *a, struct rule *b)
+{
+    if (!rule_str_eq(a->label, b->label)) return 0;
+    if (!rule_str_eq(a->app, b->app)) return 0;
+    if (!rule_str_eq(a->title, b->title)) return 0;
+    if (!rule_str_eq(a->role, b->role)) return 0;
+    if (!rule_str_eq(a->subrole, b->subrole)) return 0;
+    if (!rule_fx_eq(&a->effects, &b->effects)) return 0;
+    if (a->flags != b->flags) return 0;
+    return 1;
+}
+
+/* Full oracle parity: return value, emitted bytes, resulting rule shape
+ * (regex internals excluded, VALID flags compared), and cursor drain. */
+static int rule_case_oracle(const char **toks, int n)
+{
+    char *c_buf = rule_msg_join(toks, n);
+    char *z_buf = rule_msg_join(toks, n);
+    char *c_cur = c_buf;
+    char *z_cur = z_buf;
+    struct token c_first = get_token(&c_cur);
+    struct token z_first = get_token(&z_cur);
+    struct rule c_rule;
+    struct rule z_rule;
+    memset(&c_rule, 0, sizeof(c_rule));
+    memset(&z_rule, 0, sizeof(z_rule));
+    char *c_msg = NULL;
+    size_t c_len = 0;
+    char *z_msg = NULL;
+    size_t z_len = 0;
+    FILE *c_rsp = open_memstream(&c_msg, &c_len);
+    FILE *z_rsp = open_memstream(&z_msg, &z_len);
+    bool c_ret = parse_rule(c_rsp, &c_cur, &c_rule, c_first);
+    bool z_ret = yabai_parse_rule(z_rsp, &z_cur, &z_rule, &z_first, 0, 0);
+    fflush(c_rsp);
+    fflush(z_rsp);
+    fclose(c_rsp);
+    fclose(z_rsp);
+    int ok = 1;
+    if (c_ret != z_ret) {
+        printf("rule ret mismatch c %d z %d toks:", c_ret, z_ret);
+        int i = 0;
+        for (i = 0; i < n; ++i) printf(" [%s]", toks[i]);
+        printf("\n");
+        ok = 0;
+    }
+    if (c_len != z_len || (c_len > 0 && memcmp(c_msg, z_msg, c_len) != 0)) {
+        printf("rule output mismatch toks:");
+        int i = 0;
+        for (i = 0; i < n; ++i) printf(" [%s]", toks[i]);
+        printf("\nc %zu: %.*s\nz %zu: %.*s\n", c_len, (int) c_len, c_msg ? c_msg : "", z_len, (int) z_len, z_msg ? z_msg : "");
+        ok = 0;
+    }
+    if (!rules_equal(&c_rule, &z_rule)) {
+        printf("rule shape mismatch toks:");
+        int i = 0;
+        for (i = 0; i < n; ++i) printf(" [%s]", toks[i]);
+        printf("\nc flags 0x%x fx 0x%x did %u sid %llu app %s title %s\nz flags 0x%x fx 0x%x did %u sid %llu app %s title %s\n",
+               c_rule.flags, c_rule.effects.flags, c_rule.effects.did, (unsigned long long) c_rule.effects.sid,
+               c_rule.app ? c_rule.app : "(null)", c_rule.title ? c_rule.title : "(null)",
+               z_rule.flags, z_rule.effects.flags, z_rule.effects.did, (unsigned long long) z_rule.effects.sid,
+               z_rule.app ? z_rule.app : "(null)", z_rule.title ? z_rule.title : "(null)");
+        ok = 0;
+    }
+    if (c_cur[0] != 0 || z_cur[0] != 0) {
+        printf("rule cursor not drained\n");
+        ok = 0;
+    }
+    rule_destroy(&c_rule);
+    yabai_rule_destroy(&z_rule);
+    free(c_buf);
+    free(z_buf);
+    free(c_msg);
+    free(z_msg);
+    return ok;
+}
+
+TEST_FUNC(zig_rule_parse_parity,
+{
+    TEST_CHECK(rule_case_oracle((const char *[]){"app=Terminal"}, 1), 1);
+    TEST_CHECK(rule_case_oracle((const char *[]){"app!=Terminal"}, 1), 1);
+    TEST_CHECK(rule_case_oracle((const char *[]){"title=bash"}, 1), 1);
+    TEST_CHECK(rule_case_oracle((const char *[]){"title!=bash"}, 1), 1);
+    TEST_CHECK(rule_case_oracle((const char *[]){"role=AXWindow"}, 1), 1);
+    TEST_CHECK(rule_case_oracle((const char *[]){"role!=AXWindow"}, 1), 1);
+    TEST_CHECK(rule_case_oracle((const char *[]){"subrole=AXStandardWindow"}, 1), 1);
+    TEST_CHECK(rule_case_oracle((const char *[]){"subrole!=AXStandardWindow"}, 1), 1);
+    TEST_CHECK(rule_case_oracle((const char *[]){"title=^(foo|bar).*$"}, 1), 1);
+    /* Invalid regexes: string kept, VALID clear, regex-shape bytes. */
+    TEST_CHECK(rule_case_oracle((const char *[]){"app=(["}, 1), 1);
+    TEST_CHECK(rule_case_oracle((const char *[]){"title!=a{2,1}"}, 1), 1);
+    TEST_CHECK(rule_case_oracle((const char *[]){"role=*bad"}, 1), 1);
+    TEST_CHECK(rule_case_oracle((const char *[]){"subrole=\\"}, 1), 1);
+    TEST_CHECK(rule_case_oracle((const char *[]){"app=[unclosed", "title=OK.*"}, 2), 1);
+    /* Label / scratchpad. */
+    TEST_CHECK(rule_case_oracle((const char *[]){"label=mylabel", "app=x"}, 2), 1);
+    TEST_CHECK(rule_case_oracle((const char *[]){"label!=mylabel", "app=x"}, 2), 1);
+    TEST_CHECK(rule_case_oracle((const char *[]){"scratchpad=pad1", "app=x"}, 2), 1);
+    TEST_CHECK(rule_case_oracle((const char *[]){"scratchpad!=pad", "app=x"}, 2), 1);
+    /* Every reserved window identifier is rejected as a scratchpad. */
+    {
+        int i = 0;
+        for (i = 0; i < 11; ++i) {
+            char tok[128];
+            snprintf(tok, sizeof(tok), "scratchpad=%s", rsv_words[i]);
+            TEST_CHECK(rule_case_oracle((const char *[]){tok, "app=x"}, 2), 1);
+        }
+    }
+    /* Near-misses of reserved words are accepted. */
+    TEST_CHECK(rule_case_oracle((const char *[]){"scratchpad=floating", "app=x"}, 2), 1);
+    TEST_CHECK(rule_case_oracle((const char *[]){"scratchpad=Float", "app=x"}, 2), 1);
+    /* Grid via sscanf %d:%d:%d:%d:%d:%d. */
+    TEST_CHECK(rule_case_oracle((const char *[]){"grid=1:2:3:4:5:6", "app=x"}, 2), 1);
+    TEST_CHECK(rule_case_oracle((const char *[]){"grid=1:2", "app=x"}, 2), 1);
+    TEST_CHECK(rule_case_oracle((const char *[]){"grid=a:b:c:d:e:f", "app=x"}, 2), 1);
+    TEST_CHECK(rule_case_oracle((const char *[]){"grid=1:2:3:4:5", "app=x"}, 2), 1);
+    /* Opacity via sscanf %f + in_range_ii (sscanf prefix match counts). */
+    TEST_CHECK(rule_case_oracle((const char *[]){"opacity=0.5", "app=x"}, 2), 1);
+    TEST_CHECK(rule_case_oracle((const char *[]){"opacity=0", "app=x"}, 2), 1);
+    TEST_CHECK(rule_case_oracle((const char *[]){"opacity=1", "app=x"}, 2), 1);
+    TEST_CHECK(rule_case_oracle((const char *[]){"opacity=1.0", "app=x"}, 2), 1);
+    TEST_CHECK(rule_case_oracle((const char *[]){"opacity=2", "app=x"}, 2), 1);
+    TEST_CHECK(rule_case_oracle((const char *[]){"opacity=-0.1", "app=x"}, 2), 1);
+    TEST_CHECK(rule_case_oracle((const char *[]){"opacity=abc", "app=x"}, 2), 1);
+    TEST_CHECK(rule_case_oracle((const char *[]){"opacity=0.5abc", "app=x"}, 2), 1);
+    TEST_CHECK(rule_case_oracle((const char *[]){"opacity=", "app=x"}, 2), 1);
+    /* manage/sticky/mff/fullscreen on/off/bogus. */
+    {
+        int k = 0;
+        for (k = 0; k < 4; ++k) {
+            char t_on[64];
+            char t_off[64];
+            char t_bogus[64];
+            snprintf(t_on, sizeof(t_on), "%s=on", onoff_keys[k]);
+            snprintf(t_off, sizeof(t_off), "%s=off", onoff_keys[k]);
+            snprintf(t_bogus, sizeof(t_bogus), "%s=maybe", onoff_keys[k]);
+            TEST_CHECK(rule_case_oracle((const char *[]){t_on, "app=x"}, 2), 1);
+            TEST_CHECK(rule_case_oracle((const char *[]){t_off, "app=x"}, 2), 1);
+            TEST_CHECK(rule_case_oracle((const char *[]){t_bogus, "app=x"}, 2), 1);
+        }
+    }
+    /* sub-layer values. */
+    {
+        int i = 0;
+        for (i = 0; i < 5; ++i) {
+            char tok[64];
+            snprintf(tok, sizeof(tok), "sub-layer=%s", layer_vals[i]);
+            TEST_CHECK(rule_case_oracle((const char *[]){tok, "app=x"}, 2), 1);
+        }
+    }
+    /* Malformed pairs, unknown keys, missing filter, exclusions. */
+    TEST_CHECK(rule_case_oracle((const char *[]){"noequals"}, 1), 1);
+    TEST_CHECK(rule_case_oracle((const char *[]){"key="}, 1), 1);
+    TEST_CHECK(rule_case_oracle((const char *[]){"!=", "app=x"}, 2), 1);
+    TEST_CHECK(rule_case_oracle((const char *[]){"bogus=1", "app=x"}, 2), 1);
+    TEST_CHECK(rule_case_oracle((const char *[]){"bogus!=1", "app=x"}, 2), 1);
+    TEST_CHECK(rule_case_oracle((const char *[]){"label=only"}, 1), 1);
+    TEST_CHECK(rule_case_oracle((const char *[]){"grid!=1:1:1:1:1:1", "label!=x", "app=y"}, 3), 1);
+    TEST_CHECK(rule_case_oracle((const char *[]){"opacity!=0.5", "app=x"}, 2), 1);
+    /* Full happy path across every pure key. */
+    TEST_CHECK(rule_case_oracle((const char *[]){"label=L", "app=Term.*", "title!=bash", "role=AXWindow", "subrole=AXStandardWindow", "scratchpad=pad", "manage=on", "sticky=off", "mouse_follows_focus=on", "native-fullscreen=off", "sub-layer=above", "opacity=0.75", "grid=1:1:10:20:30:40"}, 13), 1);
+})
+
+/* Zig-only pins: hand-pinned daemon_fail bytes (0x07 marker + shape),
+ * the manager-backed display/space branches with lifted acting ids, and
+ * the NULL-stream case (C has no NULL guard; only Zig is exercised). */
+static int z_rule_pinned(const char **toks, int n, uint32_t acting_did, uint64_t acting_sid, bool exp_ret, const char *exp_out)
+{
+    char *z_buf = rule_msg_join(toks, n);
+    char *z_cur = z_buf;
+    struct token z_first = get_token(&z_cur);
+    struct rule z_rule;
+    memset(&z_rule, 0, sizeof(z_rule));
+    char *z_msg = NULL;
+    size_t z_len = 0;
+    FILE *z_rsp = open_memstream(&z_msg, &z_len);
+    bool z_ret = yabai_parse_rule(z_rsp, &z_cur, &z_rule, &z_first, acting_did, acting_sid);
+    fflush(z_rsp);
+    fclose(z_rsp);
+    int ok = 1;
+    size_t exp_len = strlen(exp_out);
+    if (z_ret != exp_ret) {
+        printf("pinned ret mismatch got %d want %d\n", z_ret, exp_ret);
+        ok = 0;
+    }
+    if (z_len != exp_len || (exp_len > 0 && memcmp(z_msg, exp_out, exp_len) != 0)) {
+        printf("pinned output mismatch got %zu: %.*s want %zu: %s\n",
+               z_len, (int) z_len, z_msg ? z_msg : "", exp_len, exp_out);
+        ok = 0;
+    }
+    yabai_rule_destroy(&z_rule);
+    free(z_buf);
+    free(z_msg);
+    return ok;
+}
+
+TEST_FUNC(zig_rule_parse_pinned,
+{
+    /* Hand-pinned error bytes for the invalid-pair / invalid-value /
+     * invalid-regex shapes plus unknown-key / missing-filter /
+     * unsupported-exclusion. */
+    TEST_CHECK(z_rule_pinned((const char *[]){"noequals"}, 1, 0, 0, false, "\x07invalid key-value pair 'noequals'\n\x07missing required key-value pair 'app[!]=..' or 'title[!]=..'\n"), 1);
+    TEST_CHECK(z_rule_pinned((const char *[]){"grid=1:2", "app=x"}, 2, 0, 0, false, "\x07invalid value '1:2' for key 'grid'\n"), 1);
+    TEST_CHECK(z_rule_pinned((const char *[]){"app=(["}, 1, 0, 0, false, "\x07invalid regex pattern '([' for key 'app'\n"), 1);
+    TEST_CHECK(z_rule_pinned((const char *[]){"bogus=1", "app=x"}, 2, 0, 0, false, "\x07unknown key 'bogus'\n"), 1);
+    TEST_CHECK(z_rule_pinned((const char *[]){"label=only"}, 1, 0, 0, false, "\x07missing required key-value pair 'app[!]=..' or 'title[!]=..'\n"), 1);
+    TEST_CHECK(z_rule_pinned((const char *[]){"label!=x", "app=y"}, 2, 0, 0, false, "\x07unsupported token '!' (exclusion) given for key 'label'\n"), 1);
+    TEST_CHECK(z_rule_pinned((const char *[]){"app=x"}, 1, 0, 0, true, ""), 1);
+    /* display=/space= with zeroed managers: recent resolves to id 0
+     * (no emission, effect unset, parse fails); unknown labels miss;
+     * space ints miss via the NULL-guarded SLS path; floats/hex take
+     * the else path. Display int/first/last/mouse lookups dereference
+     * NULL CoreFoundation state in-process, so those branches are
+     * covered by inspection only (same reason the C oracle is
+     * uncallable for every display/space key). */
+    TEST_CHECK(z_rule_pinned((const char *[]){"display=recent", "app=x"}, 2, 0, 0, false, ""), 1);
+    TEST_CHECK(z_rule_pinned((const char *[]){"space=recent", "app=x"}, 2, 0, 0, false, ""), 1);
+    TEST_CHECK(z_rule_pinned((const char *[]){"display=bogus", "app=x"}, 2, 0, 0, false, "\x07value 'bogus' is not a valid option for DISPLAY_SEL\n"), 1);
+    TEST_CHECK(z_rule_pinned((const char *[]){"space=bogus", "app=x"}, 2, 0, 0, false, "\x07value 'bogus' is not a valid option for SPACE_SEL\n"), 1);
+    TEST_CHECK(z_rule_pinned((const char *[]){"space=2", "app=x"}, 2, 0, 0, false, "\007could not locate space with mission-control index '2'.\n"), 1);
+    TEST_CHECK(z_rule_pinned((const char *[]){"space=first", "app=x"}, 2, 0, 0, false, "\007could not locate the first space.\n"), 1);
+    TEST_CHECK(z_rule_pinned((const char *[]){"space=last", "app=x"}, 2, 0, 0, false, "\007could not locate the last space.\n"), 1);
+    /* Direction/relative selectors with no acting id take the
+     * could-not-locate-the-selected path without any manager call. */
+    TEST_CHECK(z_rule_pinned((const char *[]){"display=north", "app=x"}, 2, 0, 0, false, "\007could not locate the selected display.\n"), 1);
+    TEST_CHECK(z_rule_pinned((const char *[]){"display=prev", "app=x"}, 2, 0, 0, false, "\007could not locate the selected display.\n"), 1);
+    TEST_CHECK(z_rule_pinned((const char *[]){"space=next", "app=x"}, 2, 0, 0, false, "\007could not locate the selected space.\n"), 1);
+    TEST_CHECK(z_rule_pinned((const char *[]){"space=prev", "app=x"}, 2, 0, 0, false, "\007could not locate the selected space.\n"), 1);
+    TEST_CHECK(z_rule_pinned((const char *[]){"display=1.5", "app=x"}, 2, 0, 0, false, "\x07value '1.5' is not a valid option for DISPLAY_SEL\n"), 1);
+    TEST_CHECK(z_rule_pinned((const char *[]){"space=0x10", "app=x"}, 2, 0, 0, false, "\x07value '0x10' is not a valid option for SPACE_SEL\n"), 1);
+    TEST_CHECK(z_rule_pinned((const char *[]){"display=^", "app=x"}, 2, 0, 0, false, "\x07value '' is not a valid option for DISPLAY_SEL\n"), 1);
+    /* Follow-space prefix sets the effect flag even when lookup fails. */
+    {
+        char *z_buf = rule_msg_join((const char *[]){"display=^recent", "app=x"}, 2);
+        char *z_cur = z_buf;
+        struct token z_first = get_token(&z_cur);
+        struct rule z_rule;
+        memset(&z_rule, 0, sizeof(z_rule));
+        bool z_ret = yabai_parse_rule(NULL, &z_cur, &z_rule, &z_first, 0, 0);
+        TEST_CHECK(z_ret, false);
+        TEST_CHECK(rule_effects_check_flag(&z_rule.effects, RULE_FOLLOW_SPACE), true);
+        TEST_CHECK(z_rule.effects.did, 0);
+        TEST_CHECK(z_rule.app && strcmp(z_rule.app, "x") == 0, true);
+        yabai_rule_destroy(&z_rule);
+        free(z_buf);
+    }
+    /* NULL stream: no crash, same return, effects still applied. */
+    {
+        char *z_buf = rule_msg_join((const char *[]){"app=x", "manage=on"}, 2);
+        char *z_cur = z_buf;
+        struct token z_first = get_token(&z_cur);
+        struct rule z_rule;
+        memset(&z_rule, 0, sizeof(z_rule));
+        bool z_ret = yabai_parse_rule(NULL, &z_cur, &z_rule, &z_first, 0, 0);
+        TEST_CHECK(z_ret, true);
+        TEST_CHECK(z_rule.effects.manage, RULE_PROP_ON);
+        yabai_rule_destroy(&z_rule);
+        free(z_buf);
+    }
+    {
+        char *z_buf = rule_msg_join((const char *[]){"grid=bad", "app=x"}, 2);
+        char *z_cur = z_buf;
+        struct token z_first = get_token(&z_cur);
+        struct rule z_rule;
+        memset(&z_rule, 0, sizeof(z_rule));
+        bool z_ret = yabai_parse_rule(NULL, &z_cur, &z_rule, &z_first, 0, 0);
+        TEST_CHECK(z_ret, false);
+        yabai_rule_destroy(&z_rule);
+        free(z_buf);
+    }
+})
