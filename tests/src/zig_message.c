@@ -18,6 +18,16 @@ void yabai_parse_key_value_pair(char *token, char **key, char **value, bool *exc
 uint8_t yabai_parse_value_type(char *type);
 uint8_t yabai_parse_resize_handle(char *handle);
 
+struct frame_field
+{
+    char *ptr;
+    int len;
+};
+
+int yabai_socket_frame_decode(const char *frame, size_t frame_size, struct frame_field *fields, size_t max_fields, size_t *out_count);
+
+_Static_assert(sizeof(struct frame_field) == 16, "frame_field size drift");
+
 _Static_assert(sizeof(struct token) == 16, "struct token must stay 16 bytes");
 _Static_assert(sizeof(struct token_value) == 32, "struct token_value must stay 32 bytes");
 _Static_assert(offsetof(struct token_value, type) == 16, "token_value.type must sit at offset 16");
@@ -284,6 +294,91 @@ static struct named_const_case resize_handle_cases[] =
     { "center", 0 },
     { "TOP", 0 },
 };
+
+static int frame_decode_parity(char *frame, int total)
+{
+    char *fields_c[16];
+    char *fields_z[16];
+    struct frame_field zf[16];
+    size_t z_count = 0;
+
+    /* Reference split with the characterization helper. */
+    int c_count = socket_frame_decode_checked(frame, total, fields_c, 16);
+    int z_rc = yabai_socket_frame_decode(frame, total, zf, 16, &z_count);
+
+    if ((c_count < 0) != (z_rc != 0)) return 0;
+    if (c_count < 0) return 1;
+    if (z_count != (size_t) c_count) return 0;
+
+    int i = 0;
+    for (i = 0; i < c_count; ++i) {
+        fields_z[i] = zf[i].ptr;
+        if (zf[i].len != (int) strlen(fields_c[i])) return 0;
+        if (memcmp(fields_z[i], fields_c[i], zf[i].len) != 0) return 0;
+    }
+    return 1;
+}
+
+TEST_FUNC(zig_message_frame_decode,
+{
+    char *argv[3];
+    argv[0] = "yabai";
+    argv[1] = "query";
+    argv[2] = "--windows";
+    char frame[256];
+    int total = socket_frame_encode(3, argv, frame, sizeof(frame));
+    TEST_CHECK(frame_decode_parity(frame, total), 1);
+
+    /* Hand-pinned valid decode: 2 args + trailing empty field. */
+    struct frame_field zf[16];
+    memset(zf, 0, sizeof(zf));
+    size_t z_count = 0;
+    int rc = yabai_socket_frame_decode(frame, total, zf, 16, &z_count);
+    TEST_CHECK(rc, 0);
+    TEST_CHECK(z_count, 3);
+    TEST_CHECK(zf[0].ptr == NULL, 0);
+    TEST_CHECK(zf[1].ptr == NULL, 0);
+    if (zf[0].ptr) TEST_CHECK(strcmp(zf[0].ptr, "query"), 0);
+    if (zf[1].ptr) TEST_CHECK(strcmp(zf[1].ptr, "--windows"), 0);
+    TEST_CHECK(zf[2].len, 0);
+
+    /* Truncated prefix. */
+    TEST_CHECK(yabai_socket_frame_decode(frame, 3, zf, 16, &z_count), -1);
+    /* Truncated payload. */
+    TEST_CHECK(yabai_socket_frame_decode(frame, total - 1, zf, 16, &z_count), -1);
+    /* Trailing garbage. */
+    TEST_CHECK(yabai_socket_frame_decode(frame, total + 1, zf, 16, &z_count), -1);
+
+    /* Zero declared length. */
+    char zero[8];
+    memset(zero, 0, sizeof(zero));
+    TEST_CHECK(yabai_socket_frame_decode(zero, sizeof(zero), zf, 16, &z_count), -1);
+    TEST_CHECK(frame_decode_parity(zero, sizeof(zero)), 1);
+
+    /* Negative declared length. */
+    char neg[4];
+    int neg_len = -5;
+    memcpy(neg, &neg_len, sizeof(int));
+    TEST_CHECK(yabai_socket_frame_decode(neg, sizeof(neg), zf, 16, &z_count), -1);
+    TEST_CHECK(frame_decode_parity(neg, sizeof(neg)), 1);
+
+    /* Absurd declared length rejected without allocating. */
+    char huge[4];
+    int huge_len = 0x7fffffff;
+    memcpy(huge, &huge_len, sizeof(int));
+    TEST_CHECK(yabai_socket_frame_decode(huge, sizeof(huge), zf, 16, &z_count), -1);
+    TEST_CHECK(frame_decode_parity(huge, sizeof(huge)), 1);
+
+    /* Missing trailing NUL. */
+    char unterminated[256];
+    memcpy(unterminated, frame, total);
+    unterminated[total - 1] = 'x';
+    TEST_CHECK(yabai_socket_frame_decode(unterminated, total, zf, 16, &z_count), -1);
+    TEST_CHECK(frame_decode_parity(unterminated, total), 1);
+
+    /* Field buffer too small. */
+    TEST_CHECK(yabai_socket_frame_decode(frame, total, zf, 1, &z_count), -1);
+})
 
 TEST_FUNC(zig_message_named_consts,
 {
