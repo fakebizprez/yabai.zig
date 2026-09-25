@@ -305,6 +305,70 @@ export fn yabai_parse_property(
     return false;
 }
 
+extern "c" fn fwrite(buf: *const anyopaque, size: usize, nmemb: usize, stream: ?*anyopaque) usize;
+
+// Byte-identical equivalent of daemon_fail() for the parse_properties
+// "'%.*s' is not a valid property.\n" emission: the 0x07 failure marker,
+// a quote, the segment bytes, then the suffix. Written with fwrite so no
+// varargs ABI is involved; the byte sequence matches the fprintf output.
+fn parsePropertiesFail(rsp: ?*anyopaque, segment: [*]const u8, seg_len: usize) void {
+    @setRuntimeSafety(false);
+    const stream = rsp orelse return;
+    const marker: u8 = 0x07;
+    _ = fwrite(@ptrCast(&marker), 1, 1, stream);
+    const quote: u8 = '\'';
+    _ = fwrite(@ptrCast(&quote), 1, 1, stream);
+    if (seg_len > 0) {
+        _ = fwrite(@ptrCast(segment), 1, seg_len, stream);
+    }
+    const suffix: []const u8 = "' is not a valid property.\n";
+    _ = fwrite(@ptrCast(suffix.ptr), 1, suffix.len, stream);
+}
+
+// Byte-identical port of parse_properties() in src/message.c: comma
+// splitting with in-place NUL writes, flag accumulation through
+// yabai_parse_property, and daemon_fail error emission. The comma branch
+// emits i-cursor bytes (C passes i-cursor+1 but %.*s stops at the NUL
+// just written); the final-segment branch emits the full i-cursor+1.
+export fn yabai_parse_properties(
+    rsp: ?*anyopaque,
+    token: *const MsgToken,
+    property_val: [*]const u64,
+    property_str: [*]const [*:0]const u8,
+    property_count: c_int,
+    out: *Properties,
+) void {
+    @setRuntimeSafety(false);
+    out.token = token.*;
+    out.did_parse = false;
+    out.did_error = false;
+    out.flags = 0;
+    if (!yabai_token_is_valid(token)) return;
+    if (yabai_token_prefix(token, "--")) return;
+    out.did_parse = true;
+    const text = token.text orelse return;
+    const n: usize = @intCast(token.length);
+    var cursor: usize = 0;
+    var i: usize = 0;
+    while (i < n) : (i += 1) {
+        if (i + 1 == n) {
+            const seg: [*:0]const u8 = @ptrCast(text + cursor);
+            if (!yabai_parse_property(out, seg, property_val, property_str, property_count)) {
+                parsePropertiesFail(rsp, text + cursor, i - cursor + 1);
+                out.did_error = true;
+            }
+        } else if (text[i] == ',') {
+            text[i] = 0;
+            const seg: [*:0]const u8 = @ptrCast(text + cursor);
+            if (!yabai_parse_property(out, seg, property_val, property_str, property_count)) {
+                parsePropertiesFail(rsp, text + cursor, i - cursor);
+                out.did_error = true;
+            }
+            cursor = i + 1;
+        }
+    }
+}
+
 export fn yabai_token_to_value(token: *const MsgToken, out: *TokenValue) void {
     @setRuntimeSafety(false);
     out.* = std.mem.zeroes(TokenValue);

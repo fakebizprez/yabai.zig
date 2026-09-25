@@ -14,6 +14,8 @@ pub const CgRect = extern struct {
 
 comptime {
     if (@sizeOf(CgRect) != 32) @compileError("CgRect size drift");
+    if (WINDOW_MOVABLE != 0x40) @compileError("WINDOW_MOVABLE drift");
+    if (WINDOW_RESIZABLE != 0x80) @compileError("WINDOW_RESIZABLE drift");
 }
 
 pub const HANDLE_TOP: c_int = 0x01;
@@ -22,6 +24,18 @@ pub const HANDLE_LEFT: c_int = 0x04;
 pub const HANDLE_RIGHT: c_int = 0x08;
 
 pub const TYPE_REL: c_int = 0x2;
+
+// Flag byte mirror of `enum window_flag` in src/window.h. Only the two
+// capability bits are read by the ported helpers below; the rest are
+// pinned here so layout drift fails the build, not the suite.
+pub const WINDOW_SHADOW: u8 = 0x01;
+pub const WINDOW_FULLSCREEN: u8 = 0x02;
+pub const WINDOW_MINIMIZE: u8 = 0x04;
+pub const WINDOW_FLOAT: u8 = 0x08;
+pub const WINDOW_STICKY: u8 = 0x10;
+pub const WINDOW_WINDOWED: u8 = 0x20;
+pub const WINDOW_MOVABLE: u8 = 0x40;
+pub const WINDOW_RESIZABLE: u8 = 0x80;
 
 export fn yabai_move_frame_math(
     frame: *const CgRect,
@@ -89,4 +103,26 @@ export fn yabai_resize_frame_math(
         frame.y + frame.h - @as(f64, fh_narrow)
     else
         frame.y);
+}
+
+// Mirrors window_is_undersized() in src/window.c. The C code compares
+// the CGRect doubles (CGFloat) against 500.0f, which promotes to
+// exactly 500.0 in f64, so the bound is spelled as 500.0 here.
+export fn yabai_window_is_undersized(w: f64, h: f64) bool {
+    @setRuntimeSafety(false);
+    if (w <= 500.0) return true;
+    if (h <= 500.0) return true;
+    return false;
+}
+
+// Mirrors window_can_move() in src/window.c (flags & WINDOW_MOVABLE).
+export fn yabai_window_can_move(flags: u8) bool {
+    @setRuntimeSafety(false);
+    return (flags & WINDOW_MOVABLE) != 0;
+}
+
+// Mirrors window_can_resize() in src/window.c (flags & WINDOW_RESIZABLE).
+export fn yabai_window_can_resize(flags: u8) bool {
+    @setRuntimeSafety(false);
+    return (flags & WINDOW_RESIZABLE) != 0;
 }

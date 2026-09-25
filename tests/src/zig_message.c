@@ -37,6 +37,7 @@ struct yabai_properties
 };
 
 bool yabai_parse_property(struct yabai_properties *properties, char *property, const uint64_t *property_val, char **property_str, int property_count);
+void yabai_parse_properties(FILE *rsp, const struct token *token, const uint64_t *property_val, char **property_str, int property_count, struct yabai_properties *out);
 
 _Static_assert(sizeof(struct properties) == 32, "C properties size drift");
 _Static_assert(sizeof(struct yabai_properties) == 32, "properties size drift");
@@ -433,6 +434,112 @@ TEST_FUNC(zig_message_frame_decode,
 
     /* Field buffer too small. */
     TEST_CHECK(yabai_socket_frame_decode(frame, total, zf, 1, &z_count), -1);
+})
+
+/* C-vs-Zig parity for parse_properties() (src/message.c): struct fields,
+ * in-place comma splitting, and byte-identical daemon_fail emission
+ * captured via open_memstream. Must FAIL against the stubbed Zig export
+ * (TDD red) and pass on the real one (green). */
+static int props_parity_case(char *input)
+{
+    char c_buf[128];
+    char z_buf[128];
+    size_t len = strlen(input);
+    if (len + 1 > sizeof(c_buf)) return 0;
+    memcpy(c_buf, input, len + 1);
+    memcpy(z_buf, input, len + 1);
+
+    struct token c_tok = { c_buf, (int) len };
+    struct token z_tok = { z_buf, (int) len };
+
+    char *c_msg = NULL;
+    char *z_msg = NULL;
+    size_t c_mlen = 0;
+    size_t z_mlen = 0;
+    FILE *c_rsp = open_memstream(&c_msg, &c_mlen);
+    FILE *z_rsp = open_memstream(&z_msg, &z_mlen);
+    if (!c_rsp || !z_rsp) return 0;
+
+    struct properties c_props = parse_properties(c_rsp, c_tok, prop_vals, prop_names, array_count(prop_names));
+    struct yabai_properties z_props;
+    memset(&z_props, 0, sizeof(z_props));
+    yabai_parse_properties(z_rsp, &z_tok, prop_vals, prop_names, array_count(prop_names), &z_props);
+
+    fflush(c_rsp);
+    fflush(z_rsp);
+    fclose(c_rsp);
+    fclose(z_rsp);
+
+    int ok = 1;
+    if (c_props.did_parse != z_props.did_parse) ok = 0;
+    if (c_props.did_error != z_props.did_error) ok = 0;
+    if (c_props.flags != z_props.flags) ok = 0;
+    if (c_props.token.length != z_props.token.length) ok = 0;
+    if (memcmp(c_buf, z_buf, len + 1) != 0) ok = 0;
+    if (c_mlen != z_mlen) ok = 0;
+    else if (c_mlen > 0 && memcmp(c_msg, z_msg, c_mlen) != 0) ok = 0;
+
+    free(c_msg);
+    free(z_msg);
+    return ok;
+}
+
+TEST_FUNC(zig_message_parse_properties,
+{
+    TEST_CHECK(props_parity_case("id"), 1);
+    TEST_CHECK(props_parity_case("id,index"), 1);
+    TEST_CHECK(props_parity_case("id,bogus"), 1);
+    TEST_CHECK(props_parity_case("bogus"), 1);
+    TEST_CHECK(props_parity_case("bogus,id"), 1);
+    TEST_CHECK(props_parity_case(""), 1);
+    TEST_CHECK(props_parity_case("--query"), 1);
+    TEST_CHECK(props_parity_case("--"), 1);
+    TEST_CHECK(props_parity_case("id,"), 1);
+    TEST_CHECK(props_parity_case(",id"), 1);
+    TEST_CHECK(props_parity_case("id,,index"), 1);
+    TEST_CHECK(props_parity_case("label,uuid,zzz,label"), 1);
+    TEST_CHECK(props_parity_case("ID"), 1);
+
+    /* NULL stream: same struct result as C, no emission, no crash. */
+    char c_null[64];
+    char z_null[64];
+    memcpy(c_null, "id,bogus", 9);
+    memcpy(z_null, "id,bogus", 9);
+    struct token c_ntok;
+    c_ntok.text = c_null;
+    c_ntok.length = 8;
+    struct token z_ntok;
+    z_ntok.text = z_null;
+    z_ntok.length = 8;
+    struct properties c_np = parse_properties(NULL, c_ntok, prop_vals, prop_names, array_count(prop_names));
+    struct yabai_properties z_np;
+    memset(&z_np, 0, sizeof(z_np));
+    yabai_parse_properties(NULL, &z_ntok, prop_vals, prop_names, array_count(prop_names), &z_np);
+    TEST_CHECK(c_np.did_parse != z_np.did_parse, 0);
+    TEST_CHECK(c_np.did_error != z_np.did_error, 0);
+    TEST_CHECK(c_np.flags != z_np.flags, 0);
+    TEST_CHECK(memcmp(c_null, z_null, 9), 0);
+
+    /* Hand-pinned error bytes: 0x07 failure marker plus formatting. */
+    char hbuf[64];
+    memcpy(hbuf, "bogus", 6);
+    struct token htok;
+    htok.text = hbuf;
+    htok.length = 5;
+    char *hmsg = NULL;
+    size_t hlen = 0;
+    FILE *hrsp = open_memstream(&hmsg, &hlen);
+    struct yabai_properties hz;
+    memset(&hz, 0, sizeof(hz));
+    yabai_parse_properties(hrsp, &htok, prop_vals, prop_names, array_count(prop_names), &hz);
+    fflush(hrsp);
+    fclose(hrsp);
+    TEST_CHECK(hz.did_parse, true);
+    TEST_CHECK(hz.did_error, true);
+    TEST_CHECK(hz.flags, 0);
+    TEST_CHECK(hlen, strlen("\x07'bogus' is not a valid property.\n"));
+    if (hlen > 0) TEST_CHECK(memcmp(hmsg, "\x07'bogus' is not a valid property.\n", hlen), 0);
+    free(hmsg);
 })
 
 TEST_FUNC(zig_message_named_consts,
