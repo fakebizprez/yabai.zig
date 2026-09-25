@@ -128,6 +128,71 @@ export fn yabai_window_node_contains_window(node: *const WindowNode, window_id: 
     return false;
 }
 
+pub const SPLIT_Y: c_int = 1;
+pub const SPLIT_X: c_int = 2;
+pub const DIR_NORTH: c_int = 360;
+pub const DIR_EAST: c_int = 90;
+pub const DIR_SOUTH: c_int = 180;
+pub const DIR_WEST: c_int = 270;
+
+export fn yabai_window_node_rotate(node: *WindowNode, degrees: c_int) void {
+    @setRuntimeSafety(false);
+    if ((degrees == 90 and node.split == SPLIT_Y) or
+        (degrees == 270 and node.split == SPLIT_X) or
+        (degrees == 180))
+    {
+        const temp = node.left;
+        node.left = node.right;
+        node.right = temp;
+        node.ratio = 1 - node.ratio;
+    }
+    if (degrees != 180) {
+        if (node.split == SPLIT_X) {
+            node.split = SPLIT_Y;
+        } else if (node.split == SPLIT_Y) {
+            node.split = SPLIT_X;
+        }
+    }
+    if (!isLeaf(node)) {
+        const left = node.left orelse unreachable;
+        const right = node.right orelse unreachable;
+        yabai_window_node_rotate(left, degrees);
+        yabai_window_node_rotate(right, degrees);
+    }
+}
+
+export fn yabai_window_node_mirror(node: *WindowNode, axis: c_int) ?*WindowNode {
+    @setRuntimeSafety(false);
+    if (!isLeaf(node)) {
+        const l = node.left orelse unreachable;
+        const r = node.right orelse unreachable;
+        const left = yabai_window_node_mirror(l, axis);
+        const right = yabai_window_node_mirror(r, axis);
+        if (node.split == axis) {
+            node.left = right;
+            node.right = left;
+        }
+    }
+    return node;
+}
+
+export fn yabai_window_node_fence(node: ?*WindowNode, dir: c_int) ?*WindowNode {
+    @setRuntimeSafety(false);
+    const n = node orelse return null;
+    var parent = n.parent;
+    while (parent) |p| {
+        if ((dir == DIR_NORTH and p.split == SPLIT_X and p.area.y < n.area.y) or
+            (dir == DIR_WEST and p.split == SPLIT_Y and p.area.x < n.area.x) or
+            (dir == DIR_SOUTH and p.split == SPLIT_X and (p.area.y + p.area.h) > (n.area.y + n.area.h)) or
+            (dir == DIR_EAST and p.split == SPLIT_Y and (p.area.x + p.area.w) > (n.area.x + n.area.w)))
+        {
+            return p;
+        }
+        parent = p.parent;
+    }
+    return null;
+}
+
 // Mirrors the C quirk of returning 0 (not -1) when the window is absent.
 export fn yabai_window_node_index_of_window(node: *const WindowNode, window_id: u32) c_int {
     @setRuntimeSafety(false);

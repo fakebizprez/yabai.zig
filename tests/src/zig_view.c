@@ -15,6 +15,9 @@ struct window_node *yabai_window_node_find_prev_leaf(struct window_node *node);
 struct window_node *yabai_window_node_find_next_leaf(struct window_node *node);
 bool yabai_window_node_contains_window(struct window_node *node, uint32_t window_id);
 int yabai_window_node_index_of_window(struct window_node *node, uint32_t window_id);
+void yabai_window_node_rotate(struct window_node *node, int degrees);
+struct window_node *yabai_window_node_mirror(struct window_node *node, int axis);
+struct window_node *yabai_window_node_fence(struct window_node *node, int dir);
 
 _Static_assert(sizeof(struct window_node) == 344, "window_node size drift");
 _Static_assert(sizeof(struct feedback_window) == 16, "feedback_window size drift");
@@ -125,6 +128,173 @@ TEST_FUNC(zig_view_window_lookup,
     /* C returns 0 (not -1) for a missing window; the port must match. */
     TEST_CHECK(window_node_index_of_window(d, 6) != yabai_window_node_index_of_window(d, 6), 0);
     TEST_CHECK(window_node_index_of_window(d, 6), 0);
+
+    free_test_tree(r, a, c, d, e);
+})
+
+static void init_mutate_fixture(struct window_node *r, struct window_node *a, struct window_node *c, struct window_node *d, struct window_node *e)
+{
+    r->split = SPLIT_X;
+    r->ratio = 0.6f;
+    a->split = SPLIT_Y;
+    a->ratio = 0.5f;
+    init_test_area(&r->area, 0, 0, 200, 300);
+    init_test_area(&a->area, 0, 0, 250, 100);
+    init_test_area(&c->area, 0, 100, 200, 100);
+    init_test_area(&d->area, 0, 10, 100, 100);
+    init_test_area(&e->area, 100, 0, 100, 100);
+}
+
+static void make_test_pair(struct window_node **cn, struct window_node **zn)
+{
+    struct window_node *t1;
+    struct window_node *t2;
+    struct window_node *t3;
+    struct window_node *t4;
+    struct window_node *t5;
+    make_test_tree(&t1, &t2, &t3, &t4, &t5);
+    cn[0] = t1;
+    cn[1] = t2;
+    cn[2] = t3;
+    cn[3] = t4;
+    cn[4] = t5;
+    make_test_tree(&t1, &t2, &t3, &t4, &t5);
+    zn[0] = t1;
+    zn[1] = t2;
+    zn[2] = t3;
+    zn[3] = t4;
+    zn[4] = t5;
+    init_mutate_fixture(cn[0], cn[1], cn[2], cn[3], cn[4]);
+    init_mutate_fixture(zn[0], zn[1], zn[2], zn[3], zn[4]);
+}
+
+static void free_test_pair(struct window_node **cn, struct window_node **zn)
+{
+    int i = 0;
+    for (i = 0; i < 5; ++i) {
+        free(cn[i]);
+        free(zn[i]);
+    }
+}
+
+static int node_rel(struct window_node **nodes, struct window_node *p)
+{
+    int i = 0;
+    if (!p) return -1;
+    for (i = 0; i < 5; ++i) {
+        if (nodes[i] == p) return i;
+    }
+    return -2;
+}
+
+/* Structural comparison: pointer fields are compared by position in the
+ * node array, since the C and Zig trees live at different addresses. */
+static int tree_struct_equal(struct window_node **cn, struct window_node **zn)
+{
+    int i = 0;
+    for (i = 0; i < 5; ++i) {
+        if (memcmp(&cn[i]->area, &zn[i]->area, sizeof(struct area)) != 0) return 0;
+        if (node_rel(cn, cn[i]->parent) != node_rel(zn, zn[i]->parent)) return 0;
+        if (node_rel(cn, cn[i]->left) != node_rel(zn, zn[i]->left)) return 0;
+        if (node_rel(cn, cn[i]->right) != node_rel(zn, zn[i]->right)) return 0;
+        if (node_rel(cn, cn[i]->zoom) != node_rel(zn, zn[i]->zoom)) return 0;
+        if (memcmp(cn[i]->window_list, zn[i]->window_list, sizeof(cn[i]->window_list)) != 0) return 0;
+        if (memcmp(cn[i]->window_order, zn[i]->window_order, sizeof(cn[i]->window_order)) != 0) return 0;
+        if (cn[i]->window_count != zn[i]->window_count) return 0;
+        if (memcmp(&cn[i]->ratio, &zn[i]->ratio, sizeof(float)) != 0) return 0;
+        if (cn[i]->split != zn[i]->split) return 0;
+        if (cn[i]->child != zn[i]->child) return 0;
+        if (cn[i]->insert_dir != zn[i]->insert_dir) return 0;
+        if (cn[i]->feedback_window.id != zn[i]->feedback_window.id) return 0;
+        if ((cn[i]->feedback_window.context == NULL) != (zn[i]->feedback_window.context == NULL)) return 0;
+    }
+    return 1;
+}
+
+TEST_FUNC(zig_view_tree_mutate,
+{
+    struct window_node *cn[5];
+    struct window_node *zn[5];
+
+    make_test_pair(cn, zn);
+    window_node_rotate(cn[0], 90);
+    yabai_window_node_rotate(zn[0], 90);
+    TEST_CHECK(tree_struct_equal(cn, zn), 1);
+    free_test_pair(cn, zn);
+
+    make_test_pair(cn, zn);
+    window_node_rotate(cn[0], 180);
+    yabai_window_node_rotate(zn[0], 180);
+    TEST_CHECK(tree_struct_equal(cn, zn), 1);
+    free_test_pair(cn, zn);
+
+    make_test_pair(cn, zn);
+    window_node_rotate(cn[0], 270);
+    yabai_window_node_rotate(zn[0], 270);
+    TEST_CHECK(tree_struct_equal(cn, zn), 1);
+    free_test_pair(cn, zn);
+
+    make_test_pair(cn, zn);
+    struct window_node *c_ret = window_node_mirror(cn[0], SPLIT_Y);
+    struct window_node *z_ret = yabai_window_node_mirror(zn[0], SPLIT_Y);
+    TEST_CHECK(c_ret != cn[0], 0);
+    TEST_CHECK(z_ret != zn[0], 0);
+    TEST_CHECK(tree_struct_equal(cn, zn), 1);
+    free_test_pair(cn, zn);
+
+    make_test_pair(cn, zn);
+    c_ret = window_node_mirror(cn[0], SPLIT_X);
+    z_ret = yabai_window_node_mirror(zn[0], SPLIT_X);
+    TEST_CHECK(c_ret != cn[0], 0);
+    TEST_CHECK(z_ret != zn[0], 0);
+    TEST_CHECK(tree_struct_equal(cn, zn), 1);
+    free_test_pair(cn, zn);
+})
+
+static int fence_index(struct window_node **nodes, struct window_node *p)
+{
+    int i = 0;
+    if (!p) return -1;
+    for (i = 0; i < 5; ++i) {
+        if (nodes[i] == p) return i;
+    }
+    return -2;
+}
+
+static int fence_check(struct window_node **nodes, struct window_node *node, int dir, int expected)
+{
+    struct window_node *c = window_node_fence(node, dir);
+    struct window_node *z = yabai_window_node_fence(node, dir);
+    if (fence_index(nodes, c) != expected) return 0;
+    if (fence_index(nodes, z) != expected) return 0;
+    return 1;
+}
+
+TEST_FUNC(zig_view_fence,
+{
+    struct window_node *r;
+    struct window_node *a;
+    struct window_node *c;
+    struct window_node *d;
+    struct window_node *e;
+    make_test_tree(&r, &a, &c, &d, &e);
+    init_mutate_fixture(r, a, c, d, e);
+
+    struct window_node *nodes[5];
+    nodes[0] = r;
+    nodes[1] = a;
+    nodes[2] = c;
+    nodes[3] = d;
+    nodes[4] = e;
+
+    TEST_CHECK(fence_check(nodes, e, DIR_WEST, 1), 1);
+    TEST_CHECK(fence_check(nodes, e, DIR_NORTH, -1), 1);
+    TEST_CHECK(fence_check(nodes, e, DIR_EAST, 1), 1);
+    TEST_CHECK(fence_check(nodes, c, DIR_SOUTH, 0), 1);
+    TEST_CHECK(fence_check(nodes, d, DIR_WEST, -1), 1);
+    TEST_CHECK(fence_check(nodes, d, DIR_NORTH, 0), 1);
+    TEST_CHECK(fence_check(nodes, c, DIR_EAST, -1), 1);
+    TEST_CHECK(fence_check(nodes, NULL, DIR_NORTH, -1), 1);
 
     free_test_tree(r, a, c, d, e);
 })
