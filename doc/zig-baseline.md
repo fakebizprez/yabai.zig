@@ -160,6 +160,15 @@ unless doc/zig-refactor-plan.md explicitly allows a change.
 - View leaves (TDD): min-depth BFS (exact queue order/NULL behavior),
   VALID/DIRTY flag readers with pins, and recursive clear_zoom.
   Suite at 59/59; x86_64 slice verified.
+- Rule parser (TDD): `yabai_parse_rule` covering all 16 key branches
+  with byte-identical emissions, reusing every ported helper plus
+  libc string_copy/regcomp/sscanf. Caveats recorded honestly: the
+  display/space branches call through to the live manager functions
+  and globals exactly like C (no seam split yet), so zig-rule.o is no
+  longer standalone-linkable, and manager-coupled paths are parity-
+  proven in zero-state only; MsgToken/DIR mirrors are duplicated
+  across objects pending a shared-types pass. Leaks gate 0.
+  95 exports in the fat daemon; 61/61 tests; x86_64 verified.
 - Pure-helper slice (TDD) in zig/util.zig: `balance_node_add`,
   `clampf_range` (incl. NaN bit-parity), `json_bool`,
   `json_optional_bool`, float+int `in_range_ii/ei/ie` for the exact

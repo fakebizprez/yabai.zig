@@ -465,6 +465,671 @@ export fn yabai_rule_serialize(rsp: ?*anyopaque, rule: *const Rule, index: c_int
     if (esc_subrole) |e| free(@ptrCast(e));
 }
 
+// yabai_parse_rule port (src/message.c parse_rule).
+//
+// Mirrors struct token (16 bytes) and struct token_value (32 bytes) for
+// the display/space selector paths; the union payload of the 32-byte
+// Selector mirror is zeroed where C leaves it implicit (same convention
+// as yabai_parse_insert_selector). Tokenizer, key/value split, float
+// range check, and flag helpers are reused via extern calls into the
+// already-ported message/util objects; string_copy/regcomp/sscanf come
+// from libc exactly like C. All daemon_fail emissions use the established
+// fwrite pattern (0x07 marker + literal bytes), so no varargs ABI is
+// involved. The acting display/space ids are lifted in as parameters
+// (same seam as yabai_rule_serialize's did_index/sid_index): C evaluates
+// display_manager_active_display_id()/space_manager_active_space()
+// eagerly at the call site, which cannot run in-process under test.
+pub const MsgToken = extern struct {
+    text: ?[*]u8,
+    length: c_int,
+};
+
+comptime {
+    if (@sizeOf(MsgToken) != 16) @compileError("MsgToken size drift");
+    if (@offsetOf(MsgToken, "length") != 8) @compileError("MsgToken.length drift");
+}
+
+const TOKEN_TYPE_INVALID: c_int = 0;
+const TOKEN_TYPE_INT: c_int = 2;
+const TOKEN_TYPE_STRING: c_int = 5;
+
+const REG_EXTENDED: c_int = 1;
+
+pub const RULE_PROP_ON: c_int = 1;
+pub const RULE_PROP_OFF: c_int = 2;
+
+const ParseValueUnion = extern union {
+    int_value: c_int,
+    float_value: f32,
+    u32_value: u32,
+    string_value: ?[*]u8,
+};
+
+const ParseTokenValue = extern struct {
+    token: MsgToken,
+    type: c_int,
+    u: ParseValueUnion,
+};
+
+pub const RuleSelector = extern struct {
+    token: MsgToken,
+    did_parse: bool,
+    payload: u64,
+};
+
+const DisplayManagerState = extern struct {
+    current_display_id: u32,
+    last_display_id: u32,
+};
+
+const SpaceManagerState = extern struct {
+    table: [40]u8,
+    current_space_id: u64,
+    last_space_id: u64,
+};
+
+const DisplayLabel = extern struct {
+    did: u32,
+    label: ?[*]u8,
+};
+
+const SpaceLabel = extern struct {
+    sid: u64,
+    label: ?[*]u8,
+};
+
+comptime {
+    if (@sizeOf(ParseTokenValue) != 32) @compileError("ParseTokenValue size drift");
+    if (@offsetOf(ParseTokenValue, "type") != 16) @compileError("ParseTokenValue.type drift");
+    if (@offsetOf(ParseTokenValue, "u") != 24) @compileError("ParseTokenValue.u drift");
+    if (@sizeOf(RuleSelector) != 32) @compileError("RuleSelector size drift");
+    if (@offsetOf(RuleSelector, "did_parse") != 16) @compileError("RuleSelector.did_parse drift");
+    if (@offsetOf(RuleSelector, "payload") != 24) @compileError("RuleSelector.payload drift");
+    if (@offsetOf(DisplayManagerState, "last_display_id") != 4) @compileError("DisplayManagerState.last_display_id drift");
+    if (@offsetOf(SpaceManagerState, "current_space_id") != 40) @compileError("SpaceManagerState.current_space_id drift");
+    if (@offsetOf(SpaceManagerState, "last_space_id") != 48) @compileError("SpaceManagerState.last_space_id drift");
+    if (@offsetOf(DisplayLabel, "did") != 0) @compileError("DisplayLabel.did drift");
+    if (@offsetOf(SpaceLabel, "sid") != 0) @compileError("SpaceLabel.sid drift");
+    if (TOKEN_TYPE_INVALID != 0) @compileError("TOKEN_TYPE_INVALID drift");
+    if (TOKEN_TYPE_INT != 2) @compileError("TOKEN_TYPE_INT drift");
+    if (TOKEN_TYPE_STRING != 5) @compileError("TOKEN_TYPE_STRING drift");
+    if (REG_EXTENDED != 1) @compileError("REG_EXTENDED drift");
+    if (RULE_PROP_ON != 1) @compileError("RULE_PROP_ON drift");
+    if (RULE_PROP_OFF != 2) @compileError("RULE_PROP_OFF drift");
+}
+
+extern fn yabai_message_get_token(message: *[*:0]u8, out: *MsgToken) void;
+extern fn yabai_token_is_valid(token: *const MsgToken) bool;
+extern fn yabai_token_equals(token: *const MsgToken, match: [*:0]const u8) bool;
+extern fn yabai_token_to_value(token: *const MsgToken, out: *ParseTokenValue) void;
+extern fn yabai_parse_key_value_pair(token: [*:0]u8, key: *?[*]u8, value: *?[*]u8, exclusion: *bool) void;
+extern "c" fn sscanf(s: [*:0]const u8, fmt: [*:0]const u8, ...) c_int;
+extern "c" fn regcomp(regex: *anyopaque, pattern: [*:0]const u8, cflags: c_int) c_int;
+
+extern fn display_manager_arrangement_display_id(arrangement: c_int) u32;
+extern fn display_manager_find_closest_display_in_direction(acting_did: u32, direction: c_int) u32;
+extern fn display_manager_prev_display_id(did: u32) u32;
+extern fn display_manager_next_display_id(did: u32) u32;
+extern fn display_manager_first_display_id() u32;
+extern fn display_manager_last_display_id() u32;
+extern fn display_manager_cursor_display_id() u32;
+extern fn display_manager_get_display_for_label(dm: *DisplayManagerState, label: [*:0]u8) ?*DisplayLabel;
+extern fn space_manager_mission_control_space(desktop_id: c_int) u64;
+extern fn space_manager_cursor_space() u64;
+extern fn space_manager_prev_space(sid: u64) u64;
+extern fn space_manager_next_space(sid: u64) u64;
+extern fn space_manager_first_space() u64;
+extern fn space_manager_last_space() u64;
+extern fn space_manager_get_space_for_label(sm: *SpaceManagerState, label: [*:0]u8) ?*SpaceLabel;
+extern var g_display_manager: DisplayManagerState;
+extern var g_space_manager: SpaceManagerState;
+
+const DIR_NORTH: c_int = 360;
+const DIR_EAST: c_int = 90;
+const DIR_SOUTH: c_int = 180;
+const DIR_WEST: c_int = 270;
+
+// Same reserved table as parse_label()'s LABEL_WINDOW path in
+// src/message.c (order preserved). Contents are pinned behaviorally by
+// the 11-word scratchpad loop in tests/src/zig_rule.c.
+const reserved_window_identifiers = [_][*:0]const u8{
+    "float", "sticky", "shadow", "split",
+    "zoom-parent", "zoom-fullscreen",
+    "windowed-fullscreen", "native-fullscreen",
+    "expose", "pip",
+    "recover",
+};
+
+fn keyEqual(key: [*:0]const u8, lit: [*:0]const u8) bool {
+    @setRuntimeSafety(false);
+    var i: usize = 0;
+    while (true) {
+        if (key[i] != lit[i]) return false;
+        if (key[i] == 0) return true;
+        i += 1;
+    }
+}
+
+fn failMark(rsp: ?*anyopaque) ?*anyopaque {
+    @setRuntimeSafety(false);
+    const stream = rsp orelse return null;
+    const marker: u8 = 0x07;
+    _ = fwrite(@ptrCast(&marker), 1, 1, stream);
+    return stream;
+}
+
+fn failInvalidPair(rsp: ?*anyopaque, text: [*:0]const u8) void {
+    @setRuntimeSafety(false);
+    const stream = failMark(rsp) orelse return;
+    writeBytes(stream, "invalid key-value pair '");
+    writeZ(stream, text);
+    writeBytes(stream, "'\n");
+}
+
+fn failInvalidValue(rsp: ?*anyopaque, value: [*:0]const u8, key: [*:0]const u8) void {
+    @setRuntimeSafety(false);
+    const stream = failMark(rsp) orelse return;
+    writeBytes(stream, "invalid value '");
+    writeZ(stream, value);
+    writeBytes(stream, "' for key '");
+    writeZ(stream, key);
+    writeBytes(stream, "'\n");
+}
+
+fn failInvalidRegex(rsp: ?*anyopaque, value: [*:0]const u8, key: [*:0]const u8) void {
+    @setRuntimeSafety(false);
+    const stream = failMark(rsp) orelse return;
+    writeBytes(stream, "invalid regex pattern '");
+    writeZ(stream, value);
+    writeBytes(stream, "' for key '");
+    writeZ(stream, key);
+    writeBytes(stream, "'\n");
+}
+
+fn failUnknownKey(rsp: ?*anyopaque, key: [*:0]const u8) void {
+    @setRuntimeSafety(false);
+    const stream = failMark(rsp) orelse return;
+    writeBytes(stream, "unknown key '");
+    writeZ(stream, key);
+    writeBytes(stream, "'\n");
+}
+
+fn failMissingFilter(rsp: ?*anyopaque) void {
+    @setRuntimeSafety(false);
+    const stream = failMark(rsp) orelse return;
+    writeBytes(stream, "missing required key-value pair 'app[!]=..' or 'title[!]=..'\n");
+}
+
+fn failUnsupportedExclusion(rsp: ?*anyopaque, key: [*:0]const u8) void {
+    @setRuntimeSafety(false);
+    const stream = failMark(rsp) orelse return;
+    writeBytes(stream, "unsupported token '!' (exclusion) given for key '");
+    writeZ(stream, key);
+    writeBytes(stream, "'\n");
+}
+
+fn failFixed(rsp: ?*anyopaque, msg: []const u8) void {
+    @setRuntimeSafety(false);
+    const stream = failMark(rsp) orelse return;
+    writeBytes(stream, msg);
+}
+
+fn failDisplayArrangement(rsp: ?*anyopaque, v: c_int) void {
+    @setRuntimeSafety(false);
+    const stream = failMark(rsp) orelse return;
+    writeBytes(stream, "could not locate display with arrangement index '");
+    writeInt(stream, v);
+    writeBytes(stream, "'.\n");
+}
+
+fn failSpaceMissionControl(rsp: ?*anyopaque, v: c_int) void {
+    @setRuntimeSafety(false);
+    const stream = failMark(rsp) orelse return;
+    writeBytes(stream, "could not locate space with mission-control index '");
+    writeInt(stream, v);
+    writeBytes(stream, "'.\n");
+}
+
+fn failSelectorOption(rsp: ?*anyopaque, text: [*]const u8, len: usize, suffix: []const u8) void {
+    @setRuntimeSafety(false);
+    const stream = failMark(rsp) orelse return;
+    writeBytes(stream, "value '");
+    if (len > 0) {
+        _ = fwrite(@ptrCast(text), 1, len, stream);
+    }
+    writeBytes(stream, suffix);
+}
+
+// Byte-identical port of parse_display_selector() in src/message.c.
+// The union payload is zeroed up front (C leaves it implicit); every
+// manager query is an extern call with identical argument order.
+fn parseDisplaySelector(rsp: ?*anyopaque, message: *[*:0]u8, acting_did: u32, out: *RuleSelector) void {
+    @setRuntimeSafety(false);
+    yabai_message_get_token(message, &out.token);
+    out.did_parse = true;
+    out.payload = 0;
+    var value: ParseTokenValue = .{ .token = undefined, .type = TOKEN_TYPE_INVALID, .u = .{ .int_value = 0 } };
+    yabai_token_to_value(&out.token, &value);
+    if (value.type == TOKEN_TYPE_INT) {
+        const did = display_manager_arrangement_display_id(value.u.int_value);
+        if (did != 0) {
+            out.payload = did;
+        } else {
+            failDisplayArrangement(rsp, value.u.int_value);
+        }
+    } else if (value.type == TOKEN_TYPE_STRING) {
+        if (yabai_token_equals(&out.token, "north")) {
+            if (acting_did != 0) {
+                const did = display_manager_find_closest_display_in_direction(acting_did, DIR_NORTH);
+                if (did != 0) {
+                    out.payload = did;
+                } else {
+                    failFixed(rsp, "could not locate a northward display.\n");
+                }
+            } else {
+                failFixed(rsp, "could not locate the selected display.\n");
+            }
+        } else if (yabai_token_equals(&out.token, "east")) {
+            if (acting_did != 0) {
+                const did = display_manager_find_closest_display_in_direction(acting_did, DIR_EAST);
+                if (did != 0) {
+                    out.payload = did;
+                } else {
+                    failFixed(rsp, "could not locate a eastward display.\n");
+                }
+            } else {
+                failFixed(rsp, "could not locate the selected display.\n");
+            }
+        } else if (yabai_token_equals(&out.token, "south")) {
+            if (acting_did != 0) {
+                const did = display_manager_find_closest_display_in_direction(acting_did, DIR_SOUTH);
+                if (did != 0) {
+                    out.payload = did;
+                } else {
+                    failFixed(rsp, "could not locate a southward display.\n");
+                }
+            } else {
+                failFixed(rsp, "could not locate the selected display.\n");
+            }
+        } else if (yabai_token_equals(&out.token, "west")) {
+            if (acting_did != 0) {
+                const did = display_manager_find_closest_display_in_direction(acting_did, DIR_WEST);
+                if (did != 0) {
+                    out.payload = did;
+                } else {
+                    failFixed(rsp, "could not locate a westward display.\n");
+                }
+            } else {
+                failFixed(rsp, "could not locate the selected display.\n");
+            }
+        } else if (yabai_token_equals(&out.token, "prev")) {
+            if (acting_did != 0) {
+                const did = display_manager_prev_display_id(acting_did);
+                if (did != 0) {
+                    out.payload = did;
+                } else {
+                    failFixed(rsp, "could not locate the previous display.\n");
+                }
+            } else {
+                failFixed(rsp, "could not locate the selected display.\n");
+            }
+        } else if (yabai_token_equals(&out.token, "next")) {
+            if (acting_did != 0) {
+                const did = display_manager_next_display_id(acting_did);
+                if (did != 0) {
+                    out.payload = did;
+                } else {
+                    failFixed(rsp, "could not locate the next display.\n");
+                }
+            } else {
+                failFixed(rsp, "could not locate the selected display.\n");
+            }
+        } else if (yabai_token_equals(&out.token, "first")) {
+            const did = display_manager_first_display_id();
+            if (did != 0) {
+                out.payload = did;
+            } else {
+                failFixed(rsp, "could not locate the first display.\n");
+            }
+        } else if (yabai_token_equals(&out.token, "last")) {
+            const did = display_manager_last_display_id();
+            if (did != 0) {
+                out.payload = did;
+            } else {
+                failFixed(rsp, "could not locate the last display.\n");
+            }
+        } else if (yabai_token_equals(&out.token, "recent")) {
+            out.payload = g_display_manager.last_display_id;
+        } else if (yabai_token_equals(&out.token, "mouse")) {
+            const did = display_manager_cursor_display_id();
+            if (did != 0) {
+                out.payload = did;
+            } else {
+                failFixed(rsp, "could not locate display containing cursor.\n");
+            }
+        } else {
+            const s = value.u.string_value orelse unreachable;
+            if (display_manager_get_display_for_label(&g_display_manager, @ptrCast(s))) |lbl| {
+                out.did_parse = true;
+                out.payload = lbl.did;
+            } else {
+                out.did_parse = false;
+                const text: [*]const u8 = @ptrCast(out.token.text orelse unreachable);
+                failSelectorOption(rsp, text, @intCast(out.token.length), "' is not a valid option for DISPLAY_SEL\n");
+            }
+        }
+    } else if (value.type == TOKEN_TYPE_INVALID) {
+        out.did_parse = false;
+        const text: [*]const u8 = @ptrCast(out.token.text orelse unreachable);
+        failSelectorOption(rsp, text, @intCast(out.token.length), "' is not a valid option for DISPLAY_SEL\n");
+    } else {
+        out.did_parse = false;
+        const text: [*]const u8 = @ptrCast(out.token.text orelse unreachable);
+        failSelectorOption(rsp, text, @intCast(out.token.length), "' is not a valid option for DISPLAY_SEL\n");
+    }
+}
+
+// Byte-identical port of parse_space_selector() in src/message.c.
+fn parseSpaceSelector(rsp: ?*anyopaque, message: *[*:0]u8, acting_sid: u64, out: *RuleSelector) void {
+    @setRuntimeSafety(false);
+    yabai_message_get_token(message, &out.token);
+    out.did_parse = true;
+    out.payload = 0;
+    var value: ParseTokenValue = .{ .token = undefined, .type = TOKEN_TYPE_INVALID, .u = .{ .int_value = 0 } };
+    yabai_token_to_value(&out.token, &value);
+    if (value.type == TOKEN_TYPE_INT) {
+        const sid = space_manager_mission_control_space(value.u.int_value);
+        if (sid != 0) {
+            out.payload = sid;
+        } else {
+            failSpaceMissionControl(rsp, value.u.int_value);
+        }
+    } else if (value.type == TOKEN_TYPE_STRING) {
+        if (yabai_token_equals(&out.token, "prev")) {
+            if (acting_sid != 0) {
+                const sid = space_manager_prev_space(acting_sid);
+                if (sid != 0) {
+                    out.payload = sid;
+                } else {
+                    failFixed(rsp, "could not locate the previous space.\n");
+                }
+            } else {
+                failFixed(rsp, "could not locate the selected space.\n");
+            }
+        } else if (yabai_token_equals(&out.token, "next")) {
+            if (acting_sid != 0) {
+                const sid = space_manager_next_space(acting_sid);
+                if (sid != 0) {
+                    out.payload = sid;
+                } else {
+                    failFixed(rsp, "could not locate the next space.\n");
+                }
+            } else {
+                failFixed(rsp, "could not locate the selected space.\n");
+            }
+        } else if (yabai_token_equals(&out.token, "first")) {
+            const sid = space_manager_first_space();
+            if (sid != 0) {
+                out.payload = sid;
+            } else {
+                failFixed(rsp, "could not locate the first space.\n");
+            }
+        } else if (yabai_token_equals(&out.token, "last")) {
+            const sid = space_manager_last_space();
+            if (sid != 0) {
+                out.payload = sid;
+            } else {
+                failFixed(rsp, "could not locate the last space.\n");
+            }
+        } else if (yabai_token_equals(&out.token, "recent")) {
+            out.payload = g_space_manager.last_space_id;
+        } else if (yabai_token_equals(&out.token, "mouse")) {
+            const sid = space_manager_cursor_space();
+            if (sid != 0) {
+                out.payload = sid;
+            } else {
+                failFixed(rsp, "could not locate space containing cursor.\n");
+            }
+        } else {
+            const s = value.u.string_value orelse unreachable;
+            if (space_manager_get_space_for_label(&g_space_manager, @ptrCast(s))) |lbl| {
+                out.did_parse = true;
+                out.payload = lbl.sid;
+            } else {
+                out.did_parse = false;
+                const text: [*]const u8 = @ptrCast(out.token.text orelse unreachable);
+                failSelectorOption(rsp, text, @intCast(out.token.length), "' is not a valid option for SPACE_SEL\n");
+            }
+        }
+    } else if (value.type == TOKEN_TYPE_INVALID) {
+        out.did_parse = false;
+        const text: [*]const u8 = @ptrCast(out.token.text orelse unreachable);
+        failSelectorOption(rsp, text, @intCast(out.token.length), "' is not a valid option for SPACE_SEL\n");
+    } else {
+        out.did_parse = false;
+        const text: [*]const u8 = @ptrCast(out.token.text orelse unreachable);
+        failSelectorOption(rsp, text, @intCast(out.token.length), "' is not a valid option for SPACE_SEL\n");
+    }
+}
+
+// Byte-identical port of parse_rule() in src/message.c: key dispatch over
+// label/scratchpad/app/title/role/subrole plus the display/space/grid/
+// opacity/manage/sticky/mff/sub-layer/fullscreen effect keys, string_copy
+// ownership, REG_EXTENDED regcomp with VALID/EXCLUDE flag sets, libc
+// sscanf numerics (%f opacity with in_range_ii, six-%d grid), and the
+// trailing missing-filter / unsupported-exclusion checks.
+export fn yabai_parse_rule(rsp: ?*anyopaque, message: *[*:0]u8, rule: *Rule, token: *const MsgToken, acting_did: u32, acting_sid: u64) bool {
+    @setRuntimeSafety(false);
+    var unsupported_exclusion: ?[*]u8 = null;
+    var did_parse = true;
+    var has_filter = false;
+
+    var tok = token.*;
+    while (yabai_token_is_valid(&tok)) : (yabai_message_get_token(message, &tok)) {
+        var key: ?[*]u8 = null;
+        var val: ?[*]u8 = null;
+        var exclusion = false;
+        yabai_parse_key_value_pair(@ptrCast(tok.text orelse unreachable), &key, &val, &exclusion);
+
+        if (key == null or val == null) {
+            failInvalidPair(rsp, @ptrCast(tok.text orelse unreachable));
+            did_parse = false;
+            continue;
+        }
+        const k: [*:0]u8 = @ptrCast(key.?);
+        const v: [*:0]u8 = @ptrCast(val.?);
+
+        if (keyEqual(k, "label")) {
+            if (exclusion) unsupported_exclusion = @ptrCast(k);
+            rule.label = @ptrCast(stringCopy(v));
+        } else if (keyEqual(k, "scratchpad")) {
+            if (exclusion) unsupported_exclusion = @ptrCast(k);
+
+            var valid = true;
+            for (reserved_window_identifiers) |reserved| {
+                if (keyEqual(v, reserved)) {
+                    valid = false;
+                    break;
+                }
+            }
+
+            if (valid) {
+                rule.effects.scratchpad = @ptrCast(stringCopy(v));
+                rule.effects.manage = RULE_PROP_OFF;
+            } else {
+                failInvalidValue(rsp, v, k);
+                did_parse = false;
+            }
+        } else if (keyEqual(k, "app")) {
+            has_filter = true;
+            rule.app = @ptrCast(stringCopy(v));
+            if (exclusion) yabai_rule_set_flag(rule, RULE_APP_EXCLUDE);
+            if (regcomp(@ptrCast(&rule.app_regex), v, REG_EXTENDED) == 0) {
+                yabai_rule_set_flag(rule, RULE_APP_VALID);
+            } else {
+                failInvalidRegex(rsp, v, k);
+                did_parse = false;
+            }
+        } else if (keyEqual(k, "title")) {
+            has_filter = true;
+            rule.title = @ptrCast(stringCopy(v));
+            if (exclusion) yabai_rule_set_flag(rule, RULE_TITLE_EXCLUDE);
+            if (regcomp(@ptrCast(&rule.title_regex), v, REG_EXTENDED) == 0) {
+                yabai_rule_set_flag(rule, RULE_TITLE_VALID);
+            } else {
+                failInvalidRegex(rsp, v, k);
+                did_parse = false;
+            }
+        } else if (keyEqual(k, "role")) {
+            has_filter = true;
+            rule.role = @ptrCast(stringCopy(v));
+            if (exclusion) yabai_rule_set_flag(rule, RULE_ROLE_EXCLUDE);
+            if (regcomp(@ptrCast(&rule.role_regex), v, REG_EXTENDED) == 0) {
+                yabai_rule_set_flag(rule, RULE_ROLE_VALID);
+            } else {
+                failInvalidRegex(rsp, v, k);
+                did_parse = false;
+            }
+        } else if (keyEqual(k, "subrole")) {
+            has_filter = true;
+            rule.subrole = @ptrCast(stringCopy(v));
+            if (exclusion) yabai_rule_set_flag(rule, RULE_SUBROLE_EXCLUDE);
+            if (regcomp(@ptrCast(&rule.subrole_regex), v, REG_EXTENDED) == 0) {
+                yabai_rule_set_flag(rule, RULE_SUBROLE_VALID);
+            } else {
+                failInvalidRegex(rsp, v, k);
+                did_parse = false;
+            }
+        } else if (keyEqual(k, "display")) {
+            if (exclusion) unsupported_exclusion = @ptrCast(k);
+
+            var cursor: [*:0]u8 = v;
+            if (cursor[0] == '^') {
+                cursor += 1;
+                setFlag(&rule.effects, RULE_FOLLOW_SPACE);
+            }
+
+            var selector: RuleSelector = undefined;
+            parseDisplaySelector(rsp, &cursor, acting_did, &selector);
+            if (selector.did_parse and @as(u32, @truncate(selector.payload)) != 0) {
+                rule.effects.did = @truncate(selector.payload);
+            } else {
+                did_parse = false;
+            }
+        } else if (keyEqual(k, "space")) {
+            if (exclusion) unsupported_exclusion = @ptrCast(k);
+
+            var cursor: [*:0]u8 = v;
+            if (cursor[0] == '^') {
+                cursor += 1;
+                setFlag(&rule.effects, RULE_FOLLOW_SPACE);
+            }
+
+            var selector: RuleSelector = undefined;
+            parseSpaceSelector(rsp, &cursor, acting_sid, &selector);
+            if (selector.did_parse and selector.payload != 0) {
+                rule.effects.sid = selector.payload;
+            } else {
+                did_parse = false;
+            }
+        } else if (keyEqual(k, "grid")) {
+            if (exclusion) unsupported_exclusion = @ptrCast(k);
+
+            if (sscanf(v, "%d:%d:%d:%d:%d:%d", &rule.effects.grid[0], &rule.effects.grid[1], &rule.effects.grid[2], &rule.effects.grid[3], &rule.effects.grid[4], &rule.effects.grid[5]) != 6) {
+                failInvalidValue(rsp, v, k);
+                did_parse = false;
+            }
+        } else if (keyEqual(k, "opacity")) {
+            if (exclusion) unsupported_exclusion = @ptrCast(k);
+
+            if (sscanf(v, "%f", &rule.effects.opacity) == 1 and yabai_in_range_ii_f(rule.effects.opacity, 0.0, 1.0)) {
+                setFlag(&rule.effects, RULE_OPACITY);
+            } else {
+                failInvalidValue(rsp, v, k);
+                did_parse = false;
+            }
+        } else if (keyEqual(k, "manage")) {
+            if (exclusion) unsupported_exclusion = @ptrCast(k);
+
+            if (keyEqual(v, "on")) {
+                rule.effects.manage = RULE_PROP_ON;
+            } else if (keyEqual(v, "off")) {
+                rule.effects.manage = RULE_PROP_OFF;
+            } else {
+                failInvalidValue(rsp, v, k);
+                did_parse = false;
+            }
+        } else if (keyEqual(k, "sticky")) {
+            if (exclusion) unsupported_exclusion = @ptrCast(k);
+
+            if (keyEqual(v, "on")) {
+                rule.effects.sticky = RULE_PROP_ON;
+            } else if (keyEqual(v, "off")) {
+                rule.effects.sticky = RULE_PROP_OFF;
+            } else {
+                failInvalidValue(rsp, v, k);
+                did_parse = false;
+            }
+        } else if (keyEqual(k, "mouse_follows_focus")) {
+            if (exclusion) unsupported_exclusion = @ptrCast(k);
+
+            if (keyEqual(v, "on")) {
+                rule.effects.mff = RULE_PROP_ON;
+            } else if (keyEqual(v, "off")) {
+                rule.effects.mff = RULE_PROP_OFF;
+            } else {
+                failInvalidValue(rsp, v, k);
+                did_parse = false;
+            }
+        } else if (keyEqual(k, "sub-layer")) {
+            if (exclusion) unsupported_exclusion = @ptrCast(k);
+
+            if (keyEqual(v, "below")) {
+                rule.effects.layer = LAYER_BELOW;
+                setFlag(&rule.effects, RULE_LAYER);
+            } else if (keyEqual(v, "normal")) {
+                rule.effects.layer = LAYER_NORMAL;
+                setFlag(&rule.effects, RULE_LAYER);
+            } else if (keyEqual(v, "above")) {
+                rule.effects.layer = LAYER_ABOVE;
+                setFlag(&rule.effects, RULE_LAYER);
+            } else if (keyEqual(v, "auto")) {
+                rule.effects.layer = LAYER_AUTO;
+                setFlag(&rule.effects, RULE_LAYER);
+            } else {
+                failInvalidValue(rsp, v, k);
+                did_parse = false;
+            }
+        } else if (keyEqual(k, "native-fullscreen")) {
+            if (exclusion) unsupported_exclusion = @ptrCast(k);
+
+            if (keyEqual(v, "on")) {
+                rule.effects.fullscreen = RULE_PROP_ON;
+            } else if (keyEqual(v, "off")) {
+                rule.effects.fullscreen = RULE_PROP_OFF;
+            } else {
+                failInvalidValue(rsp, v, k);
+                did_parse = false;
+            }
+        } else {
+            failUnknownKey(rsp, k);
+            did_parse = false;
+        }
+    }
+
+    if (!has_filter) {
+        failMissingFilter(rsp);
+        did_parse = false;
+    }
+
+    if (unsupported_exclusion) |uk| {
+        failUnsupportedExclusion(rsp, @ptrCast(uk));
+        did_parse = false;
+    }
+
+    return did_parse;
+}
+
 // Mirrors rule_destroy() in src/rule.c exactly: guarded regfree() on
 // the four opaque regex fields (same VALID-flag guards as C; libc
 // regfree takes the storage address), then the six heap-string frees
