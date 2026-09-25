@@ -14,9 +14,17 @@ void yabai_move_frame_math(const CGRect *frame, int type, float dx, float dy, fl
 bool yabai_window_is_undersized(double w, double h);
 bool yabai_window_can_move(uint8_t flags);
 bool yabai_window_can_resize(uint8_t flags);
+const char *yabai_window_layer(int level, int below, int normal, int above);
 
 _Static_assert(WINDOW_MOVABLE == 0x40, "WINDOW_MOVABLE drift");
 _Static_assert(WINDOW_RESIZABLE == 0x80, "WINDOW_RESIZABLE drift");
+
+/* layer_str indices in src/misc/macros.h mirror the CGWindowLevelKey enum
+ * (Base 0, Minimum 1, Desktop 2, BackstopMenu 3, Normal 4, Floating 5). */
+_Static_assert(LAYER_AUTO == 0, "LAYER_AUTO drift");
+_Static_assert(LAYER_BELOW == 3, "LAYER_BELOW drift");
+_Static_assert(LAYER_NORMAL == 4, "LAYER_NORMAL drift");
+_Static_assert(LAYER_ABOVE == 5, "LAYER_ABOVE drift");
 
 _Static_assert(sizeof(CGRect) == 32, "CGRect size drift");
 
@@ -240,4 +248,83 @@ TEST_FUNC(zig_window_flag_parity,
     TEST_CHECK(yabai_window_can_resize(0xC0), true);
     TEST_CHECK(yabai_window_can_move(0xFF), true);
     TEST_CHECK(yabai_window_can_resize(0xFF), true);
+})
+
+/* window_layer() in src/window.c: maps a CGWindowLevel to its layer name.
+ * The three g_layer_*_window_level globals hold runtime values
+ * (CGWindowLevelForKey in src/yabai.c), lifted into the Zig export as
+ * params (established seam pattern). The C static inline is the oracle;
+ * hand pins guard the layer_str table in src/misc/helpers.h. */
+
+/* Synthetic levels (deliberately differ from the LAYER_* indices) plus
+ * boundary values around each class and unknowns. File scope because
+ * TEST_FUNC is a two-arg macro: brace-initializer commas would split
+ * the macro arguments. */
+static int layer_levels[] =
+{
+    100, 200, 300,
+    99, 101, 199, 201, 299, 301,
+    0, -1, 1, 150, 250, 1000, -1000000, 1000000
+};
+
+TEST_FUNC(zig_window_layer_parity,
+{
+    TEST_CHECK(strcmp(layer_str[LAYER_AUTO], "auto"), 0);
+    TEST_CHECK(strcmp(layer_str[LAYER_BELOW], "below"), 0);
+    TEST_CHECK(strcmp(layer_str[LAYER_NORMAL], "normal"), 0);
+    TEST_CHECK(strcmp(layer_str[LAYER_ABOVE], "above"), 0);
+
+    /* Synthetic distinct levels prove the lifted-param seam (values
+     * deliberately differ from the LAYER_* indices). */
+    int below = 100;
+    int normal = 200;
+    int above = 300;
+    g_layer_below_window_level = below;
+    g_layer_normal_window_level = normal;
+    g_layer_above_window_level = above;
+
+    int count = array_count(layer_levels);
+    int i = 0;
+    for (i = 0; i < count; ++i) {
+        const char *c = window_layer(layer_levels[i]);
+        const char *z = yabai_window_layer(layer_levels[i], below, normal, above);
+        TEST_CHECK(strcmp(c, z), 0);
+    }
+
+    /* Hand-pinned string expectations (borrowed pointers, no allocation). */
+    TEST_CHECK(strcmp(yabai_window_layer(below, below, normal, above), "below"), 0);
+    TEST_CHECK(strcmp(yabai_window_layer(normal, below, normal, above), "normal"), 0);
+    TEST_CHECK(strcmp(yabai_window_layer(above, below, normal, above), "above"), 0);
+    TEST_CHECK(strcmp(yabai_window_layer(below - 1, below, normal, above), "unknown"), 0);
+    TEST_CHECK(strcmp(yabai_window_layer(normal + 1, below, normal, above), "unknown"), 0);
+    TEST_CHECK(strcmp(yabai_window_layer(0, below, normal, above), "unknown"), 0);
+    TEST_CHECK(strcmp(window_layer(below), "below"), 0);
+    TEST_CHECK(strcmp(window_layer(normal), "normal"), 0);
+    TEST_CHECK(strcmp(window_layer(above), "above"), 0);
+    TEST_CHECK(strcmp(window_layer(150), "unknown"), 0);
+
+    /* Real daemon levels: parity holds at runtime CGWindowLevelForKey values
+     * (pure oracle comparison, so neighbor collisions are harmless). */
+    g_layer_below_window_level = CGWindowLevelForKey(LAYER_BELOW);
+    g_layer_normal_window_level = CGWindowLevelForKey(LAYER_NORMAL);
+    g_layer_above_window_level = CGWindowLevelForKey(LAYER_ABOVE);
+    int real_below = g_layer_below_window_level;
+    int real_normal = g_layer_normal_window_level;
+    int real_above = g_layer_above_window_level;
+    int real_levels[9];
+    real_levels[0] = real_below;
+    real_levels[1] = real_normal;
+    real_levels[2] = real_above;
+    real_levels[3] = real_below - 1;
+    real_levels[4] = real_below + 1;
+    real_levels[5] = real_normal - 1;
+    real_levels[6] = real_normal + 1;
+    real_levels[7] = real_above - 1;
+    real_levels[8] = real_above + 1;
+    int real_count = array_count(real_levels);
+    for (i = 0; i < real_count; ++i) {
+        const char *c = window_layer(real_levels[i]);
+        const char *z = yabai_window_layer(real_levels[i], real_below, real_normal, real_above);
+        TEST_CHECK(strcmp(c, z), 0);
+    }
 })
