@@ -68,6 +68,7 @@ typedef TEST_SIG(function);
     TEST_ENTRY(zig_view_lifecycle_create)                        \
     TEST_ENTRY(zig_view_lifecycle_clear)                         \
     TEST_ENTRY(zig_view_lifecycle_destroy)                       \
+    TEST_ENTRY(zig_view_serialize)                               \
     TEST_ENTRY(zig_cli_help_golden)                              \
     TEST_ENTRY(zig_cli_help_domains)                             \
     TEST_ENTRY(zig_cli_version_shape)                            \

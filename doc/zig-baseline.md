@@ -180,6 +180,12 @@ unless doc/zig-refactor-plan.md explicitly allows a change.
   for the SLS/manager inputs; trailing view_updates omitted as proven
   no-ops on zeroed roots; destroy calls live remove/feedback/CFRelease
   exactly like C. 99 exports; 69/69 tests; leaks 0; x86_64 verified.
+- View serializer (TDD): `yabai_view_serialize` with eight lifted
+  manager inputs, %lld sid bits, and the did_output comma logic.
+- Rule-serialize routing: a hand-pinned full-JSON golden now guards
+  the seam, and C rule_serialize delegates to Zig (managers resolved
+  at the call site) — the query path runs Zig code in the daemon.
+  100 exports; 70/70 tests; leaks 0; x86_64 verified.
 - Pure-helper slice (TDD) in zig/util.zig: `balance_node_add`,
   `clampf_range` (incl. NaN bit-parity), `json_bool`,
   `json_optional_bool`, float+int `in_range_ii/ei/ie` for the exact
