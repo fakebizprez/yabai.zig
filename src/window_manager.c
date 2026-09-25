@@ -327,6 +327,19 @@ enum window_op_error window_manager_adjust_window_ratio(struct window_manager *w
     return WINDOW_OP_ERROR_SUCCESS;
 }
 
+static void move_frame_math(CGRect frame, int type, float dx, float dy, float *x, float *y, float *w, float *h)
+{
+    if (type == TYPE_REL) {
+        dx += frame.origin.x;
+        dy += frame.origin.y;
+    }
+
+    *x = dx;
+    *y = dy;
+    *w = frame.size.width;
+    *h = frame.size.height;
+}
+
 enum window_op_error window_manager_move_window_relative(struct window_manager *wm, struct window *window, int type, float dx, float dy)
 {
     TIME_FUNCTION;
@@ -334,12 +347,10 @@ enum window_op_error window_manager_move_window_relative(struct window_manager *
     struct view *view = window_manager_find_managed_window(wm, window);
     if (view) return WINDOW_OP_ERROR_INVALID_SRC_VIEW;
 
-    if (type == TYPE_REL) {
-        dx += window->frame.origin.x;
-        dy += window->frame.origin.y;
-    }
+    float x, y, w, h;
+    move_frame_math(window->frame, type, dx, dy, &x, &y, &w, &h);
 
-    window_manager_animate_window((struct window_capture) { .window = window, .x = dx, .y = dy, .w = window->frame.size.width, .h = window->frame.size.height });
+    window_manager_animate_window((struct window_capture) { .window = window, .x = x, .y = y, .w = w, .h = h });
     return WINDOW_OP_ERROR_SUCCESS;
 }
 

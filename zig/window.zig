@@ -21,6 +21,33 @@ pub const HANDLE_BOTTOM: c_int = 0x02;
 pub const HANDLE_LEFT: c_int = 0x04;
 pub const HANDLE_RIGHT: c_int = 0x08;
 
+pub const TYPE_REL: c_int = 0x2;
+
+export fn yabai_move_frame_math(
+    frame: *const CgRect,
+    move_type: c_int,
+    dx: f32,
+    dy: f32,
+    x: *f32,
+    y: *f32,
+    w: *f32,
+    h: *f32,
+) void {
+    @setRuntimeSafety(false);
+    // The C code widens dx/dy to f64 for the origin addition, then
+    // narrows back to float on assignment.
+    var ax: f32 = dx;
+    var ay: f32 = dy;
+    if (move_type == TYPE_REL) {
+        ax = @floatCast(@as(f64, dx) + frame.x);
+        ay = @floatCast(@as(f64, dy) + frame.y);
+    }
+    x.* = ax;
+    y.* = ay;
+    w.* = @floatCast(frame.w);
+    h.* = @floatCast(frame.h);
+}
+
 export fn yabai_resize_frame_math(
     frame: *const CgRect,
     direction: c_int,

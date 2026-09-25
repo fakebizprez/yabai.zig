@@ -57,7 +57,8 @@ typedef TEST_SIG(function);
     TEST_ENTRY(zig_rule_combine_display_space)                   \
     TEST_ENTRY(zig_rule_combine_flags_cleared)                   \
     TEST_ENTRY(zig_rule_combine_scratchpad_props_grid)           \
-    TEST_ENTRY(zig_window_resize_math)
+    TEST_ENTRY(zig_window_resize_math)                           \
+    TEST_ENTRY(zig_window_move_math)
 
 static struct {
     char *name;
