@@ -126,3 +126,31 @@ export fn yabai_window_can_resize(flags: u8) bool {
     @setRuntimeSafety(false);
     return (flags & WINDOW_RESIZABLE) != 0;
 }
+
+// Layer-index mirror of src/misc/macros.h (CGWindowLevelKey values).
+// Pinned here so table drift fails the build, not the suite; the C side
+// pins the same values with _Static_assert in tests/src/zig_window.c.
+pub const LAYER_AUTO: c_int = 0;
+pub const LAYER_BELOW: c_int = 3;
+pub const LAYER_NORMAL: c_int = 4;
+pub const LAYER_ABOVE: c_int = 5;
+
+comptime {
+    if (LAYER_AUTO != 0) @compileError("LAYER_AUTO drift");
+    if (LAYER_BELOW != 3) @compileError("LAYER_BELOW drift");
+    if (LAYER_NORMAL != 4) @compileError("LAYER_NORMAL drift");
+    if (LAYER_ABOVE != 5) @compileError("LAYER_ABOVE drift");
+}
+
+// Mirrors window_layer() in src/window.c. The three
+// g_layer_*_window_level globals (runtime CGWindowLevel values from
+// CGWindowLevelForKey) are lifted in as params (established seam
+// pattern). Returns the layer_str entries ("below"/"normal"/"above")
+// or "unknown", as borrowed string pointers with no allocation.
+export fn yabai_window_layer(level: c_int, below: c_int, normal: c_int, above: c_int) [*:0]const u8 {
+    @setRuntimeSafety(false);
+    if (level == below) return "below";
+    if (level == normal) return "normal";
+    if (level == above) return "above";
+    return "unknown";
+}

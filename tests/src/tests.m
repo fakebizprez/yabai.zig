@@ -70,7 +70,8 @@ typedef TEST_SIG(function);
     TEST_ENTRY(zig_window_resize_math)                           \
     TEST_ENTRY(zig_window_move_math)                             \
     TEST_ENTRY(zig_window_undersized_parity)                     \
-    TEST_ENTRY(zig_window_flag_parity)
+    TEST_ENTRY(zig_window_flag_parity)                             \
+    TEST_ENTRY(zig_window_layer_parity)
 
 static struct {
     char *name;
