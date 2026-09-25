@@ -4,6 +4,12 @@ extern int g_layer_below_window_level;
 extern int g_layer_above_window_level;
 extern int g_connection;
 
+/* Zig delegates (zig/window.zig): parity-proven equivalents of the
+ * flag/size reads below. Signatures in src/window.h are unchanged. */
+bool yabai_window_can_move(uint8_t flags);
+bool yabai_window_can_resize(uint8_t flags);
+bool yabai_window_is_undersized(double w, double h);
+
 bool window_observe(struct window *window)
 {
     for (int i = 0; i < array_count(ax_window_notification); ++i) {
@@ -781,7 +787,7 @@ bool window_ax_can_move(struct window *window)
 
 bool window_can_move(struct window *window)
 {
-    return window_check_flag(window, WINDOW_MOVABLE);
+    return yabai_window_can_move(window->flags);
 }
 
 bool window_ax_can_resize(struct window *window)
@@ -795,7 +801,7 @@ bool window_ax_can_resize(struct window *window)
 
 bool window_can_resize(struct window *window)
 {
-    return window_check_flag(window, WINDOW_RESIZABLE);
+    return yabai_window_can_resize(window->flags);
 }
 
 bool window_can_minimize(struct window *window)
@@ -809,9 +815,7 @@ bool window_can_minimize(struct window *window)
 
 bool window_is_undersized(struct window *window)
 {
-    if (window->frame.size.width  <= 500.0f) return true;
-    if (window->frame.size.height <= 500.0f) return true;
-    return false;
+    return yabai_window_is_undersized(window->frame.size.width, window->frame.size.height);
 }
 
 static bool window_is_minimized(struct window *window)
