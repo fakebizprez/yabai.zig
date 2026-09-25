@@ -31,6 +31,72 @@ bool yabai_in_range_ei_f(float a, float b, float c);
 bool yabai_in_range_ie_i(int a, int b, int c);
 void yabai_rgba_color_from_hex(uint32_t color, struct yabai_rgba_color *out);
 int yabai_find_rank_in_list(uint32_t wid, const uint32_t *window_list, int window_count);
+float yabai_ease_in_sine(float t);
+float yabai_ease_out_sine(float t);
+float yabai_ease_in_out_sine(float t);
+float yabai_ease_in_quad(float t);
+float yabai_ease_out_quad(float t);
+float yabai_ease_in_out_quad(float t);
+float yabai_ease_in_cubic(float t);
+float yabai_ease_out_cubic(float t);
+float yabai_ease_in_out_cubic(float t);
+float yabai_ease_in_quart(float t);
+float yabai_ease_out_quart(float t);
+float yabai_ease_in_out_quart(float t);
+float yabai_ease_in_quint(float t);
+float yabai_ease_out_quint(float t);
+float yabai_ease_in_out_quint(float t);
+float yabai_ease_in_expo(float t);
+float yabai_ease_out_expo(float t);
+float yabai_ease_in_out_expo(float t);
+float yabai_ease_in_circ(float t);
+float yabai_ease_out_circ(float t);
+float yabai_ease_in_out_circ(float t);
+
+static float (*ease_c_fns[])(float) =
+{
+    ease_in_sine, ease_out_sine, ease_in_out_sine,
+    ease_in_quad, ease_out_quad, ease_in_out_quad,
+    ease_in_cubic, ease_out_cubic, ease_in_out_cubic,
+    ease_in_quart, ease_out_quart, ease_in_out_quart,
+    ease_in_quint, ease_out_quint, ease_in_out_quint,
+    ease_in_expo, ease_out_expo, ease_in_out_expo,
+    ease_in_circ, ease_out_circ, ease_in_out_circ,
+};
+
+static float (*ease_z_fns[])(float) =
+{
+    yabai_ease_in_sine, yabai_ease_out_sine, yabai_ease_in_out_sine,
+    yabai_ease_in_quad, yabai_ease_out_quad, yabai_ease_in_out_quad,
+    yabai_ease_in_cubic, yabai_ease_out_cubic, yabai_ease_in_out_cubic,
+    yabai_ease_in_quart, yabai_ease_out_quart, yabai_ease_in_out_quart,
+    yabai_ease_in_quint, yabai_ease_out_quint, yabai_ease_in_out_quint,
+    yabai_ease_in_expo, yabai_ease_out_expo, yabai_ease_in_out_expo,
+    yabai_ease_in_circ, yabai_ease_out_circ, yabai_ease_in_out_circ,
+};
+
+static float ease_inputs[] = { 0.0f, 0.1f, 0.25f, 0.5f, 0.75f, 0.9f, 1.0f };
+
+TEST_FUNC(zig_util_easing,
+{
+    int fn_count = array_count(ease_c_fns);
+    int in_count = array_count(ease_inputs);
+    int i = 0;
+    int j = 0;
+    for (i = 0; i < fn_count; ++i) {
+        for (j = 0; j < in_count; ++j) {
+            float c = ease_c_fns[i](ease_inputs[j]);
+            float z = ease_z_fns[i](ease_inputs[j]);
+            if (memcmp(&c, &z, sizeof(float)) != 0) printf("ease %d input %d failed\n", i, j);
+            TEST_CHECK(memcmp(&c, &z, sizeof(float)), 0);
+        }
+    }
+    TEST_CHECK(yabai_ease_in_quad(0.5f) == 0.25f, 1);
+    TEST_CHECK(yabai_ease_out_quad(0.5f) == 0.75f, 1);
+    TEST_CHECK(yabai_ease_in_sine(0.0f) == 0.0f, 1);
+    TEST_CHECK(yabai_ease_out_expo(1.0f) == 1.0f, 1);
+    TEST_CHECK(yabai_ease_in_expo(0.0f) == 0.0f, 1);
+})
 
 _Static_assert(sizeof(struct balance_node) == 8, "C balance_node size drift");
 _Static_assert(sizeof(struct yabai_balance_node) == 8, "balance_node size drift");

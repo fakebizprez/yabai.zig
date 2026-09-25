@@ -54,6 +54,7 @@ typedef TEST_SIG(function);
     TEST_ENTRY(zig_util_in_range)                                \
     TEST_ENTRY(zig_util_rgba)                                    \
     TEST_ENTRY(zig_util_find_rank)                               \
+    TEST_ENTRY(zig_util_easing)                               \
     TEST_ENTRY(zig_rule_combine_display_space)                   \
     TEST_ENTRY(zig_rule_combine_flags_cleared)                   \
     TEST_ENTRY(zig_rule_combine_scratchpad_props_grid)           \
