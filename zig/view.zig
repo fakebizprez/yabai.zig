@@ -423,6 +423,7 @@ export fn yabai_window_node_balance(node: *WindowNode, axis_flag: u32, out: *Bal
 extern fn yabai_area_make_pair(split: c_int, gap: c_int, ratio: f32, parent: *const Area, left: *Area, right: *Area) void;
 
 extern "c" fn malloc(size: usize) ?[*]u8;
+extern "c" fn realloc(ptr: ?*anyopaque, size: usize) ?[*]u8;
 
 // Mirrors area_make_pair_for_node(): resolves split/ratio/gap through
 // the already-ported get_split/get_ratio/get_gap helpers (the space
@@ -553,4 +554,40 @@ export fn yabai_window_node_clear_zoom(node: *WindowNode) void {
         yabai_window_node_clear_zoom(node.left orelse unreachable);
         yabai_window_node_clear_zoom(node.right orelse unreachable);
     }
+}
+
+// Mirrors view_find_window_list(): leaf walk in first/next order through
+// the already-ported yabai_window_node_find_first_leaf /
+// yabai_window_node_find_next_leaf, initial capacity 13 doubling when
+// count + node_count reaches capacity. ts_alloc_list never zeroes and
+// ts_expand preserves in place, mirrored here with libc malloc/realloc
+// which likewise leave fresh bytes uninitialized and preserve old ones.
+// Ownership asymmetry: the C original returns temp-pool memory the
+// caller never frees; this export returns libc malloc'd memory the C
+// caller must free (the parity test frees only the Zig side).
+export fn yabai_view_find_window_list(view: *const View, window_count: *c_int) ?[*]u32 {
+    @setRuntimeSafety(false);
+    window_count.* = 0;
+    var capacity: usize = 13;
+    const first_mem = malloc(capacity * @sizeOf(u32)) orelse unreachable;
+    var list: [*]u32 = @ptrCast(@alignCast(first_mem));
+    var count: usize = 0;
+    var node = yabai_window_node_find_first_leaf(view.root orelse unreachable);
+    while (node) |n| {
+        const node_count: usize = @intCast(n.window_count);
+        if (count + node_count >= capacity) {
+            const new_capacity = capacity * 2;
+            const grown_mem = realloc(@ptrCast(list), new_capacity * @sizeOf(u32)) orelse unreachable;
+            list = @ptrCast(@alignCast(grown_mem));
+            capacity = new_capacity;
+        }
+        var i: usize = 0;
+        while (i < node_count) : (i += 1) {
+            list[count] = n.window_list[i];
+            count += 1;
+        }
+        node = yabai_window_node_find_next_leaf(n);
+    }
+    window_count.* = @intCast(count);
+    return list;
 }
