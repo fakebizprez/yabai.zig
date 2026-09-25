@@ -176,6 +176,32 @@ export fn yabai_window_node_mirror(node: *WindowNode, axis: c_int) ?*WindowNode 
     return node;
 }
 
+export fn yabai_view_stack_window(node: *WindowNode, window_id: u32) void {
+    @setRuntimeSafety(false);
+    var insert_index: c_int = node.window_count;
+    var i: c_int = 0;
+    while (i < node.window_count) {
+        if (node.window_list[@intCast(i)] == node.window_order[0]) {
+            insert_index = i + 1;
+            break;
+        }
+        i += 1;
+    }
+    // Both shifts move elements right (dst > src), so they must copy
+    // high-to-low like C memmove does for this overlap direction.
+    if (insert_index < node.window_count) {
+        const n: usize = @intCast(node.window_count - insert_index);
+        const dst = node.window_list[@intCast(insert_index + 1)..][0..n];
+        const src = node.window_list[@intCast(insert_index)..][0..n];
+        std.mem.copyBackwards(u32, dst, src);
+    }
+    node.window_list[@intCast(insert_index)] = window_id;
+    const m: usize = @intCast(node.window_count);
+    std.mem.copyBackwards(u32, node.window_order[1..][0..m], node.window_order[0..][0..m]);
+    node.window_order[0] = window_id;
+    node.window_count += 1;
+}
+
 export fn yabai_window_node_fence(node: ?*WindowNode, dir: c_int) ?*WindowNode {
     @setRuntimeSafety(false);
     const n = node orelse return null;

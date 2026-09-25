@@ -18,11 +18,11 @@ unless doc/zig-refactor-plan.md explicitly allows a change.
   `--message/-m`, `--config/-c`, `--verbose/-V`, `--version/-v`,
   `--help/-h`) plus the `man yabai` pointer.
 - `lipo -info ./bin/yabai`: fat file with `x86_64 arm64` slices.
-- Existing suite: `cd tests && make` runs 31 tests, all passing
+- Existing suite: `cd tests && make` runs 32 tests, all passing
   (2 display geometry + 8 socket wire-format/dispatcher characterization
   in tests/src/socket_frame.c + 3 geometry parity in
   tests/src/zig_geometry.c + 6 tokenizer/command-decoding parity in
-  tests/src/zig_message.c + 4 view-tree parity in tests/src/zig_view.c
+  tests/src/zig_message.c + 5 view-tree parity in tests/src/zig_view.c
   + 5 pure-helper parity in tests/src/zig_util.c + 3 rule-effects
   parity in tests/src/zig_rule.c).
 
@@ -73,7 +73,12 @@ unless doc/zig-refactor-plan.md explicitly allows a change.
   both sides). Zero external symbols in the view object.
 - Tree-mutation slice (TDD): `rotate` (90/180/270), `mirror`, `fence`
   with structural tree comparison (pointer fields by position, since
-  the C and Zig trees live at different addresses).
+  the C and Zig trees live at different addresses). The test caught a
+  real overlap-direction bug (`copyForwards` vs C `memmove`), fixed to
+  `copyBackwards`.
+- Stack-insert slice (TDD): `view_stack_window` takes the window id
+  directly (the only field the C version reads). 38 exports in the
+  fat daemon; x86_64 slice verified.
 - Pure-helper slice (TDD) in zig/util.zig: `balance_node_add`,
   `clampf_range` (incl. NaN bit-parity), `json_bool`,
   `json_optional_bool`, float+int `in_range_ii/ei/ie` for the exact

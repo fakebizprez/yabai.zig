@@ -18,6 +18,7 @@ int yabai_window_node_index_of_window(struct window_node *node, uint32_t window_
 void yabai_window_node_rotate(struct window_node *node, int degrees);
 struct window_node *yabai_window_node_mirror(struct window_node *node, int axis);
 struct window_node *yabai_window_node_fence(struct window_node *node, int dir);
+void yabai_view_stack_window(struct window_node *node, uint32_t window_id);
 
 _Static_assert(sizeof(struct window_node) == 344, "window_node size drift");
 _Static_assert(sizeof(struct feedback_window) == 16, "feedback_window size drift");
@@ -189,10 +190,10 @@ static int node_rel(struct window_node **nodes, struct window_node *p)
 
 /* Structural comparison: pointer fields are compared by position in the
  * node array, since the C and Zig trees live at different addresses. */
-static int tree_struct_equal(struct window_node **cn, struct window_node **zn)
+static int tree_struct_equal_n(struct window_node **cn, struct window_node **zn, int n)
 {
     int i = 0;
-    for (i = 0; i < 5; ++i) {
+    for (i = 0; i < n; ++i) {
         if (memcmp(&cn[i]->area, &zn[i]->area, sizeof(struct area)) != 0) return 0;
         if (node_rel(cn, cn[i]->parent) != node_rel(zn, zn[i]->parent)) return 0;
         if (node_rel(cn, cn[i]->left) != node_rel(zn, zn[i]->left)) return 0;
@@ -209,6 +210,11 @@ static int tree_struct_equal(struct window_node **cn, struct window_node **zn)
         if ((cn[i]->feedback_window.context == NULL) != (zn[i]->feedback_window.context == NULL)) return 0;
     }
     return 1;
+}
+
+static int tree_struct_equal(struct window_node **cn, struct window_node **zn)
+{
+    return tree_struct_equal_n(cn, zn, 5);
 }
 
 TEST_FUNC(zig_view_tree_mutate,
@@ -297,4 +303,76 @@ TEST_FUNC(zig_view_fence,
     TEST_CHECK(fence_check(nodes, NULL, DIR_NORTH, -1), 1);
 
     free_test_tree(r, a, c, d, e);
+})
+
+static struct window *make_test_window(uint32_t wid)
+{
+    struct window *window = malloc(sizeof(struct window));
+    memset(window, 0, sizeof(struct window));
+    window->id = wid;
+    return window;
+}
+
+static void set_stack_lists(struct window_node *node, uint32_t l0, uint32_t l1, uint32_t l2, uint32_t o0, uint32_t o1, int count)
+{
+    node->window_list[0] = l0;
+    node->window_list[1] = l1;
+    node->window_list[2] = l2;
+    node->window_order[0] = o0;
+    node->window_order[1] = o1;
+    node->window_count = count;
+}
+
+static int stack_case(uint32_t l0, uint32_t l1, uint32_t l2, uint32_t o0, uint32_t o1, int count, uint32_t wid)
+{
+    struct window_node *c_node = make_test_node();
+    struct window_node *z_node = make_test_node();
+    set_stack_lists(c_node, l0, l1, l2, o0, o1, count);
+    set_stack_lists(z_node, l0, l1, l2, o0, o1, count);
+
+    struct window *window = make_test_window(wid);
+    view_stack_window_node(c_node, window);
+    yabai_view_stack_window(z_node, wid);
+    free(window);
+
+    struct window_node *cn[5];
+    struct window_node *zn[5];
+    cn[0] = c_node;
+    zn[0] = z_node;
+    int i = 0;
+    for (i = 1; i < 5; ++i) {
+        cn[i] = NULL;
+        zn[i] = NULL;
+    }
+    int ok = tree_struct_equal_n(cn, zn, 1);
+    free(c_node);
+    free(z_node);
+    return ok;
+}
+
+TEST_FUNC(zig_view_stack_window,
+{
+    /* order[0] present in list: insert right after it. */
+    TEST_CHECK(stack_case(5, 9, 7, 9, 5, 3, 42), 1);
+    /* order[0] absent: append at the end. */
+    TEST_CHECK(stack_case(5, 9, 7, 99, 5, 3, 42), 1);
+    /* Empty node. */
+    TEST_CHECK(stack_case(0, 0, 0, 0, 0, 0, 42), 1);
+
+    struct window_node *c_node = make_test_node();
+    struct window_node *z_node = make_test_node();
+    set_stack_lists(c_node, 5, 9, 7, 9, 5, 3);
+    set_stack_lists(z_node, 5, 9, 7, 9, 5, 3);
+    struct window *window = make_test_window(42);
+    view_stack_window_node(c_node, window);
+    yabai_view_stack_window(z_node, 42);
+    free(window);
+    TEST_CHECK(c_node->window_list[2], 42);
+    TEST_CHECK(z_node->window_list[2], 42);
+    TEST_CHECK(c_node->window_order[0], 42);
+    TEST_CHECK(z_node->window_order[0], 42);
+    TEST_CHECK(c_node->window_count, 4);
+    TEST_CHECK(z_node->window_count, 4);
+    free(c_node);
+    free(z_node);
 })
