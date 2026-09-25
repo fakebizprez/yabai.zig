@@ -130,6 +130,13 @@ unless doc/zig-refactor-plan.md explicitly allows a change.
   mirrors the three reserved-keyword tables (macro-verified), mallocs
   the label via libc, and emits byte-identical daemon_fail bytes.
   69 exports in the fat daemon; x86_64 slices verified.
+- Rule lifecycle (TDD): `yabai_rule_destroy` with a 256-byte Rule
+  mirror (regex_t as opaque 32-byte storage, offset-asserted) plus
+  set/clear/check flag helpers. Review caught a skipped-regfree
+  divergence in the worker draft; the merge calls libc regfree under
+  the same VALID-flag guards as C, proven by a regcomp/regfree parity
+  case and a whole-suite `leaks -atExit` gate (0 leaks).
+  73 exports in the fat daemon; x86_64 slices verified.
 - Pure-helper slice (TDD) in zig/util.zig: `balance_node_add`,
   `clampf_range` (incl. NaN bit-parity), `json_bool`,
   `json_optional_bool`, float+int `in_range_ii/ei/ie` for the exact
