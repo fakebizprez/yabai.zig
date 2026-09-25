@@ -18,12 +18,12 @@ unless doc/zig-refactor-plan.md explicitly allows a change.
   `--message/-m`, `--config/-c`, `--verbose/-V`, `--version/-v`,
   `--help/-h`) plus the `man yabai` pointer.
 - `lipo -info ./bin/yabai`: fat file with `x86_64 arm64` slices.
-- Existing suite: `cd tests && make` runs 37 tests, all passing
+- Existing suite: `cd tests && make` runs 38 tests, all passing
   (2 display geometry + 8 socket wire-format/dispatcher characterization
   in tests/src/socket_frame.c + 3 geometry parity in
   tests/src/zig_geometry.c + 8 tokenizer/command-decoding parity in
   tests/src/zig_message.c + 6 view-tree parity in tests/src/zig_view.c
-  + 5 pure-helper parity in tests/src/zig_util.c + 3 rule-effects
+  + 6 pure-helper parity in tests/src/zig_util.c + 3 rule-effects
   parity in tests/src/zig_rule.c + 2 window-math parity in
   tests/src/zig_window.c).
 
@@ -88,8 +88,13 @@ unless doc/zig-refactor-plan.md explicitly allows a change.
   exact f64 promotion/narrowing semantics, clamp and NaN pins.
 - Move-math slice (TDD): `move_frame_math()` extracted the same way
   from the move path, ported with f64 widening on the origin add.
-  43 exports in the fat daemon; x86_64 slice verified; window object
-  needs no Zig runtime.
+- Easing slice (TDD): all 21 `ease_*` curves in zig/util.zig via
+  libc sinf/cosf/powf/sqrtf, proven over 147 bit-exact vectors. Key
+  finding: Apple clang fuses FMA even at -O0 (disassembly-proven);
+  the port mirrors each fused site with explicit `@mulAdd` (wrong
+  guesses — unfused and `@setFloatMode(.strict)` — both failed
+  parity first). 64 exports in the fat daemon; x86_64 slice
+  verified; util object needs only libm.
 - Checked frame decoder (TDD) in zig/message.zig:
   `yabai_socket_frame_decode` validates the native length prefix and
   framing before exposing borrowed field pointers — the replacement

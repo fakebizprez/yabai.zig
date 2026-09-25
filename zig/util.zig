@@ -83,6 +83,117 @@ export fn yabai_find_rank_in_list(wid: u32, window_list: [*]const u32, window_co
 
 const std = @import("std");
 
+extern "c" fn sinf(f32) f32;
+extern "c" fn cosf(f32) f32;
+extern "c" fn powf(f32, f32) f32;
+extern "c" fn sqrtf(f32) f32;
+
+export fn yabai_ease_in_sine(t: f32) f32 {
+    @setRuntimeSafety(false);
+    return 1.0 - cosf(@floatCast(@as(f64, t) * std.math.pi / 2.0));
+}
+
+export fn yabai_ease_out_sine(t: f32) f32 {
+    @setRuntimeSafety(false);
+    return sinf(@floatCast(@as(f64, t) * std.math.pi / 2.0));
+}
+
+export fn yabai_ease_in_out_sine(t: f32) f32 {
+    @setRuntimeSafety(false);
+    return -(cosf(@floatCast(std.math.pi * @as(f64, t))) - 1.0) / 2.0;
+}
+
+export fn yabai_ease_in_quad(t: f32) f32 {
+    @setRuntimeSafety(false);
+    return t * t;
+}
+
+export fn yabai_ease_out_quad(t: f32) f32 {
+    @setRuntimeSafety(false);
+    const u: f32 = 1.0 - t;
+    return @mulAdd(f32, -u, u, 1.0);
+}
+
+export fn yabai_ease_in_out_quad(t: f32) f32 {
+    @setRuntimeSafety(false);
+    return if (t < 0.5) 2.0 * t * t else 1.0 - powf(@mulAdd(f32, -2.0, t, 2.0), 2.0) / 2.0;
+}
+
+export fn yabai_ease_in_cubic(t: f32) f32 {
+    @setRuntimeSafety(false);
+    return t * t * t;
+}
+
+export fn yabai_ease_out_cubic(t: f32) f32 {
+    @setRuntimeSafety(false);
+    return 1.0 - powf(1.0 - t, 3.0);
+}
+
+export fn yabai_ease_in_out_cubic(t: f32) f32 {
+    @setRuntimeSafety(false);
+    return if (t < 0.5) 4.0 * t * t * t else 1.0 - powf(@mulAdd(f32, -2.0, t, 2.0), 3.0) / 2.0;
+}
+
+export fn yabai_ease_in_quart(t: f32) f32 {
+    @setRuntimeSafety(false);
+    return t * t * t * t;
+}
+
+export fn yabai_ease_out_quart(t: f32) f32 {
+    @setRuntimeSafety(false);
+    return 1.0 - powf(1.0 - t, 4.0);
+}
+
+export fn yabai_ease_in_out_quart(t: f32) f32 {
+    @setRuntimeSafety(false);
+    return if (t < 0.5) 8.0 * t * t * t * t else 1.0 - powf(@mulAdd(f32, -2.0, t, 2.0), 4.0) / 2.0;
+}
+
+export fn yabai_ease_in_quint(t: f32) f32 {
+    @setRuntimeSafety(false);
+    return t * t * t * t * t;
+}
+
+export fn yabai_ease_out_quint(t: f32) f32 {
+    @setRuntimeSafety(false);
+    return 1.0 - powf(1.0 - t, 5.0);
+}
+
+export fn yabai_ease_in_out_quint(t: f32) f32 {
+    @setRuntimeSafety(false);
+    return if (t < 0.5) 16.0 * t * t * t * t * t else 1.0 - powf(@mulAdd(f32, -2.0, t, 2.0), 5.0) / 2.0;
+}
+
+export fn yabai_ease_in_expo(t: f32) f32 {
+    @setRuntimeSafety(false);
+    return if (t == 0.0) 0.0 else powf(2.0, @mulAdd(f32, 10.0, t, -10.0));
+}
+
+export fn yabai_ease_out_expo(t: f32) f32 {
+    @setRuntimeSafety(false);
+    return if (t == 1.0) 1.0 else 1.0 - powf(2.0, -10.0 * t);
+}
+
+export fn yabai_ease_in_out_expo(t: f32) f32 {
+    @setRuntimeSafety(false);
+    return if (t == 0.0) 0.0 else if (t == 1.0) 1.0 else if (t < 0.5) powf(2.0, @mulAdd(f32, 20.0, t, -10.0)) / 2.0 else (2.0 - powf(2.0, @mulAdd(f32, -20.0, t, 10.0))) / 2.0;
+}
+
+export fn yabai_ease_in_circ(t: f32) f32 {
+    @setRuntimeSafety(false);
+    return 1.0 - sqrtf(1.0 - powf(t, 2.0));
+}
+
+export fn yabai_ease_out_circ(t: f32) f32 {
+    @setRuntimeSafety(false);
+    return sqrtf(1.0 - powf(t - 1.0, 2.0));
+}
+
+export fn yabai_ease_in_out_circ(t: f32) f32 {
+    @setRuntimeSafety(false);
+    return if (t < 0.5) (1.0 - sqrtf(1.0 - powf(2.0 * t, 2.0))) / 2.0 else (sqrtf(1.0 - powf(@mulAdd(f32, -2.0, t, 2.0), 2.0)) + 1.0) / 2.0;
+}
+
 export fn yabai_rgba_color_from_hex(color: u32, out: *RgbaColor) void {
     @setRuntimeSafety(false);
     out.p = color;
