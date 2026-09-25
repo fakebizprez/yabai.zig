@@ -137,6 +137,11 @@ unless doc/zig-refactor-plan.md explicitly allows a change.
   the same VALID-flag guards as C, proven by a regcomp/regfree parity
   case and a whole-suite `leaks -atExit` gate (0 leaks).
   73 exports in the fat daemon; x86_64 slices verified.
+- View-tree slice (TDD): ten pure helpers — occupancy/intermediate,
+  child/split/ratio/gap readers (manager state lifted in as params),
+  area/CGRect conversion, equalize, and balance composing the shared
+  balance_node_add export. 83 exports in the fat daemon; x86_64
+  slices verified.
 - Pure-helper slice (TDD) in zig/util.zig: `balance_node_add`,
   `clampf_range` (incl. NaN bit-parity), `json_bool`,
   `json_optional_bool`, float+int `in_range_ii/ei/ie` for the exact
