@@ -15,6 +15,7 @@ typedef TEST_SIG(function);
 #include "socket_frame.c"
 #include "zig_geometry.c"
 #include "zig_message.c"
+#include "zig_view.c"
 
 #define TEST_ENTRY(name) { #name, test_##name },
 #define TEST_LIST                                              \
@@ -36,7 +37,9 @@ typedef TEST_SIG(function);
     TEST_ENTRY(zig_message_token_numbers)                        \
     TEST_ENTRY(zig_message_token_to_value)                       \
     TEST_ENTRY(zig_message_key_value)                            \
-    TEST_ENTRY(zig_message_named_consts)
+    TEST_ENTRY(zig_message_named_consts)                         \
+    TEST_ENTRY(zig_view_leaf_walk)                               \
+    TEST_ENTRY(zig_view_window_lookup)
 
 static struct {
     char *name;

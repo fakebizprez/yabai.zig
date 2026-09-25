@@ -18,11 +18,11 @@ unless doc/zig-refactor-plan.md explicitly allows a change.
   `--message/-m`, `--config/-c`, `--verbose/-V`, `--version/-v`,
   `--help/-h`) plus the `man yabai` pointer.
 - `lipo -info ./bin/yabai`: fat file with `x86_64 arm64` slices.
-- Existing suite: `cd tests && make` runs 19 tests, all passing
+- Existing suite: `cd tests && make` runs 21 tests, all passing
   (2 display geometry + 8 socket wire-format/dispatcher characterization
   in tests/src/socket_frame.c + 3 geometry parity in
   tests/src/zig_geometry.c + 6 tokenizer/command-decoding parity in
-  tests/src/zig_message.c).
+  tests/src/zig_message.c + 2 view-tree parity in tests/src/zig_view.c).
 
 ## Step 2 boundary evidence
 
@@ -62,8 +62,14 @@ unless doc/zig-refactor-plan.md explicitly allows a change.
   `parse_key_value_pair` (incl. in-place NUL write and untouched-flag
   paths), `parse_value_type`, `parse_resize_handle`. Parity tests cover
   11 separator edge cases with byte-compared mutated buffers, plus
-  hand-pinned constant tables. 14 exports in the daemon; x86_64 slice
-  verified.
+  hand-pinned constant tables. x86_64 slice verified.
+- View-tree traversal slice (TDD) in zig/view.zig: `is_leaf`,
+  `is_left/right_child`, `find_first/last/prev/next_leaf`,
+  `contains_window`, `index_of_window` (incl. the returns-0-on-miss
+  quirk). WindowNode mirrors struct window_node byte for byte
+  (344 bytes; offsets from clang -fdump-record-layouts, asserted on
+  both sides). 23 exports in the fat daemon; zero external symbols in
+  the view object; x86_64 slice verified.
 
 ## Daemon linkage (universal objects)
 
