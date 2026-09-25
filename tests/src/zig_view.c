@@ -1328,3 +1328,236 @@ TEST_FUNC(zig_view_swap_window_list,
     free(a);
     free(b);
 })
+
+/* C oracle has no header prototype (defined in src/view.c, which the
+ * test binary includes via manifest.m); declare it for the parity
+ * comparisons below. */
+struct window_node *view_find_min_depth_leaf_node(struct window_node *node);
+
+struct window_node *yabai_view_find_min_depth_leaf_node(struct window_node *node);
+bool yabai_view_is_invalid(struct view *view);
+bool yabai_view_is_dirty(struct view *view);
+void yabai_window_node_clear_zoom(struct window_node *node);
+
+/* Pin the mirrored flag values (zig/view.zig VIEW_IS_VALID/DIRTY). */
+_Static_assert(VIEW_IS_VALID == 0x200, "VIEW_IS_VALID drift");
+_Static_assert(VIEW_IS_DIRTY == 0x400, "VIEW_IS_DIRTY drift");
+
+/* Builds an asymmetric fork: root -> (deep, shallow-leaf) when
+ * deep_left is nonzero, root -> (shallow-leaf, deep) otherwise. The
+ * deep side is a two-leaf parent at depth 1, so BFS must return the
+ * depth-1 leaf on the shallow side first. */
+static struct window_node *make_asymmetric_tree(struct window_node **deep, struct window_node **shallow, struct window_node **d1, struct window_node **d2, int deep_left)
+{
+    struct window_node *r = make_test_node();
+    *deep = make_test_node();
+    *shallow = make_test_node();
+    *d1 = make_test_node();
+    *d2 = make_test_node();
+    if (deep_left) {
+        r->left = *deep;
+        r->right = *shallow;
+    } else {
+        r->left = *shallow;
+        r->right = *deep;
+    }
+    (*deep)->parent = r;
+    (*shallow)->parent = r;
+    (*deep)->left = *d1;
+    (*deep)->right = *d2;
+    (*d1)->parent = *deep;
+    (*d2)->parent = *deep;
+    return r;
+}
+
+TEST_FUNC(zig_view_min_depth_leaf,
+{
+    /* Single leaf returns itself on both sides. */
+    struct window_node *solo = make_test_node();
+    TEST_CHECK(view_find_min_depth_leaf_node(solo) != yabai_view_find_min_depth_leaf_node(solo), 0);
+    TEST_CHECK(view_find_min_depth_leaf_node(solo) != solo, 0);
+    TEST_CHECK(yabai_view_find_min_depth_leaf_node(solo) != solo, 0);
+    free(solo);
+
+    /* R -> (A, C); A -> (D, E): BFS order R,A,C hits C (depth 1)
+     * before D,E (depth 2). */
+    struct window_node *r;
+    struct window_node *a;
+    struct window_node *c;
+    struct window_node *d;
+    struct window_node *e;
+    make_test_tree(&r, &a, &c, &d, &e);
+    TEST_CHECK(view_find_min_depth_leaf_node(r) != yabai_view_find_min_depth_leaf_node(r), 0);
+    TEST_CHECK(view_find_min_depth_leaf_node(r) != c, 0);
+    TEST_CHECK(yabai_view_find_min_depth_leaf_node(r) != c, 0);
+    free_test_tree(r, a, c, d, e);
+
+    /* Deep-left spine: DFS would return d1, BFS must return shallow. */
+    struct window_node *deep;
+    struct window_node *shallow;
+    struct window_node *d1;
+    struct window_node *d2;
+    r = make_asymmetric_tree(&deep, &shallow, &d1, &d2, 1);
+    TEST_CHECK(view_find_min_depth_leaf_node(r) != yabai_view_find_min_depth_leaf_node(r), 0);
+    TEST_CHECK(view_find_min_depth_leaf_node(r) != shallow, 0);
+    TEST_CHECK(yabai_view_find_min_depth_leaf_node(r) != shallow, 0);
+    free(r);
+    free(deep);
+    free(shallow);
+    free(d1);
+    free(d2);
+
+    /* Deep-right mirror: BFS must return the left shallow leaf. */
+    r = make_asymmetric_tree(&deep, &shallow, &d1, &d2, 0);
+    TEST_CHECK(view_find_min_depth_leaf_node(r) != yabai_view_find_min_depth_leaf_node(r), 0);
+    TEST_CHECK(view_find_min_depth_leaf_node(r) != shallow, 0);
+    TEST_CHECK(yabai_view_find_min_depth_leaf_node(r) != shallow, 0);
+    free(r);
+    free(deep);
+    free(shallow);
+    free(d1);
+    free(d2);
+
+    /* Full depth-2 tree R -> (A, B), A -> (D, E), B -> (F, G):
+     * queue runs R,A,B,D so the first leaf is D. */
+    struct window_node *t1;
+    struct window_node *t2;
+    struct window_node *t3;
+    struct window_node *t4;
+    struct window_node *t5;
+    make_test_tree(&t1, &t2, &t3, &t4, &t5);
+    struct window_node *f = make_test_node();
+    struct window_node *g = make_test_node();
+    t3->left = f;
+    t3->right = g;
+    f->parent = t3;
+    g->parent = t3;
+    TEST_CHECK(view_find_min_depth_leaf_node(t1) != yabai_view_find_min_depth_leaf_node(t1), 0);
+    TEST_CHECK(view_find_min_depth_leaf_node(t1) != t4, 0);
+    TEST_CHECK(yabai_view_find_min_depth_leaf_node(t1) != t4, 0);
+    free(t1);
+    free(t2);
+    free(t3);
+    free(t4);
+    free(t5);
+    free(f);
+    free(g);
+})
+
+TEST_FUNC(zig_view_invalid_dirty,
+{
+    struct view *v = malloc(sizeof(struct view));
+    memset(v, 0, sizeof(struct view));
+
+    /* flags == 0: invalid (VALID clear), clean (DIRTY clear). */
+    v->flags = 0;
+    TEST_CHECK(view_is_invalid(v) != yabai_view_is_invalid(v), 0);
+    TEST_CHECK(view_is_invalid(v), true);
+    TEST_CHECK(yabai_view_is_invalid(v), true);
+    TEST_CHECK(view_is_dirty(v) != yabai_view_is_dirty(v), 0);
+    TEST_CHECK(view_is_dirty(v), false);
+    TEST_CHECK(yabai_view_is_dirty(v), false);
+
+    /* Only VALID: valid, clean. */
+    v->flags = VIEW_IS_VALID;
+    TEST_CHECK(view_is_invalid(v) != yabai_view_is_invalid(v), 0);
+    TEST_CHECK(view_is_invalid(v), false);
+    TEST_CHECK(yabai_view_is_invalid(v), false);
+    TEST_CHECK(view_is_dirty(v) != yabai_view_is_dirty(v), 0);
+    TEST_CHECK(view_is_dirty(v), false);
+
+    /* Only DIRTY: invalid, dirty. */
+    v->flags = VIEW_IS_DIRTY;
+    TEST_CHECK(view_is_invalid(v) != yabai_view_is_invalid(v), 0);
+    TEST_CHECK(view_is_invalid(v), true);
+    TEST_CHECK(view_is_dirty(v) != yabai_view_is_dirty(v), 0);
+    TEST_CHECK(view_is_dirty(v), true);
+    TEST_CHECK(yabai_view_is_dirty(v), true);
+
+    /* VALID|DIRTY: valid, dirty. */
+    v->flags = VIEW_IS_VALID | VIEW_IS_DIRTY;
+    TEST_CHECK(view_is_invalid(v) != yabai_view_is_invalid(v), 0);
+    TEST_CHECK(view_is_invalid(v), false);
+    TEST_CHECK(view_is_dirty(v) != yabai_view_is_dirty(v), 0);
+    TEST_CHECK(view_is_dirty(v), true);
+
+    /* Neighboring flag bits must not alias either bit. */
+    v->flags = VIEW_LAYOUT | VIEW_TOP_PADDING | VIEW_WINDOW_GAP | VIEW_ENABLE_GAP | VIEW_ENABLE_PADDING | VIEW_SPLIT_TYPE;
+    TEST_CHECK(view_is_invalid(v) != yabai_view_is_invalid(v), 0);
+    TEST_CHECK(view_is_invalid(v), true);
+    TEST_CHECK(yabai_view_is_invalid(v), true);
+    TEST_CHECK(view_is_dirty(v) != yabai_view_is_dirty(v), 0);
+    TEST_CHECK(view_is_dirty(v), false);
+    TEST_CHECK(yabai_view_is_dirty(v), false);
+
+    /* Complement shapes: every bit except the pair set. */
+    v->flags = ~(VIEW_IS_VALID | VIEW_IS_DIRTY);
+    TEST_CHECK(view_is_invalid(v) != yabai_view_is_invalid(v), 0);
+    TEST_CHECK(view_is_invalid(v), true);
+    TEST_CHECK(view_is_dirty(v) != yabai_view_is_dirty(v), 0);
+    TEST_CHECK(view_is_dirty(v), false);
+    v->flags = ~((uint64_t) 0);
+    TEST_CHECK(view_is_invalid(v) != yabai_view_is_invalid(v), 0);
+    TEST_CHECK(view_is_invalid(v), false);
+    TEST_CHECK(view_is_dirty(v) != yabai_view_is_dirty(v), 0);
+    TEST_CHECK(view_is_dirty(v), true);
+
+    free(v);
+})
+
+TEST_FUNC(zig_view_clear_zoom,
+{
+    /* Oracle parity: zooms planted at every depth on mirrored trees. */
+    struct window_node *cn[5];
+    struct window_node *zn[5];
+    make_test_pair(cn, zn);
+    cn[0]->zoom = cn[0];
+    zn[0]->zoom = zn[0];
+    cn[1]->zoom = cn[3];
+    zn[1]->zoom = zn[3];
+    cn[2]->zoom = cn[2];
+    zn[2]->zoom = zn[2];
+    cn[3]->zoom = cn[0];
+    zn[3]->zoom = zn[0];
+    cn[4]->zoom = NULL;
+    zn[4]->zoom = NULL;
+    window_node_clear_zoom(cn[0]);
+    yabai_window_node_clear_zoom(zn[0]);
+    TEST_CHECK(tree_struct_equal(cn, zn), 1);
+
+    /* Hand vectors: zoom is NULL at every depth on the Zig side. */
+    TEST_CHECK(zn[0]->zoom, NULL);
+    TEST_CHECK(zn[1]->zoom, NULL);
+    TEST_CHECK(zn[2]->zoom, NULL);
+    TEST_CHECK(zn[3]->zoom, NULL);
+    TEST_CHECK(zn[4]->zoom, NULL);
+
+    /* Non-zoom state survives: oracle fixture windows still stacked. */
+    TEST_CHECK(zn[3]->window_count, 2);
+    TEST_CHECK(zn[3]->window_list[0], 5);
+    TEST_CHECK(zn[2]->window_count, 1);
+    TEST_CHECK(zn[2]->window_list[0], 7);
+    free_test_pair(cn, zn);
+
+    /* Single leaf with a self zoom clears. */
+    struct window_node *s = make_test_node();
+    s->zoom = s;
+    yabai_window_node_clear_zoom(s);
+    TEST_CHECK(s->zoom, NULL);
+    free(s);
+
+    /* Idempotent on an already-clear tree. */
+    struct window_node *r;
+    struct window_node *a;
+    struct window_node *c;
+    struct window_node *d;
+    struct window_node *e;
+    make_test_tree(&r, &a, &c, &d, &e);
+    yabai_window_node_clear_zoom(r);
+    TEST_CHECK(r->zoom, NULL);
+    TEST_CHECK(a->zoom, NULL);
+    TEST_CHECK(c->zoom, NULL);
+    TEST_CHECK(d->zoom, NULL);
+    TEST_CHECK(e->zoom, NULL);
+    free_test_tree(r, a, c, d, e);
+})

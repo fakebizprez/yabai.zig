@@ -60,6 +60,9 @@ typedef TEST_SIG(function);
     TEST_ENTRY(zig_view_area_pair_for_node)                      \
     TEST_ENTRY(zig_view_node_split)                              \
     TEST_ENTRY(zig_view_swap_window_list)                        \
+    TEST_ENTRY(zig_view_min_depth_leaf)                          \
+    TEST_ENTRY(zig_view_invalid_dirty)                           \
+    TEST_ENTRY(zig_view_clear_zoom)                              \
     TEST_ENTRY(zig_util_balance_clamp)                           \
     TEST_ENTRY(zig_util_json_bool)                               \
     TEST_ENTRY(zig_util_in_range)                                \

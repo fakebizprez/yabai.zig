@@ -157,6 +157,9 @@ unless doc/zig-refactor-plan.md explicitly allows a change.
   Selector mirror (union as u64 payload, zeroed where C leaves garbage)
   and byte-identical DIR_SEL error bytes. 90 exports in the fat
   daemon; x86_64 slices verified.
+- View leaves (TDD): min-depth BFS (exact queue order/NULL behavior),
+  VALID/DIRTY flag readers with pins, and recursive clear_zoom.
+  Suite at 59/59; x86_64 slice verified.
 - Pure-helper slice (TDD) in zig/util.zig: `balance_node_add`,
   `clampf_range` (incl. NaN bit-parity), `json_bool`,
   `json_optional_bool`, float+int `in_range_ii/ei/ie` for the exact

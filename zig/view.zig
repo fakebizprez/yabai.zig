@@ -162,6 +162,8 @@ pub const CHILD_NONE: c_int = 0;
 pub const CHILD_SECOND: c_int = 1;
 pub const CHILD_FIRST: c_int = 2;
 pub const VIEW_ENABLE_GAP: u64 = 0x100;
+pub const VIEW_IS_VALID: u64 = 0x200;
+pub const VIEW_IS_DIRTY: u64 = 0x400;
 pub const DIR_NORTH: c_int = 360;
 pub const DIR_EAST: c_int = 90;
 pub const DIR_SOUTH: c_int = 180;
@@ -509,4 +511,46 @@ export fn yabai_window_node_swap_window_list(a_node: *WindowNode, b_node: *Windo
 
     a_node.zoom = null;
     b_node.zoom = null;
+}
+
+// Mirrors view_find_min_depth_leaf_node(): breadth-first scan over a
+// 256-slot queue (nodes before children, left before right); returns
+// the first leaf, NULL when the slots exhaust without finding one.
+export fn yabai_view_find_min_depth_leaf_node(node: *WindowNode) ?*WindowNode {
+    @setRuntimeSafety(false);
+    var list: [256]?*WindowNode = [_]?*WindowNode{null} ** 256;
+    list[0] = node;
+    var j: usize = 0;
+    var i: usize = 0;
+    while (i < 256) : (i += 1) {
+        const cur = list[i] orelse unreachable;
+        if (isLeaf(cur)) return cur;
+        j += 1;
+        list[j] = cur.left;
+        j += 1;
+        list[j] = cur.right;
+    }
+    return null;
+}
+
+// Mirrors view_is_invalid(): invalid while the VALID bit is clear.
+export fn yabai_view_is_invalid(view: *const View) bool {
+    @setRuntimeSafety(false);
+    return (view.flags & VIEW_IS_VALID) == 0;
+}
+
+// Mirrors view_is_dirty(): dirty while the DIRTY bit is set.
+export fn yabai_view_is_dirty(view: *const View) bool {
+    @setRuntimeSafety(false);
+    return (view.flags & VIEW_IS_DIRTY) != 0;
+}
+
+// Mirrors window_node_clear_zoom(): drops zoom on the whole subtree.
+export fn yabai_window_node_clear_zoom(node: *WindowNode) void {
+    @setRuntimeSafety(false);
+    node.zoom = null;
+    if (!isLeaf(node)) {
+        yabai_window_node_clear_zoom(node.left orelse unreachable);
+        yabai_window_node_clear_zoom(node.right orelse unreachable);
+    }
 }
