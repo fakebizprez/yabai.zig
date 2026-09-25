@@ -18,6 +18,7 @@ typedef TEST_SIG(function);
 #include "zig_view.c"
 #include "zig_util.c"
 #include "zig_rule.c"
+#include "zig_window.c"
 
 #define TEST_ENTRY(name) { #name, test_##name },
 #define TEST_LIST                                              \
@@ -55,7 +56,8 @@ typedef TEST_SIG(function);
     TEST_ENTRY(zig_util_find_rank)                               \
     TEST_ENTRY(zig_rule_combine_display_space)                   \
     TEST_ENTRY(zig_rule_combine_flags_cleared)                   \
-    TEST_ENTRY(zig_rule_combine_scratchpad_props_grid)
+    TEST_ENTRY(zig_rule_combine_scratchpad_props_grid)           \
+    TEST_ENTRY(zig_window_resize_math)
 
 static struct {
     char *name;

@@ -343,17 +343,23 @@ enum window_op_error window_manager_move_window_relative(struct window_manager *
     return WINDOW_OP_ERROR_SUCCESS;
 }
 
+static void resize_frame_math(CGRect frame, int direction, float dx, float dy, float *fx, float *fy, float *fw, float *fh)
+{
+    int x_mod = (direction & HANDLE_LEFT) ? -1 : (direction & HANDLE_RIGHT)  ? 1 : 0;
+    int y_mod = (direction & HANDLE_TOP)  ? -1 : (direction & HANDLE_BOTTOM) ? 1 : 0;
+
+    *fw = max(1, frame.size.width  + dx * x_mod);
+    *fh = max(1, frame.size.height + dy * y_mod);
+    *fx = (direction & HANDLE_LEFT) ? frame.origin.x + frame.size.width  - *fw : frame.origin.x;
+    *fy = (direction & HANDLE_TOP)  ? frame.origin.y + frame.size.height - *fh : frame.origin.y;
+}
+
 void window_manager_resize_window_relative_internal(struct window *window, CGRect frame, int direction, float dx, float dy, bool animate)
 {
     TIME_FUNCTION;
 
-    int x_mod = (direction & HANDLE_LEFT) ? -1 : (direction & HANDLE_RIGHT)  ? 1 : 0;
-    int y_mod = (direction & HANDLE_TOP)  ? -1 : (direction & HANDLE_BOTTOM) ? 1 : 0;
-
-    float fw = max(1, frame.size.width  + dx * x_mod);
-    float fh = max(1, frame.size.height + dy * y_mod);
-    float fx = (direction & HANDLE_LEFT) ? frame.origin.x + frame.size.width  - fw : frame.origin.x;
-    float fy = (direction & HANDLE_TOP)  ? frame.origin.y + frame.size.height - fh : frame.origin.y;
+    float fx, fy, fw, fh;
+    resize_frame_math(frame, direction, dx, dy, &fx, &fy, &fw, &fh);
 
     if (animate) {
         window_manager_animate_window((struct window_capture) { .window = window, .x = fx, .y = fy, .w = fw, .h = fh });
