@@ -369,6 +369,110 @@ export fn yabai_parse_properties(
     }
 }
 
+pub const LABEL_DISPLAY: c_int = 0;
+pub const LABEL_SPACE: c_int = 1;
+pub const LABEL_WINDOW: c_int = 2;
+
+extern "c" fn malloc(size: usize) ?[*]u8;
+
+// Byte-identical equivalent of daemon_fail() for the three parse_label()
+// emissions: the 0x07 failure marker, a quote, the length-bounded segment
+// bytes, then the suffix. Written with fwrite so no varargs ABI is
+// involved; the byte sequence matches the fprintf output.
+fn labelFail(rsp: ?*anyopaque, segment: [*]const u8, seg_len: usize, suffix: []const u8) void {
+    @setRuntimeSafety(false);
+    const stream = rsp orelse return;
+    const marker: u8 = 0x07;
+    _ = fwrite(@ptrCast(&marker), 1, 1, stream);
+    const quote: u8 = '\'';
+    _ = fwrite(@ptrCast(&quote), 1, 1, stream);
+    if (seg_len > 0) {
+        _ = fwrite(@ptrCast(segment), 1, seg_len, stream);
+    }
+    _ = fwrite(@ptrCast(suffix.ptr), 1, suffix.len, stream);
+}
+
+const reserved_display_identifiers = [_][*:0]const u8{
+    "north", "east", "south", "west",
+    "prev",  "next", "first", "last",
+    "recent", "mouse",
+};
+
+const reserved_space_identifiers = [_][*:0]const u8{
+    "prev", "next", "first", "last",
+    "recent", "mouse",
+};
+
+const reserved_window_identifiers = [_][*:0]const u8{
+    "float",  "sticky", "shadow", "split",
+    "zoom-parent", "zoom-fullscreen",
+    "windowed-fullscreen", "native-fullscreen",
+    "expose", "pip",
+    "recover",
+};
+
+// Byte-identical port of parse_label() in src/message.c: invalid tokens
+// yield NULL with success, non-strings and reserved keywords fail with
+// daemon_fail emission, and valid labels are copied into libc malloc'd
+// memory (owned by the C caller). Type dispatch and the reserved-keyword
+// scans reuse yabai_token_to_value/yabai_token_equals on the same
+// keyword tables as C.
+export fn yabai_parse_label(
+    rsp: ?*anyopaque,
+    token: *const MsgToken,
+    label_type: c_int,
+    label_out: *?[*]u8,
+) bool {
+    @setRuntimeSafety(false);
+    var value: TokenValue = std.mem.zeroes(TokenValue);
+    yabai_token_to_value(token, &value);
+    if (value.type == TOKEN_TYPE_INVALID) {
+        label_out.* = null;
+        return true;
+    }
+    const n: usize = @intCast(token.length);
+    const text: [*]const u8 = @ptrCast(token.text orelse unreachable);
+    if (value.type != TOKEN_TYPE_STRING) {
+        labelFail(rsp, text, n, "' cannot be used as a label.\n");
+        return false;
+    }
+    switch (label_type) {
+        LABEL_DISPLAY => {
+            for (reserved_display_identifiers) |keyword| {
+                if (yabai_token_equals(token, keyword)) {
+                    labelFail(rsp, text, n, "' is a reserved keyword and cannot be used as a label.\n");
+                    return false;
+                }
+            }
+        },
+        LABEL_SPACE => {
+            for (reserved_space_identifiers) |keyword| {
+                if (yabai_token_equals(token, keyword)) {
+                    labelFail(rsp, text, n, "' is a reserved keyword and cannot be used as a label.\n");
+                    return false;
+                }
+            }
+        },
+        LABEL_WINDOW => {
+            for (reserved_window_identifiers) |keyword| {
+                if (yabai_token_equals(token, keyword)) {
+                    labelFail(rsp, text, n, "' is a reserved keyword and cannot be used as a scratchpad.\n");
+                    return false;
+                }
+            }
+        },
+        else => {},
+    }
+    const mem = malloc(n + 1) orelse return false;
+    var i: usize = 0;
+    while (i < n) : (i += 1) {
+        mem[i] = text[i];
+    }
+    mem[n] = 0;
+    label_out.* = mem;
+    return true;
+}
+
 export fn yabai_token_to_value(token: *const MsgToken, out: *TokenValue) void {
     @setRuntimeSafety(false);
     out.* = std.mem.zeroes(TokenValue);

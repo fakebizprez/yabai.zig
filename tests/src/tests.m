@@ -42,6 +42,7 @@ typedef TEST_SIG(function);
     TEST_ENTRY(zig_message_frame_decode)                         \
     TEST_ENTRY(zig_message_parse_property)                       \
     TEST_ENTRY(zig_message_parse_properties)                     \
+    TEST_ENTRY(zig_message_parse_label)                          \
     TEST_ENTRY(zig_message_key_value)                            \
     TEST_ENTRY(zig_message_named_consts)                         \
     TEST_ENTRY(zig_view_leaf_walk)                               \
