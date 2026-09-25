@@ -176,6 +176,37 @@ export fn yabai_window_node_mirror(node: *WindowNode, axis: c_int) ?*WindowNode 
     return node;
 }
 
+pub const View = extern struct {
+    uuid: ?*anyopaque,
+    sid: u64,
+    root: ?*WindowNode,
+    insertion_point: u32,
+    layout: c_int,
+    split_type: c_int,
+    top_padding: c_int,
+    bottom_padding: c_int,
+    left_padding: c_int,
+    right_padding: c_int,
+    window_gap: c_int,
+    auto_balance: u32,
+    flags: u64,
+};
+
+comptime {
+    if (@sizeOf(View) != 72) @compileError("View size drift");
+    if (@offsetOf(View, "root") != 16) @compileError("View.root drift");
+}
+
+export fn yabai_view_find_window_node(view: *const View, window_id: u32) ?*WindowNode {
+    @setRuntimeSafety(false);
+    var node = yabai_window_node_find_first_leaf(view.root orelse unreachable);
+    while (node) |n| {
+        if (yabai_window_node_contains_window(n, window_id)) return n;
+        node = yabai_window_node_find_next_leaf(n);
+    }
+    return null;
+}
+
 export fn yabai_view_stack_window(node: *WindowNode, window_id: u32) void {
     @setRuntimeSafety(false);
     var insert_index: c_int = node.window_count;
