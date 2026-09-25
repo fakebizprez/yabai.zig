@@ -28,6 +28,61 @@ int yabai_socket_frame_decode(const char *frame, size_t frame_size, struct frame
 
 _Static_assert(sizeof(struct frame_field) == 16, "frame_field size drift");
 
+struct yabai_properties
+{
+    struct token token;
+    bool did_parse;
+    bool did_error;
+    uint64_t flags;
+};
+
+bool yabai_parse_property(struct yabai_properties *properties, char *property, const uint64_t *property_val, char **property_str, int property_count);
+
+_Static_assert(sizeof(struct properties) == 32, "C properties size drift");
+_Static_assert(sizeof(struct yabai_properties) == 32, "properties size drift");
+_Static_assert(offsetof(struct properties, flags) == 24, "C properties.flags drift");
+
+static char *prop_names[] = { "id", "uuid", "index", "label" };
+static uint64_t prop_vals[] = { 0x001, 0x002, 0x004, 0x008 };
+
+static int prop_case(char *name, bool expected_found, uint64_t expected_flags)
+{
+    struct properties c_props;
+    struct yabai_properties z_props;
+    memset(&c_props, 0, sizeof(c_props));
+    memset(&z_props, 0, sizeof(z_props));
+
+    bool c_found = parse_property(&c_props, name, prop_vals, prop_names, array_count(prop_names));
+    bool z_found = yabai_parse_property(&z_props, name, prop_vals, prop_names, array_count(prop_names));
+
+    if (c_found != expected_found) return 0;
+    if (z_found != expected_found) return 0;
+    if (c_props.flags != expected_flags) return 0;
+    if (z_props.flags != expected_flags) return 0;
+    return 1;
+}
+
+TEST_FUNC(zig_message_parse_property,
+{
+    TEST_CHECK(prop_case("id", true, 0x001), 1);
+    TEST_CHECK(prop_case("uuid", true, 0x002), 1);
+    TEST_CHECK(prop_case("index", true, 0x004), 1);
+    TEST_CHECK(prop_case("label", true, 0x008), 1);
+    TEST_CHECK(prop_case("bogus", false, 0), 1);
+    TEST_CHECK(prop_case("", false, 0), 1);
+    TEST_CHECK(prop_case("ID", false, 0), 1);
+    TEST_CHECK(prop_case("idx", false, 0), 1);
+
+    /* Flags accumulate across calls like the real query loop. */
+    struct yabai_properties acc;
+    memset(&acc, 0, sizeof(acc));
+    bool f1 = yabai_parse_property(&acc, "id", prop_vals, prop_names, array_count(prop_names));
+    bool f2 = yabai_parse_property(&acc, "index", prop_vals, prop_names, array_count(prop_names));
+    bool f3 = yabai_parse_property(&acc, "bogus", prop_vals, prop_names, array_count(prop_names));
+    TEST_CHECK(f1 && f2 && !f3, 1);
+    TEST_CHECK(acc.flags == 0x005, 1);
+})
+
 _Static_assert(sizeof(struct token) == 16, "struct token must stay 16 bytes");
 _Static_assert(sizeof(struct token_value) == 32, "struct token_value must stay 32 bytes");
 _Static_assert(offsetof(struct token_value, type) == 16, "token_value.type must sit at offset 16");

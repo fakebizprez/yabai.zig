@@ -263,6 +263,48 @@ export fn yabai_socket_frame_decode(
     return 0;
 }
 
+pub const Properties = extern struct {
+    token: MsgToken,
+    did_parse: bool,
+    did_error: bool,
+    flags: u64,
+};
+
+comptime {
+    if (@sizeOf(Properties) != 32) @compileError("Properties size drift");
+    if (@offsetOf(Properties, "flags") != 24) @compileError("Properties.flags drift");
+}
+
+fn strEqualZ(a: [*:0]const u8, b: [*:0]const u8) bool {
+    @setRuntimeSafety(false);
+    var i: usize = 0;
+    while (true) {
+        if (a[i] != b[i]) return false;
+        if (a[i] == 0) return true;
+        i += 1;
+    }
+}
+
+export fn yabai_parse_property(
+    properties: *Properties,
+    property: [*:0]const u8,
+    property_val: [*]const u64,
+    property_str: [*]const [*:0]const u8,
+    property_count: c_int,
+) bool {
+    @setRuntimeSafety(false);
+    var i: c_int = 0;
+    while (i < property_count) {
+        const idx: usize = @intCast(i);
+        if (strEqualZ(property, property_str[idx])) {
+            properties.flags |= property_val[idx];
+            return true;
+        }
+        i += 1;
+    }
+    return false;
+}
+
 export fn yabai_token_to_value(token: *const MsgToken, out: *TokenValue) void {
     @setRuntimeSafety(false);
     out.* = std.mem.zeroes(TokenValue);
