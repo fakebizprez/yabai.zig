@@ -213,6 +213,56 @@ export fn yabai_parse_resize_handle(handle: [*:0]const u8) u8 {
     return 0;
 }
 
+pub const FrameField = extern struct {
+    ptr: ?[*]u8,
+    len: c_int,
+};
+
+pub const SOCKET_FRAME_MAX: c_int = 1024 * 1024;
+
+comptime {
+    if (@sizeOf(FrameField) != 16) @compileError("FrameField size drift");
+}
+
+// Checked wire-format decoder: validates the native length prefix and
+// framing before exposing any field, so no allocation or parsing ever
+// runs on unvalidated sizes. Accepts exactly the CLI-produced language
+// (NUL-separated args plus final NUL); field pointers borrow the frame.
+export fn yabai_socket_frame_decode(
+    frame: [*]const u8,
+    frame_size: usize,
+    fields: [*]FrameField,
+    max_fields: usize,
+    out_count: *usize,
+) c_int {
+    @setRuntimeSafety(false);
+    out_count.* = 0;
+    if (frame_size < @sizeOf(c_int)) return -1;
+
+    const declared: c_int = @as(*align(1) const c_int, @ptrCast(frame)).*;
+    if (declared <= 0 or declared > SOCKET_FRAME_MAX) return -1;
+    const payload_len: usize = @intCast(declared);
+    if (frame_size != @sizeOf(c_int) + payload_len) return -1;
+    if (frame[payload_len + 3] != 0) return -1;
+
+    var count: usize = 0;
+    var off: usize = 0;
+    while (off < payload_len) {
+        if (count >= max_fields) return -1;
+        var end = off;
+        while (end < payload_len and frame[4 + end] != 0) : (end += 1) {}
+        if (end >= payload_len) return -1;
+        fields[count].ptr = @constCast(frame + 4 + off);
+        fields[count].len = @intCast(end - off);
+        count += 1;
+        off = end + 1;
+    }
+    if (count == 0) return -1;
+    if (fields[count - 1].len != 0) return -1;
+    out_count.* = count;
+    return 0;
+}
+
 export fn yabai_token_to_value(token: *const MsgToken, out: *TokenValue) void {
     @setRuntimeSafety(false);
     out.* = std.mem.zeroes(TokenValue);

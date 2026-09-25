@@ -38,6 +38,7 @@ typedef TEST_SIG(function);
     TEST_ENTRY(zig_message_token_compare)                        \
     TEST_ENTRY(zig_message_token_numbers)                        \
     TEST_ENTRY(zig_message_token_to_value)                       \
+    TEST_ENTRY(zig_message_frame_decode)                         \
     TEST_ENTRY(zig_message_key_value)                            \
     TEST_ENTRY(zig_message_named_consts)                         \
     TEST_ENTRY(zig_view_leaf_walk)                               \
