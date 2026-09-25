@@ -326,10 +326,25 @@ struct named_const_case
     uint8_t expected;
 };
 
+/* Pin the macro values from src/misc/macros.h so a silent renumber of
+ * the TYPE and HANDLE constants breaks the build instead of silently
+ * re-pinning the hand vectors below. */
+_Static_assert(TYPE_ABS == 0x1, "TYPE_ABS drift");
+_Static_assert(TYPE_REL == 0x2, "TYPE_REL drift");
+_Static_assert(HANDLE_TOP == 0x01, "HANDLE_TOP drift");
+_Static_assert(HANDLE_BOTTOM == 0x02, "HANDLE_BOTTOM drift");
+_Static_assert(HANDLE_LEFT == 0x04, "HANDLE_LEFT drift");
+_Static_assert(HANDLE_RIGHT == 0x08, "HANDLE_RIGHT drift");
+_Static_assert(HANDLE_ABS == 0x10, "HANDLE_ABS drift");
+_Static_assert((HANDLE_TOP | HANDLE_LEFT) == 0x05, "HANDLE_TOP|LEFT drift");
+_Static_assert((HANDLE_TOP | HANDLE_RIGHT) == 0x09, "HANDLE_TOP|RIGHT drift");
+_Static_assert((HANDLE_BOTTOM | HANDLE_LEFT) == 0x06, "HANDLE_BOTTOM|LEFT drift");
+_Static_assert((HANDLE_BOTTOM | HANDLE_RIGHT) == 0x0A, "HANDLE_BOTTOM|RIGHT drift");
+
 static struct named_const_case value_type_cases[] =
 {
-    { "abs", 0x1 },
-    { "rel", 0x2 },
+    { "abs", TYPE_ABS },
+    { "rel", TYPE_REL },
     { "", 0 },
     { "ABS", 0 },
     { "absolute", 0 },
@@ -337,15 +352,15 @@ static struct named_const_case value_type_cases[] =
 
 static struct named_const_case resize_handle_cases[] =
 {
-    { "top", 0x01 },
-    { "bottom", 0x02 },
-    { "left", 0x04 },
-    { "right", 0x08 },
-    { "top_left", 0x05 },
-    { "top_right", 0x09 },
-    { "bottom_left", 0x06 },
-    { "bottom_right", 0x0A },
-    { "abs", 0x10 },
+    { "top", HANDLE_TOP },
+    { "bottom", HANDLE_BOTTOM },
+    { "left", HANDLE_LEFT },
+    { "right", HANDLE_RIGHT },
+    { "top_left", HANDLE_TOP | HANDLE_LEFT },
+    { "top_right", HANDLE_TOP | HANDLE_RIGHT },
+    { "bottom_left", HANDLE_BOTTOM | HANDLE_LEFT },
+    { "bottom_right", HANDLE_BOTTOM | HANDLE_RIGHT },
+    { "abs", HANDLE_ABS },
     { "", 0 },
     { "center", 0 },
     { "TOP", 0 },

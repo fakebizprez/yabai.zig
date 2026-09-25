@@ -115,6 +115,14 @@ unless doc/zig-refactor-plan.md explicitly allows a change.
   `yabai_window_can_resize` (exhaustive over the full u8 flag byte
   against the C oracle on a real struct window, incl. NaN width).
   68 exports in the fat daemon; x86_64 slices verified.
+- Named-const hardening (TDD): the value-type / resize-handle parity
+  vectors now spell expectations with the symbolic TYPE_* / HANDLE_*
+  macros, pinned by 11 _Static_asserts so a silent renumber breaks
+  the build instead of re-pinning the vectors.
+- First daemon-side move: src/window.c's window_can_move,
+  window_can_resize, and window_is_undersized are thin delegates to
+  the parity-proven Zig exports (signatures unchanged). The daemon
+  still links fat x86_64+arm64 with --version unchanged.
 - Pure-helper slice (TDD) in zig/util.zig: `balance_node_add`,
   `clampf_range` (incl. NaN bit-parity), `json_bool`,
   `json_optional_bool`, float+int `in_range_ii/ei/ie` for the exact
