@@ -59,6 +59,20 @@ unless doc/zig-refactor-plan.md explicitly allows a change.
   passing: unknown domain/command yield the 0x07 failure prefix,
   `rule --list` yields `[]`, `signal --list` yields a JSON list.
 
+## Daemon linkage (universal objects)
+
+- `zig/build.sh` (pin: zig/ZIG_VERSION = 0.16.0) compiles
+  zig/geometry.zig and zig/message.zig with `-O ReleaseSafe` for
+  x86_64-macos.11.0 and aarch64-macos.11.0 (minos 11.0 on both slices)
+  and lipos them into zig/zig-geometry.o and zig/zig-message.o.
+- The root makefile links both objects into `bin/yabai` (still a fat
+  x86_64+arm64 binary, `--version` unchanged); all 11 `yabai_*`
+  exports are present in the daemon. The objects need no Zig runtime
+  (geometry: zero external symbols; message: libc `strlen`/`strtof`
+  plus stack guard only).
+- tests/makefile links these same universal objects, so the 17-test
+  parity suite proves the shipped ReleaseSafe objects directly.
+
 ## CLI/daemon wire format (frozen)
 
 - Socket path: `/tmp/yabai_$USER.socket` (SOCKET_PATH_FMT in src/yabai.c),
