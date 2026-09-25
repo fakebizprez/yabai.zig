@@ -161,7 +161,9 @@ pub const SPLIT_AUTO: c_int = 3;
 pub const CHILD_NONE: c_int = 0;
 pub const CHILD_SECOND: c_int = 1;
 pub const CHILD_FIRST: c_int = 2;
+pub const VIEW_ENABLE_PADDING: u64 = 0x080;
 pub const VIEW_ENABLE_GAP: u64 = 0x100;
+pub const VIEW_FLOAT: c_int = 3;
 pub const VIEW_IS_VALID: u64 = 0x200;
 pub const VIEW_IS_DIRTY: u64 = 0x400;
 pub const DIR_NORTH: c_int = 360;
@@ -590,4 +592,110 @@ export fn yabai_view_find_window_list(view: *const View, window_count: *c_int) ?
     }
     window_count.* = @intCast(count);
     return list;
+}
+
+// Caller-provided g_space_manager block for yabai_view_create (field
+// order mirrors the C user-branch assignment order: layout, paddings,
+// gap, auto_balance, split_type).
+pub const ViewDefaults = extern struct {
+    layout: c_int,
+    top_padding: c_int,
+    bottom_padding: c_int,
+    left_padding: c_int,
+    right_padding: c_int,
+    window_gap: c_int,
+    auto_balance: u32,
+    split_type: c_int,
+};
+
+comptime {
+    if (@sizeOf(ViewDefaults) != 32) @compileError("ViewDefaults size drift");
+}
+
+extern fn window_manager_remove_managed_window(wm: ?*anyopaque, wid: u32) void;
+extern fn insert_feedback_destroy(node: *WindowNode) void;
+extern fn CFRelease(cf: ?*anyopaque) void;
+extern var g_window_manager: anyopaque;
+extern "c" fn free(ptr: ?*anyopaque) void;
+
+// Mirrors view_create() in src/view.c including its trailing view_update:
+// two zeroed libc mallocs (the view, then its root), then sid/uuid
+// assignment and the ENABLE_PADDING|ENABLE_GAP flags in C order. The
+// SLS-derived inputs arrive lifted in: uuid is assigned verbatim,
+// is_user selects the user branch, and defaults carries the
+// g_space_manager block the C user branch copies; the else branch pins
+// VIEW_FLOAT. C's trailing view_update is omitted as a proven no-op: it
+// runs on the zeroed root (a leaf with insert_dir clear), where
+// window_node_update does nothing.
+export fn yabai_view_create(sid: u64, uuid: ?*anyopaque, is_user: bool, defaults: *const ViewDefaults) *View {
+    @setRuntimeSafety(false);
+    const mem = malloc(@sizeOf(View)) orelse unreachable;
+    const view: *View = @ptrCast(@alignCast(mem));
+    view.* = std.mem.zeroes(View);
+    const root_mem = malloc(@sizeOf(WindowNode)) orelse unreachable;
+    const root: *WindowNode = @ptrCast(@alignCast(root_mem));
+    root.* = std.mem.zeroes(WindowNode);
+    view.root = root;
+    view.sid = sid;
+    view.uuid = uuid;
+    view.flags |= VIEW_ENABLE_PADDING;
+    view.flags |= VIEW_ENABLE_GAP;
+    if (is_user) {
+        view.layout = defaults.layout;
+        view.top_padding = defaults.top_padding;
+        view.bottom_padding = defaults.bottom_padding;
+        view.left_padding = defaults.left_padding;
+        view.right_padding = defaults.right_padding;
+        view.window_gap = defaults.window_gap;
+        view.auto_balance = defaults.auto_balance;
+        view.split_type = defaults.split_type;
+    } else {
+        view.layout = VIEW_FLOAT;
+    }
+    return view;
+}
+
+// Mirrors the static window_node_destroy() in src/view.c: recursive
+// child frees, managed-window removals, feedback destroy, then the
+// node free itself.
+fn destroyNode(node: *WindowNode) void {
+    @setRuntimeSafety(false);
+    if (node.left) |l| destroyNode(l);
+    if (node.right) |r| destroyNode(r);
+    var i: c_int = 0;
+    while (i < node.window_count) {
+        window_manager_remove_managed_window(&g_window_manager, node.window_list[@intCast(i)]);
+        i += 1;
+    }
+    insert_feedback_destroy(node);
+    free(@ptrCast(node));
+}
+
+// Mirrors view_clear() including its trailing view_update: drops both
+// child subtrees, removes the root's windows, destroys its feedback,
+// and zeroes the root. The root allocation itself is kept for reuse.
+// The trailing view_update is omitted as a proven no-op: it runs on
+// the just-zeroed root (a leaf with insert_dir clear), where
+// window_node_update does nothing.
+export fn yabai_view_clear(view: *View) void {
+    @setRuntimeSafety(false);
+    const root = view.root orelse return;
+    if (root.left) |l| destroyNode(l);
+    if (root.right) |r| destroyNode(r);
+    var i: c_int = 0;
+    while (i < root.window_count) {
+        window_manager_remove_managed_window(&g_window_manager, root.window_list[@intCast(i)]);
+        i += 1;
+    }
+    insert_feedback_destroy(root);
+    root.* = std.mem.zeroes(WindowNode);
+}
+
+// Mirrors view_destroy(): destroys the whole root subtree and releases
+// the uuid. Like C, it does not free the view itself; the caller owns
+// that (see event_loop.c SLS_SPACE_DESTROYED).
+export fn yabai_view_destroy(view: *View) void {
+    @setRuntimeSafety(false);
+    if (view.root) |r| destroyNode(r);
+    if (view.uuid) |u| CFRelease(u);
 }
