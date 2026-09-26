@@ -32,6 +32,7 @@ void yabai_window_node_balance(struct window_node *node, uint32_t axis_flag, str
 void yabai_area_make_pair_for_node(struct view *view, struct window_node *node, int space_split_type, float space_split_ratio);
 void yabai_window_node_split(struct view *view, struct window_node *node, uint32_t window_id, bool window_zoom_persist, int window_placement, int space_split_type, float space_split_ratio);
 void yabai_window_node_swap_window_list(struct window_node *a_node, struct window_node *b_node);
+struct window_node *yabai_view_find_window_node_in_direction(const struct yabai_view *view, struct window_node *source, int direction, const uint32_t *window_list, int window_count);
 
 struct yabai_view
 {
@@ -2726,4 +2727,246 @@ TEST_FUNC(zig_view_serialize,
     free_test_tree(r, a, c, d, e);
     if (uuid) CFRelease(uuid);
     g_space_manager.current_space_id = saved_current;
+})
+
+/* view_find_window_node_in_direction() (src/view.c) vs
+ * yabai_view_find_window_node_in_direction (zig/view.zig).
+ *
+ * Seam: the SLS space_window_list arrives lifted in as window_list +
+ * window_count so the export stays pure and headless-testable.
+ *
+ * Oracle scope (probed in /tmp/dir_probe.m): with g_connection == 0
+ * space_window_list returns NULL, so the full C entry returns NULL
+ * headless without touching the tree. The substantive oracle is
+ * direction_ref_loop below: a verbatim transcription of the C
+ * selection loop with the list lifted in, composed from the REAL C
+ * helpers (area_max_point, area_is_in_direction,
+ * area_distance_in_direction, window_manager_find_rank_of_window_in_list
+ * and the leaf walk), so only the best-distance/best-rank min-selection
+ * and the source skip are mirrored logic; hand-pinned expected nodes pin
+ * those against drift. The real C entry is exercised on the NULL-list
+ * seam (both sides NULL). Must FAIL against the stub (TDD red) and pass
+ * on the real port (green).
+ */
+static struct window_node *direction_ref_loop(struct view *view, struct window_node *source, int direction, uint32_t *window_list, int window_count)
+{
+    int best_distance = INT_MAX;
+    int best_rank = INT_MAX;
+    struct window_node *best_node = NULL;
+    CGPoint source_area_max = area_max_point(source->area);
+
+    struct window_node *target = NULL;
+    for (target = window_node_find_first_leaf(view->root); target; target = window_node_find_next_leaf(target)) {
+        if (source == target) continue;
+
+        CGPoint target_area_max = area_max_point(target->area);
+        if (area_is_in_direction(&source->area, source_area_max, &target->area, target_area_max, direction)) {
+            int distance = area_distance_in_direction(&source->area, source_area_max, &target->area, target_area_max, direction);
+            int rank = window_manager_find_rank_of_window_in_list(target->window_order[0], window_list, window_count);
+            if ((distance < best_distance) || (distance == best_distance && rank < best_rank)) {
+                best_node = target;
+                best_distance = distance;
+                best_rank = rank;
+            }
+        }
+    }
+
+    return best_node;
+}
+
+static struct window_node *make_direction_leaf(float x, float y, float w, float h, uint32_t wid)
+{
+    struct window_node *node = make_test_node();
+    init_test_area(&node->area, x, y, w, h);
+    node->window_list[0] = wid;
+    node->window_order[0] = wid;
+    node->window_count = 1;
+    return node;
+}
+
+static void link_direction_nodes(struct window_node *parent, struct window_node *left, struct window_node *right)
+{
+    parent->left = left;
+    parent->right = right;
+    left->parent = parent;
+    right->parent = parent;
+}
+
+/* Cardinal fixture: source (100,100,100,100) id 11 with one 100x100
+ * candidate per direction, each at distance 1. Walk order is
+ * S, N, E, So, W. */
+struct cardinal_tree
+{
+    struct window_node *r;
+    struct window_node *a;
+    struct window_node *b;
+    struct window_node *f;
+    struct window_node *s;
+    struct window_node *n;
+    struct window_node *e;
+    struct window_node *so;
+    struct window_node *w;
+};
+
+static void make_cardinal_tree(struct cardinal_tree *t)
+{
+    t->r = make_test_node();
+    t->a = make_test_node();
+    t->b = make_test_node();
+    t->f = make_test_node();
+    t->s = make_direction_leaf(100, 100, 100, 100, 11);
+    t->n = make_direction_leaf(100, 0, 100, 100, 12);
+    t->e = make_direction_leaf(200, 100, 100, 100, 13);
+    t->so = make_direction_leaf(100, 200, 100, 100, 14);
+    t->w = make_direction_leaf(0, 100, 100, 100, 15);
+    link_direction_nodes(t->r, t->a, t->b);
+    link_direction_nodes(t->a, t->s, t->n);
+    link_direction_nodes(t->b, t->e, t->f);
+    link_direction_nodes(t->f, t->so, t->w);
+}
+
+static void free_cardinal_tree(struct cardinal_tree *t)
+{
+    free(t->r);
+    free(t->a);
+    free(t->b);
+    free(t->f);
+    free(t->s);
+    free(t->n);
+    free(t->e);
+    free(t->so);
+    free(t->w);
+}
+
+/* Tie fixture: source id 31 with two north candidates at equal
+ * distance 1 (Na id 32, Nb id 33) and one far north candidate at
+ * distance 101 (Nf id 34). Walk order is S, Na, Nb, Nf. */
+struct tie_tree
+{
+    struct window_node *r;
+    struct window_node *m;
+    struct window_node *p;
+    struct window_node *s;
+    struct window_node *na;
+    struct window_node *nb;
+    struct window_node *nf;
+};
+
+static void make_tie_tree(struct tie_tree *t)
+{
+    t->r = make_test_node();
+    t->m = make_test_node();
+    t->p = make_test_node();
+    t->s = make_direction_leaf(100, 100, 100, 100, 31);
+    t->na = make_direction_leaf(100, 0, 100, 100, 32);
+    t->nb = make_direction_leaf(120, 0, 100, 100, 33);
+    t->nf = make_direction_leaf(100, -100, 100, 100, 34);
+    link_direction_nodes(t->r, t->s, t->m);
+    link_direction_nodes(t->m, t->p, t->nf);
+    link_direction_nodes(t->p, t->na, t->nb);
+}
+
+static void free_tie_tree(struct tie_tree *t)
+{
+    free(t->r);
+    free(t->m);
+    free(t->p);
+    free(t->s);
+    free(t->na);
+    free(t->nb);
+    free(t->nf);
+}
+
+/* Oracle parity plus the hand-pinned expected node: the reference loop
+ * (real C helpers) and the Zig export must agree, and both must be the
+ * pinned node. Views share one root, as in zig_view_find_window_node. */
+static int direction_case(struct view *c_view, struct yabai_view *z_view, struct window_node *source, int direction, uint32_t *window_list, int window_count, struct window_node *expected)
+{
+    struct window_node *c = direction_ref_loop(c_view, source, direction, window_list, window_count);
+    struct window_node *z = yabai_view_find_window_node_in_direction(z_view, source, direction, window_list, window_count);
+    if (c != z) return 0;
+    if (z != expected) return 0;
+    return 1;
+}
+
+static void init_direction_views(struct view *c_view, struct yabai_view *z_view, struct window_node *root)
+{
+    memset(c_view, 0, sizeof(*c_view));
+    memset(z_view, 0, sizeof(*z_view));
+    c_view->root = root;
+    z_view->root = root;
+}
+
+TEST_FUNC(zig_view_find_in_direction,
+{
+    struct view c_view;
+    struct yabai_view z_view;
+
+    /* Each direction from the cardinal source, plus hand pins. */
+    struct cardinal_tree ct;
+    make_cardinal_tree(&ct);
+    init_direction_views(&c_view, &z_view, ct.r);
+    uint32_t cardinal_list[5];
+    cardinal_list[0] = 11;
+    cardinal_list[1] = 12;
+    cardinal_list[2] = 13;
+    cardinal_list[3] = 14;
+    cardinal_list[4] = 15;
+    int cardinal_count = array_count(cardinal_list);
+    TEST_CHECK(direction_case(&c_view, &z_view, ct.s, DIR_NORTH, cardinal_list, cardinal_count, ct.n), 1);
+    TEST_CHECK(direction_case(&c_view, &z_view, ct.s, DIR_EAST, cardinal_list, cardinal_count, ct.e), 1);
+    TEST_CHECK(direction_case(&c_view, &z_view, ct.s, DIR_SOUTH, cardinal_list, cardinal_count, ct.so), 1);
+    TEST_CHECK(direction_case(&c_view, &z_view, ct.s, DIR_WEST, cardinal_list, cardinal_count, ct.w), 1);
+    /* No candidate: north of the north leaf and west of the west leaf. */
+    TEST_CHECK(direction_case(&c_view, &z_view, ct.n, DIR_NORTH, cardinal_list, cardinal_count, NULL), 1);
+    TEST_CHECK(direction_case(&c_view, &z_view, ct.w, DIR_WEST, cardinal_list, cardinal_count, NULL), 1);
+    /* A middle leaf still sees past its siblings: south of north is south. */
+    TEST_CHECK(direction_case(&c_view, &z_view, ct.n, DIR_SOUTH, cardinal_list, cardinal_count, ct.s), 1);
+    free_cardinal_tree(&ct);
+
+    /* Distance ties break by SLS rank; distance dominates rank. */
+    struct tie_tree tt;
+    make_tie_tree(&tt);
+    init_direction_views(&c_view, &z_view, tt.r);
+    uint32_t rank_na[4];
+    rank_na[0] = 32;
+    rank_na[1] = 33;
+    rank_na[2] = 34;
+    rank_na[3] = 31;
+    uint32_t rank_nb[4];
+    rank_nb[0] = 33;
+    rank_nb[1] = 32;
+    rank_nb[2] = 34;
+    rank_nb[3] = 31;
+    uint32_t rank_far_first[4];
+    rank_far_first[0] = 34;
+    rank_far_first[1] = 32;
+    rank_far_first[2] = 33;
+    rank_far_first[3] = 31;
+    TEST_CHECK(direction_case(&c_view, &z_view, tt.s, DIR_NORTH, rank_na, array_count(rank_na), tt.na), 1);
+    TEST_CHECK(direction_case(&c_view, &z_view, tt.s, DIR_NORTH, rank_nb, array_count(rank_nb), tt.nb), 1);
+    TEST_CHECK(direction_case(&c_view, &z_view, tt.s, DIR_NORTH, rank_far_first, array_count(rank_far_first), tt.na), 1);
+    /* Nothing south of the tie source. */
+    TEST_CHECK(direction_case(&c_view, &z_view, tt.s, DIR_SOUTH, rank_na, array_count(rank_na), NULL), 1);
+    free_tie_tree(&tt);
+
+    /* Source exclusion: a lone leaf finds nothing in any direction. */
+    struct window_node *solo = make_direction_leaf(100, 100, 100, 100, 41);
+    init_direction_views(&c_view, &z_view, solo);
+    uint32_t solo_list[1];
+    solo_list[0] = 41;
+    TEST_CHECK(direction_case(&c_view, &z_view, solo, DIR_NORTH, solo_list, array_count(solo_list), NULL), 1);
+    TEST_CHECK(direction_case(&c_view, &z_view, solo, DIR_EAST, solo_list, array_count(solo_list), NULL), 1);
+    TEST_CHECK(direction_case(&c_view, &z_view, solo, DIR_SOUTH, solo_list, array_count(solo_list), NULL), 1);
+    TEST_CHECK(direction_case(&c_view, &z_view, solo, DIR_WEST, solo_list, array_count(solo_list), NULL), 1);
+    free(solo);
+
+    /* NULL-list seam on both sides: the real C entry returns NULL
+     * headless (space_window_list yields NULL, probed), as does Zig. */
+    struct cardinal_tree nt;
+    make_cardinal_tree(&nt);
+    init_direction_views(&c_view, &z_view, nt.r);
+    TEST_CHECK(view_find_window_node_in_direction(&c_view, nt.s, DIR_NORTH), NULL);
+    TEST_CHECK(yabai_view_find_window_node_in_direction(&z_view, nt.s, DIR_NORTH, NULL, 0), NULL);
+    free_cardinal_tree(&nt);
 })

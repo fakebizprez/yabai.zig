@@ -234,6 +234,10 @@ unless doc/zig-refactor-plan.md explicitly allows a change.
 - Drop-action routing: mouse_determine_drop_action delegates with
   scalar lifts; event-loop call sites run Zig. 76/76 tests; leaks 0;
   fat daemon, 106 exports.
+- Directional search (TDD+route): view_find_window_node_in_direction
+  reuses area/rank/leaf/max-point ports with the SLS list lifted;
+  rank-miss UB-vs-INT_MAX documented. 107 exports; 77/77 tests;
+  leaks 0; x86_64 verified.
 - Pure-helper slice (TDD) in zig/util.zig: `balance_node_add`,
   `clampf_range` (incl. NaN bit-parity), `json_bool`,
   `json_optional_bool`, float+int `in_range_ii/ei/ie` for the exact

@@ -243,6 +243,54 @@ export fn yabai_view_find_window_node(view: *const View, window_id: u32) ?*Windo
     return null;
 }
 
+// Shared geometry/rank helpers (extern pattern, like
+// yabai_balance_node_add): the directional search below reuses them
+// instead of duplicating the predicates.
+extern fn yabai_area_is_in_direction(r1: *const Area, r1_max: *const CgPoint, r2: *const Area, r2_max: *const CgPoint, direction: c_int) bool;
+extern fn yabai_area_distance_in_direction(r1: *const Area, r1_max: *const CgPoint, r2: *const Area, r2_max: *const CgPoint, direction: c_int) c_int;
+extern fn yabai_find_rank_in_list(wid: u32, window_list: [*]const u32, window_count: c_int) c_int;
+
+// Mirrors view_find_window_node_in_direction() in src/view.c: leaf walk
+// in first/next order with the source skipped, keeping the best
+// (distance, rank) pair under strict-less distance or equal-distance
+// strict-less rank. The SLS space_window_list arrives lifted in as
+// window_list/window_count (the C delegate evaluates it at the site
+// exactly as the C body did) so the export stays pure. Leaf walk and
+// area_max_point reuse the same-file ports directly.
+// Rank-miss note: C window_manager_find_rank_of_window_in_list falls
+// off the end with no return on a miss (undefined value), while
+// yabai_find_rank_in_list returns INT_MAX; with consistent inputs
+// (every leaf's window_order[0] present in the SLS list) the miss path
+// never fires, so only distance-tie order among inconsistent inputs
+// could differ. A NULL list returns NULL, matching the C early-out.
+export fn yabai_view_find_window_node_in_direction(view: *const View, source: *WindowNode, direction: c_int, window_list: ?[*]const u32, window_count: c_int) ?*WindowNode {
+    @setRuntimeSafety(false);
+    const list = window_list orelse return null;
+    var best_distance: c_int = std.math.maxInt(c_int);
+    var best_rank: c_int = std.math.maxInt(c_int);
+    var best_node: ?*WindowNode = null;
+    var source_max: CgPoint = undefined;
+    yabai_area_max_point(&source.area, &source_max);
+    var target = yabai_window_node_find_first_leaf(view.root orelse unreachable);
+    while (target) |t| {
+        if (t != source) {
+            var target_max: CgPoint = undefined;
+            yabai_area_max_point(&t.area, &target_max);
+            if (yabai_area_is_in_direction(&source.area, &source_max, &t.area, &target_max, direction)) {
+                const distance = yabai_area_distance_in_direction(&source.area, &source_max, &t.area, &target_max, direction);
+                const rank = yabai_find_rank_in_list(t.window_order[0], list, window_count);
+                if (distance < best_distance or (distance == best_distance and rank < best_rank)) {
+                    best_node = t;
+                    best_distance = distance;
+                    best_rank = rank;
+                }
+            }
+        }
+        target = yabai_window_node_find_next_leaf(t);
+    }
+    return best_node;
+}
+
 export fn yabai_view_stack_window(node: *WindowNode, window_id: u32) void {
     @setRuntimeSafety(false);
     var insert_index: c_int = node.window_count;
