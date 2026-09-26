@@ -222,6 +222,12 @@ unless doc/zig-refactor-plan.md explicitly allows a change.
   Audit close-out in doc/zig-event-ownership.md: borrowed label
   lifetimes, DAEMON_MESSAGE path, x86_64 parity — all evidenced.
   71/71 tests; leaks 0; fat daemon, 101 exports.
+- Rule matching (TDD): regex_match plus rule_matches_window with the
+  app name lifted (no window struct); EXCLUDE inversions and UD paths.
+- Mouse geometry (TDD): new zig/mouse.zig object (8th) — triangle
+  (f32-narrowing mirrored), mod-bit map, drop action with CG
+  min-in/max-exclusive center rect proven by fall-through vectors.
+  106 exports; 76/76 tests; leaks 0; x86_64 verified.
 - Pure-helper slice (TDD) in zig/util.zig: `balance_node_add`,
   `clampf_range` (incl. NaN bit-parity), `json_bool`,
   `json_optional_bool`, float+int `in_range_ii/ei/ie` for the exact

@@ -20,6 +20,7 @@ typedef TEST_SIG(function);
 #include "zig_rule.c"
 #include "zig_window.c"
 #include "zig_display.c"
+#include "zig_mouse.c"
 #include "zig_cli.c"
 
 #define TEST_ENTRY(name) { #name, test_##name },
@@ -71,6 +72,11 @@ typedef TEST_SIG(function);
     TEST_ENTRY(zig_view_lifecycle_destroy)                       \
     TEST_ENTRY(zig_view_serialize)                               \
     TEST_ENTRY(zig_display_serialize)                            \
+    TEST_ENTRY(zig_regex_match_parity)                           \
+    TEST_ENTRY(zig_rule_matches_window_parity)                   \
+    TEST_ENTRY(zig_mouse_mod_parity)                             \
+    TEST_ENTRY(zig_mouse_triangle_parity)                        \
+    TEST_ENTRY(zig_mouse_drop_action_parity)                     \
     TEST_ENTRY(zig_cli_help_golden)                              \
     TEST_ENTRY(zig_cli_help_domains)                             \
     TEST_ENTRY(zig_cli_version_shape)                            \

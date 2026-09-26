@@ -1471,3 +1471,263 @@ TEST_FUNC(zig_rule_parse_pinned,
         free(z_buf);
     }
 })
+
+/* regex_match() (src/misc/helpers.h) + window_manager_rule_matches_window()
+ * (src/window_manager.c) parity: the Zig exports in zig/rule.zig must match
+ * the C oracles exactly. Must FAIL against stubs (TDD red) and pass on the
+ * real port (green). */
+
+int yabai_regex_match(bool valid, regex_t *regex, const char *match);
+bool yabai_rule_matches_window(const struct rule *rule, const char *app_name, const char *window_title, const char *window_role, const char *window_subrole);
+
+_Static_assert(REGEX_MATCH_UD == 0, "REGEX_MATCH_UD drift");
+_Static_assert(REGEX_MATCH_YES == 1, "REGEX_MATCH_YES drift");
+_Static_assert(REGEX_MATCH_NO == 2, "REGEX_MATCH_NO drift");
+
+/* File scope: braced initializers cannot live inside TEST_FUNC macro
+ * arguments (commas split the macro invocation). */
+static const char *regex_parity_patterns[] = { "^bar$", "AX.*", "a+b", "Term(inal)?" };
+static const char *regex_parity_hits[]     = { "bar", "AXWindow", "aaab", "Terminal" };
+static const char *regex_parity_misses[]   = { "barx", "BXWindow", "b", "Xyz" };
+
+TEST_FUNC(zig_regex_match_parity,
+{
+    /* Hand-pinned REGEX_MATCH_* values. */
+    TEST_CHECK(REGEX_MATCH_UD, 0);
+    TEST_CHECK(REGEX_MATCH_YES, 1);
+    TEST_CHECK(REGEX_MATCH_NO, 2);
+
+    regex_t re;
+    memset(&re, 0, sizeof(re));
+    TEST_CHECK(regcomp(&re, "foo.*", REG_EXTENDED), 0);
+
+    /* Hit / miss / empty via the C oracle and the Zig export. */
+    TEST_CHECK(regex_match(true, &re, "foobar"), REGEX_MATCH_YES);
+    TEST_CHECK(yabai_regex_match(true, &re, "foobar"), REGEX_MATCH_YES);
+    TEST_CHECK(regex_match(true, &re, "baz"), REGEX_MATCH_NO);
+    TEST_CHECK(yabai_regex_match(true, &re, "baz"), REGEX_MATCH_NO);
+    TEST_CHECK(regex_match(true, &re, ""), REGEX_MATCH_NO);
+    TEST_CHECK(yabai_regex_match(true, &re, ""), REGEX_MATCH_NO);
+
+    /* VALID-clear: UD on both sides, match string never touched. */
+    TEST_CHECK(regex_match(false, &re, "foobar"), REGEX_MATCH_UD);
+    TEST_CHECK(yabai_regex_match(false, &re, "foobar"), REGEX_MATCH_UD);
+    TEST_CHECK(regex_match(false, &re, NULL), REGEX_MATCH_UD);
+    TEST_CHECK(yabai_regex_match(false, &re, NULL), REGEX_MATCH_UD);
+    TEST_CHECK(regex_match(false, &re, ""), REGEX_MATCH_UD);
+    TEST_CHECK(yabai_regex_match(false, &re, ""), REGEX_MATCH_UD);
+
+    /* NULL with VALID set segfaults the C oracle (regexec dereferences
+     * the string), so only the Zig side is pinned: defined NO. */
+    TEST_CHECK(yabai_regex_match(true, &re, NULL), REGEX_MATCH_NO);
+
+    /* Pattern table: anchored, class, quantifier, group; hit and miss
+     * per pattern against both the oracle and the export. */
+    {
+        int i = 0;
+        for (i = 0; i < 4; ++i) {
+            regex_t t;
+            memset(&t, 0, sizeof(t));
+            TEST_CHECK(regcomp(&t, regex_parity_patterns[i], REG_EXTENDED), 0);
+            TEST_CHECK(regex_match(true, &t, regex_parity_hits[i]), REGEX_MATCH_YES);
+            TEST_CHECK(yabai_regex_match(true, &t, regex_parity_hits[i]), REGEX_MATCH_YES);
+            TEST_CHECK(regex_match(true, &t, regex_parity_misses[i]), REGEX_MATCH_NO);
+            TEST_CHECK(yabai_regex_match(true, &t, regex_parity_misses[i]), REGEX_MATCH_NO);
+            regfree(&t);
+        }
+    }
+
+    /* ".*" matches the empty string on both sides. */
+    {
+        regex_t t;
+        memset(&t, 0, sizeof(t));
+        TEST_CHECK(regcomp(&t, ".*", REG_EXTENDED), 0);
+        TEST_CHECK(regex_match(true, &t, ""), REGEX_MATCH_YES);
+        TEST_CHECK(yabai_regex_match(true, &t, ""), REGEX_MATCH_YES);
+        regfree(&t);
+    }
+
+    regfree(&re);
+})
+
+/* Builds a rule with regcomp'd patterns only for VALID fields, so
+ * rule_destroy() regfrees exactly what was compiled (leak-clean). */
+static void init_match_rule(struct rule *r, const char *app_pat, const char *title_pat, const char *role_pat, const char *subrole_pat, uint16_t flags)
+{
+    memset(r, 0, sizeof(*r));
+    r->flags = flags;
+    if ((flags & RULE_APP_VALID) && app_pat) regcomp(&r->app_regex, app_pat, REG_EXTENDED);
+    if ((flags & RULE_TITLE_VALID) && title_pat) regcomp(&r->title_regex, title_pat, REG_EXTENDED);
+    if ((flags & RULE_ROLE_VALID) && role_pat) regcomp(&r->role_regex, role_pat, REG_EXTENDED);
+    if ((flags & RULE_SUBROLE_VALID) && subrole_pat) regcomp(&r->subrole_regex, subrole_pat, REG_EXTENDED);
+}
+
+/* C oracle vs Zig export on one window vector; the window's application
+ * name is lifted in as a plain string on the Zig side (the only window
+ * touch in C is window->application->name). Returns 1 on agreement. */
+static int match_parity(struct rule *r, const char *app, const char *title, const char *role, const char *subrole)
+{
+    struct application appl;
+    struct window win;
+    memset(&appl, 0, sizeof(appl));
+    memset(&win, 0, sizeof(win));
+    appl.name = (char *) app;
+    win.application = &appl;
+    bool c = window_manager_rule_matches_window(r, &win, (char *) title, (char *) role, (char *) subrole);
+    bool z = yabai_rule_matches_window(r, app, title, role, subrole);
+    if (c != z) {
+        printf("matches_window mismatch app=%s title=%s role=%s subrole=%s c=%d z=%d\n",
+               app ? app : "(null)", title ? title : "(null)",
+               role ? role : "(null)", subrole ? subrole : "(null)", c, z);
+        return 0;
+    }
+    return 1;
+}
+
+TEST_FUNC(zig_rule_matches_window_parity,
+{
+    /* Single-field include rules: hit matches, miss does not. */
+    {
+        struct rule r;
+        init_match_rule(&r, "Terminal", NULL, NULL, NULL, RULE_APP_VALID);
+        TEST_CHECK(match_parity(&r, "Terminal", "bash", "AXWindow", "AXStandardWindow"), 1);
+        TEST_CHECK(yabai_rule_matches_window(&r, "Terminal", "bash", "AXWindow", "AXStandardWindow"), true);
+        TEST_CHECK(match_parity(&r, "Safari", "bash", "AXWindow", "AXStandardWindow"), 1);
+        TEST_CHECK(yabai_rule_matches_window(&r, "Safari", "bash", "AXWindow", "AXStandardWindow"), false);
+        rule_destroy(&r);
+    }
+    {
+        struct rule r;
+        init_match_rule(&r, NULL, "^bash$", NULL, NULL, RULE_TITLE_VALID);
+        TEST_CHECK(match_parity(&r, "Terminal", "bash", "AXWindow", "AXStandardWindow"), 1);
+        TEST_CHECK(yabai_rule_matches_window(&r, "Terminal", "bash", "AXWindow", "AXStandardWindow"), true);
+        TEST_CHECK(match_parity(&r, "Terminal", "zsh", "AXWindow", "AXStandardWindow"), 1);
+        TEST_CHECK(yabai_rule_matches_window(&r, "Terminal", "zsh", "AXWindow", "AXStandardWindow"), false);
+        rule_destroy(&r);
+    }
+    {
+        struct rule r;
+        init_match_rule(&r, NULL, NULL, "AXWindow", NULL, RULE_ROLE_VALID);
+        TEST_CHECK(match_parity(&r, "Terminal", "bash", "AXWindow", "AXStandardWindow"), 1);
+        TEST_CHECK(yabai_rule_matches_window(&r, "Terminal", "bash", "AXWindow", "AXStandardWindow"), true);
+        TEST_CHECK(match_parity(&r, "Terminal", "bash", "AXDialog", "AXStandardWindow"), 1);
+        TEST_CHECK(yabai_rule_matches_window(&r, "Terminal", "bash", "AXDialog", "AXStandardWindow"), false);
+        rule_destroy(&r);
+    }
+    {
+        struct rule r;
+        init_match_rule(&r, NULL, NULL, NULL, "AXStandardWindow", RULE_SUBROLE_VALID);
+        TEST_CHECK(match_parity(&r, "Terminal", "bash", "AXWindow", "AXStandardWindow"), 1);
+        TEST_CHECK(yabai_rule_matches_window(&r, "Terminal", "bash", "AXWindow", "AXStandardWindow"), true);
+        TEST_CHECK(match_parity(&r, "Terminal", "bash", "AXWindow", "AXUnknown"), 1);
+        TEST_CHECK(yabai_rule_matches_window(&r, "Terminal", "bash", "AXWindow", "AXUnknown"), false);
+        rule_destroy(&r);
+    }
+
+    /* EXCLUDE inversions per field: hit no longer matches, miss does. */
+    {
+        struct rule r;
+        init_match_rule(&r, "Terminal", NULL, NULL, NULL, RULE_APP_VALID | RULE_APP_EXCLUDE);
+        TEST_CHECK(match_parity(&r, "Terminal", "bash", "AXWindow", "AXStandardWindow"), 1);
+        TEST_CHECK(yabai_rule_matches_window(&r, "Terminal", "bash", "AXWindow", "AXStandardWindow"), false);
+        TEST_CHECK(match_parity(&r, "Safari", "bash", "AXWindow", "AXStandardWindow"), 1);
+        TEST_CHECK(yabai_rule_matches_window(&r, "Safari", "bash", "AXWindow", "AXStandardWindow"), true);
+        rule_destroy(&r);
+    }
+    {
+        struct rule r;
+        init_match_rule(&r, NULL, "^bash$", NULL, NULL, RULE_TITLE_VALID | RULE_TITLE_EXCLUDE);
+        TEST_CHECK(match_parity(&r, "Terminal", "bash", "AXWindow", "AXStandardWindow"), 1);
+        TEST_CHECK(yabai_rule_matches_window(&r, "Terminal", "bash", "AXWindow", "AXStandardWindow"), false);
+        TEST_CHECK(match_parity(&r, "Terminal", "zsh", "AXWindow", "AXStandardWindow"), 1);
+        TEST_CHECK(yabai_rule_matches_window(&r, "Terminal", "zsh", "AXWindow", "AXStandardWindow"), true);
+        rule_destroy(&r);
+    }
+    {
+        struct rule r;
+        init_match_rule(&r, NULL, NULL, "AXWindow", NULL, RULE_ROLE_VALID | RULE_ROLE_EXCLUDE);
+        TEST_CHECK(match_parity(&r, "Terminal", "bash", "AXWindow", "AXStandardWindow"), 1);
+        TEST_CHECK(yabai_rule_matches_window(&r, "Terminal", "bash", "AXWindow", "AXStandardWindow"), false);
+        TEST_CHECK(match_parity(&r, "Terminal", "bash", "AXDialog", "AXStandardWindow"), 1);
+        TEST_CHECK(yabai_rule_matches_window(&r, "Terminal", "bash", "AXDialog", "AXStandardWindow"), true);
+        rule_destroy(&r);
+    }
+    {
+        struct rule r;
+        init_match_rule(&r, NULL, NULL, NULL, "AXStandardWindow", RULE_SUBROLE_VALID | RULE_SUBROLE_EXCLUDE);
+        TEST_CHECK(match_parity(&r, "Terminal", "bash", "AXWindow", "AXStandardWindow"), 1);
+        TEST_CHECK(yabai_rule_matches_window(&r, "Terminal", "bash", "AXWindow", "AXStandardWindow"), false);
+        TEST_CHECK(match_parity(&r, "Terminal", "bash", "AXWindow", "AXUnknown"), 1);
+        TEST_CHECK(yabai_rule_matches_window(&r, "Terminal", "bash", "AXWindow", "AXUnknown"), true);
+        rule_destroy(&r);
+    }
+
+    /* All four VALID: full hit matches, each single miss rejects. */
+    {
+        struct rule r;
+        init_match_rule(&r, "Terminal", "^bash$", "AXWindow", "AXStandardWindow",
+                        RULE_APP_VALID | RULE_TITLE_VALID | RULE_ROLE_VALID | RULE_SUBROLE_VALID);
+        TEST_CHECK(match_parity(&r, "Terminal", "bash", "AXWindow", "AXStandardWindow"), 1);
+        TEST_CHECK(yabai_rule_matches_window(&r, "Terminal", "bash", "AXWindow", "AXStandardWindow"), true);
+        TEST_CHECK(match_parity(&r, "Safari", "bash", "AXWindow", "AXStandardWindow"), 1);
+        TEST_CHECK(yabai_rule_matches_window(&r, "Safari", "bash", "AXWindow", "AXStandardWindow"), false);
+        TEST_CHECK(match_parity(&r, "Terminal", "zsh", "AXWindow", "AXStandardWindow"), 1);
+        TEST_CHECK(yabai_rule_matches_window(&r, "Terminal", "zsh", "AXWindow", "AXStandardWindow"), false);
+        TEST_CHECK(match_parity(&r, "Terminal", "bash", "AXDialog", "AXStandardWindow"), 1);
+        TEST_CHECK(yabai_rule_matches_window(&r, "Terminal", "bash", "AXDialog", "AXStandardWindow"), false);
+        TEST_CHECK(match_parity(&r, "Terminal", "bash", "AXWindow", "AXUnknown"), 1);
+        TEST_CHECK(yabai_rule_matches_window(&r, "Terminal", "bash", "AXWindow", "AXUnknown"), false);
+        rule_destroy(&r);
+    }
+
+    /* VALID-clear fields take the UD path: no VALID flags at all matches
+     * everything, and other-field variation is ignored. */
+    {
+        struct rule r;
+        init_match_rule(&r, NULL, NULL, NULL, NULL, 0);
+        TEST_CHECK(match_parity(&r, "Terminal", "bash", "AXWindow", "AXStandardWindow"), 1);
+        TEST_CHECK(yabai_rule_matches_window(&r, "Terminal", "bash", "AXWindow", "AXStandardWindow"), true);
+        TEST_CHECK(match_parity(&r, "Safari", "zsh", "AXDialog", "AXUnknown"), 1);
+        TEST_CHECK(yabai_rule_matches_window(&r, "Safari", "zsh", "AXDialog", "AXUnknown"), true);
+        rule_destroy(&r);
+    }
+    {
+        struct rule r;
+        init_match_rule(&r, "Terminal", NULL, NULL, NULL, RULE_APP_VALID);
+        TEST_CHECK(match_parity(&r, "Terminal", "anything", "whatever", "else"), 1);
+        TEST_CHECK(yabai_rule_matches_window(&r, "Terminal", "anything", "whatever", "else"), true);
+        rule_destroy(&r);
+    }
+
+    /* NULL match strings on the UD path (never touched by either side). */
+    {
+        struct rule r;
+        init_match_rule(&r, NULL, NULL, NULL, NULL, 0);
+        TEST_CHECK(match_parity(&r, NULL, NULL, NULL, NULL), 1);
+        TEST_CHECK(yabai_rule_matches_window(&r, NULL, NULL, NULL, NULL), true);
+        rule_destroy(&r);
+    }
+
+    /* Empty match strings on the VALID path. */
+    {
+        struct rule r;
+        init_match_rule(&r, "Terminal", NULL, NULL, NULL, RULE_APP_VALID);
+        TEST_CHECK(match_parity(&r, "", "bash", "AXWindow", "AXStandardWindow"), 1);
+        TEST_CHECK(yabai_rule_matches_window(&r, "", "bash", "AXWindow", "AXStandardWindow"), false);
+        rule_destroy(&r);
+    }
+    {
+        struct rule r;
+        init_match_rule(&r, "Terminal", NULL, NULL, NULL, RULE_APP_VALID | RULE_APP_EXCLUDE);
+        TEST_CHECK(match_parity(&r, "", "bash", "AXWindow", "AXStandardWindow"), 1);
+        TEST_CHECK(yabai_rule_matches_window(&r, "", "bash", "AXWindow", "AXStandardWindow"), true);
+        rule_destroy(&r);
+    }
+    {
+        struct rule r;
+        init_match_rule(&r, ".*", NULL, NULL, NULL, RULE_APP_VALID);
+        TEST_CHECK(match_parity(&r, "", "bash", "AXWindow", "AXStandardWindow"), 1);
+        TEST_CHECK(yabai_rule_matches_window(&r, "", "bash", "AXWindow", "AXStandardWindow"), true);
+        rule_destroy(&r);
+    }
+})
