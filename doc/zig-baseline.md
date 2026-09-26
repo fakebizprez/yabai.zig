@@ -192,6 +192,11 @@ unless doc/zig-refactor-plan.md explicitly allows a change.
   wired through build.sh and both makefiles, with lifted uuid,
   indices, label, frame, spaces, and focus. 101 exports; 71/71
   tests; leaks 0; x86_64 verified.
+- Display-serialize routing: full-JSON golden guards the seam; the
+  display query path runs Zig in the daemon.
+- Transform routing: rotate/mirror delegate to self-recursive Zig
+  exports after a pin audit added hand-computed tree vectors.
+  71/71 tests; leaks 0; fat daemon unchanged at 101 exports.
 - Pure-helper slice (TDD) in zig/util.zig: `balance_node_add`,
   `clampf_range` (incl. NaN bit-parity), `json_bool`,
   `json_optional_bool`, float+int `in_range_ii/ei/ie` for the exact

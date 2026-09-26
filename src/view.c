@@ -3,9 +3,11 @@ extern struct display_manager g_display_manager;
 extern struct space_manager g_space_manager;
 extern struct window_manager g_window_manager;
 
-/* Zig delegate (zig/view.zig): parity-proven equivalent of the swap
- * below. Signature in src/view.h is unchanged. */
+/* Zig delegates (zig/view.zig): parity-proven equivalents of the swap,
+ * rotate, and mirror below. Signatures in src/view.h are unchanged. */
 void yabai_window_node_swap_window_list(struct window_node *a_node, struct window_node *b_node);
+void yabai_window_node_rotate(struct window_node *node, int degrees);
+struct window_node *yabai_window_node_mirror(struct window_node *node, int axis);
 
 #define INSERT_FEEDBACK_WIDTH 2
 #define INSERT_FEEDBACK_RADIUS 9
@@ -455,42 +457,12 @@ struct window_node *window_node_find_next_leaf(struct window_node *node)
 
 void window_node_rotate(struct window_node *node, int degrees)
 {
-    if ((degrees ==  90 && node->split == SPLIT_Y) ||
-        (degrees == 270 && node->split == SPLIT_X) ||
-        (degrees == 180)) {
-        struct window_node *temp = node->left;
-        node->left  = node->right;
-        node->right = temp;
-        node->ratio = 1 - node->ratio;
-    }
-
-    if (degrees != 180) {
-        if (node->split == SPLIT_X) {
-            node->split = SPLIT_Y;
-        } else if (node->split == SPLIT_Y) {
-            node->split = SPLIT_X;
-        }
-    }
-
-    if (!window_node_is_leaf(node)) {
-        window_node_rotate(node->left, degrees);
-        window_node_rotate(node->right, degrees);
-    }
+    yabai_window_node_rotate(node, degrees);
 }
 
 struct window_node *window_node_mirror(struct window_node *node, enum window_node_split axis)
 {
-    if (!window_node_is_leaf(node)) {
-        struct window_node *left = window_node_mirror(node->left, axis);
-        struct window_node *right = window_node_mirror(node->right, axis);
-
-        if (node->split == axis) {
-            node->left = right;
-            node->right = left;
-        }
-    }
-
-    return node;
+    return yabai_window_node_mirror(node, axis);
 }
 
 struct window_node *window_node_fence(struct window_node *node, int dir)

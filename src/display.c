@@ -17,85 +17,57 @@ static DISPLAY_EVENT_HANDLER(display_handler)
 }
 #pragma clang diagnostic pop
 
+/* Zig delegate (zig/display.zig): parity-proven equivalent of the JSON
+ * emission below. Signature in src/display.h is unchanged. */
+void yabai_display_serialize(FILE *rsp, uint32_t did, uint64_t flags, const char *uuid_str, int arrange_index, const char *label_str, double frame_x, double frame_y, double frame_w, double frame_h, const int *space_list, int space_count, bool has_focus);
+
 void display_serialize(FILE *rsp, uint32_t did, uint64_t flags)
 {
     TIME_FUNCTION;
 
-    if (flags == 0x0) flags |= ~flags;
+    /* The six manager-derived arguments are evaluated here exactly as
+     * the C branches did, each guarded by its property flag (flags==0
+     * expands to the full set, matching the old `flags |= ~flags`), so
+     * headless SLS-free queries never touch SLS-backed managers. */
+    uint64_t eff = flags == 0x0 ? ~flags : flags;
 
-    bool did_output = false;
-    fprintf(rsp, "{\n");
-
-    if (flags & DISPLAY_PROPERTY_ID) {
-        fprintf(rsp, "\t\"id\":%d", did);
-        did_output = true;
-    }
-
-    if (flags & DISPLAY_PROPERTY_UUID) {
-        if (did_output) fprintf(rsp, ",\n");
-
-        char *uuid = NULL;
+    char *uuid = NULL;
+    if (eff & DISPLAY_PROPERTY_UUID) {
         CFStringRef uuid_ref = display_uuid(did);
         if (uuid_ref) {
             uuid = ts_cfstring_copy(uuid_ref);
             CFRelease(uuid_ref);
         }
-
-        fprintf(rsp, "\t\"uuid\":\"%s\"", uuid ? uuid : "<unknown>");
-        did_output = true;
     }
 
-    if (flags & DISPLAY_PROPERTY_INDEX) {
-        if (did_output) fprintf(rsp, ",\n");
+    int arrange_index = (eff & DISPLAY_PROPERTY_INDEX) ? display_manager_display_id_arrangement(did) : 0;
 
-        fprintf(rsp, "\t\"index\":%d", display_manager_display_id_arrangement(did));
-        did_output = true;
-    }
+    struct display_label *display_label = (eff & DISPLAY_PROPERTY_LABEL) ? display_manager_get_label_for_display(&g_display_manager, did) : NULL;
 
-    if (flags & DISPLAY_PROPERTY_LABEL) {
-        if (did_output) fprintf(rsp, ",\n");
+    CGRect frame = (eff & DISPLAY_PROPERTY_FRAME) ? CGDisplayBounds(did) : (CGRect) { 0 };
 
-        struct display_label *display_label = display_manager_get_label_for_display(&g_display_manager, did);
-        fprintf(rsp, "\t\"label\":\"%s\"", display_label ? display_label->label : "");
-        did_output = true;
-    }
-
-    if (flags & DISPLAY_PROPERTY_FRAME) {
-        if (did_output) fprintf(rsp, ",\n");
-
-        CGRect frame = CGDisplayBounds(did);
-        fprintf(rsp, "\t\"frame\":{\n\t\t\"x\":%.4f,\n\t\t\"y\":%.4f,\n\t\t\"w\":%.4f,\n\t\t\"h\":%.4f\n\t}", frame.origin.x, frame.origin.y, frame.size.width, frame.size.height);
-        did_output = true;
-    }
-
-    if (flags & DISPLAY_PROPERTY_SPACES) {
-        if (did_output) fprintf(rsp, ",\n");
-
-        int count;
-        uint64_t *space_list = display_space_list(did, &count);
-
-        fprintf(rsp, "\t\"spaces\":[");
-        if (space_list) {
-            int first_mci = space_manager_mission_control_index(space_list[0]);
-            for (int i = 0; i < count; ++i) {
-                if (i < count - 1) {
-                    fprintf(rsp, "%d, ", first_mci + i);
-                } else {
-                    fprintf(rsp, "%d", first_mci + i);
-                }
-            }
+    int space_count = 0;
+    int *space_mci = NULL;
+    if (eff & DISPLAY_PROPERTY_SPACES) {
+        int count = 0;
+        uint64_t *raw_list = display_space_list(did, &count);
+        if (raw_list && count > 0) {
+            int first_mci = space_manager_mission_control_index(raw_list[0]);
+            space_mci = ts_alloc_list(int, count);
+            for (int i = 0; i < count; ++i) space_mci[i] = first_mci + i;
+            space_count = count;
         }
-        fprintf(rsp, "]");
-        did_output = true;
     }
 
-    if (flags & DISPLAY_PROPERTY_HAS_FOCUS) {
-        if (did_output) fprintf(rsp, ",\n");
+    bool has_focus = (eff & DISPLAY_PROPERTY_HAS_FOCUS) ? (did == g_display_manager.current_display_id) : false;
 
-        fprintf(rsp, "\t\"has-focus\":%s", json_bool(did == g_display_manager.current_display_id));
-    }
-
-    fprintf(rsp, "\n}");
+    yabai_display_serialize(rsp, did, flags,
+                            uuid,
+                            arrange_index,
+                            display_label ? display_label->label : NULL,
+                            frame.origin.x, frame.origin.y, frame.size.width, frame.size.height,
+                            space_mci, space_count,
+                            has_focus);
 }
 
 inline CFStringRef display_uuid(uint32_t did)

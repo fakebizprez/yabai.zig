@@ -106,6 +106,54 @@ static int serialize_display_zig_only(uint32_t did, uint64_t flags, const char *
     return ok;
 }
 
+/* Hand-pinned full-JSON golden for BOTH oracles. Expectations transcribed
+ * by hand from the fprintf format in src/display.c (open brace,
+ * tab-quoted fields in ID/UUID/INDEX/LABEL/FRAME/SPACES/HAS_FOCUS order
+ * joined with ",\n", closing "\n}"): id %d of the did, uuid quoted
+ * verbatim ("<unknown>" when NULL), index %d, label quoted verbatim
+ * ("" when NULL), frame %.4f x/y/w/h, spaces [%d, ...] (empty when the
+ * list is NULL), has-focus from json_bool. The degenerate did (7) has
+ * no system UUID, label, frame, or spaces, so C derives NULL/0/""/zero
+ * without touching SLS-backed managers; both outputs must match these
+ * exact bytes. */
+static int serialize_display_golden_both(uint32_t did, uint64_t flags, const char *uuid_str, int arrange_index, const char *label_str, double fx, double fy, double fw, double fh, const int *space_list, int space_count, bool has_focus, const char *expected)
+{
+    char *c_msg = NULL;
+    size_t c_len = 0;
+    char *z_msg = NULL;
+    size_t z_len = 0;
+    FILE *c_rsp = open_memstream(&c_msg, &c_len);
+    FILE *z_rsp = open_memstream(&z_msg, &z_len);
+    if (!c_rsp || !z_rsp) {
+        if (c_rsp) fclose(c_rsp);
+        if (z_rsp) fclose(z_rsp);
+        free(c_msg);
+        free(z_msg);
+        return 0;
+    }
+    display_serialize(c_rsp, did, flags);
+    yabai_display_serialize(z_rsp, did, flags, uuid_str, arrange_index, label_str, fx, fy, fw, fh, space_list, space_count, has_focus);
+    fflush(c_rsp);
+    fflush(z_rsp);
+    fclose(c_rsp);
+    fclose(z_rsp);
+    size_t exp_len = strlen(expected);
+    int ok = 1;
+    if (!c_msg || c_len != exp_len || strcmp(c_msg, expected) != 0) {
+        printf("display serialize C golden mismatch flags 0x%llx\n---got---\n%s\n---want---\n%s\n",
+               (unsigned long long) flags, c_msg ? c_msg : "(null)", expected);
+        ok = 0;
+    }
+    if (!z_msg || z_len != exp_len || strcmp(z_msg, expected) != 0) {
+        printf("display serialize Zig golden mismatch flags 0x%llx\n---got---\n%s\n---want---\n%s\n",
+               (unsigned long long) flags, z_msg ? z_msg : "(null)", expected);
+        ok = 0;
+    }
+    free(c_msg);
+    free(z_msg);
+    return ok;
+}
+
 static const int ser_spaces[3] = { 3, 4, 5 };
 
 TEST_FUNC(zig_display_serialize,
@@ -190,6 +238,24 @@ TEST_FUNC(zig_display_serialize,
         /* Degenerate full expansion: NULL strings, empty spaces, all false. */
         const char *bare = "{\n\t\"id\":7,\n\t\"uuid\":\"<unknown>\",\n\t\"index\":0,\n\t\"label\":\"\",\n\t\"frame\":{\n\t\t\"x\":0.0000,\n\t\t\"y\":0.0000,\n\t\t\"w\":0.0000,\n\t\t\"h\":0.0000\n\t},\n\t\"spaces\":[],\n\t\"has-focus\":false\n}";
         TEST_CHECK(serialize_display_zig_only(7, 0, NULL, 0, NULL, 0, 0, 0, 0, NULL, 0, false, bare), 1);
+    }
+
+    /* Hand-pinned full-JSON golden for BOTH oracles: fixed degenerate
+     * display (did 7, NULL uuid/label, zero frame, empty spaces,
+     * focus false) over all-flags and flags==0. did 7 has no system
+     * UUID so C derives <unknown>/0/""/zero/[] without SLS; the
+     * lifted Zig inputs mirror those derivations exactly. */
+    {
+        uint64_t all = DISPLAY_PROPERTY_ID | DISPLAY_PROPERTY_UUID | DISPLAY_PROPERTY_INDEX |
+                       DISPLAY_PROPERTY_LABEL | DISPLAY_PROPERTY_FRAME |
+                       DISPLAY_PROPERTY_SPACES | DISPLAY_PROPERTY_HAS_FOCUS;
+        const char *bare = "{\n\t\"id\":7,\n\t\"uuid\":\"<unknown>\",\n\t\"index\":0,\n\t\"label\":\"\",\n\t\"frame\":{\n\t\t\"x\":0.0000,\n\t\t\"y\":0.0000,\n\t\t\"w\":0.0000,\n\t\t\"h\":0.0000\n\t},\n\t\"spaces\":[],\n\t\"has-focus\":false\n}";
+        uint32_t saved_focus = g_display_manager.current_display_id;
+        display_manager_remove_label_for_display(&g_display_manager, 7);
+        g_display_manager.current_display_id = 1;
+        TEST_CHECK(serialize_display_golden_both(7, all, NULL, 0, NULL, 0, 0, 0, 0, NULL, 0, false, bare), 1);
+        TEST_CHECK(serialize_display_golden_both(7, 0, NULL, 0, NULL, 0, 0, 0, 0, NULL, 0, false, bare), 1);
+        g_display_manager.current_display_id = saved_focus;
     }
 
     g_display_manager.current_display_id = saved_current;
