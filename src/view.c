@@ -4,8 +4,11 @@ extern struct space_manager g_space_manager;
 extern struct window_manager g_window_manager;
 
 /* Zig delegates (zig/view.zig): parity-proven equivalents of the swap,
- * rotate, mirror, leaf walk, and window lookup below. Signatures in
- * src/view.h are unchanged. */
+ * rotate, mirror, leaf walk, window lookup, fence, contains/index, and
+ * invalid/dirty predicates below. Signatures in src/view.h are unchanged. */
+bool yabai_window_node_contains_window(struct window_node *node, uint32_t window_id);
+int yabai_window_node_index_of_window(struct window_node *node, uint32_t window_id);
+struct window_node *yabai_window_node_fence(struct window_node *node, int dir);
 void yabai_window_node_swap_window_list(struct window_node *a_node, struct window_node *b_node);
 void yabai_window_node_rotate(struct window_node *node, int degrees);
 struct window_node *yabai_window_node_mirror(struct window_node *node, int axis);
@@ -15,6 +18,8 @@ struct window_node *yabai_window_node_find_prev_leaf(struct window_node *node);
 struct window_node *yabai_window_node_find_next_leaf(struct window_node *node);
 struct yabai_view;
 struct window_node *yabai_view_find_window_node(const struct yabai_view *view, uint32_t window_id);
+bool yabai_view_is_invalid(const struct yabai_view *view);
+bool yabai_view_is_dirty(const struct yabai_view *view);
 
 #define INSERT_FEEDBACK_WIDTH 2
 #define INSERT_FEEDBACK_RADIUS 9
@@ -393,20 +398,12 @@ void window_node_flush(struct window_node *node)
 
 bool window_node_contains_window(struct window_node *node, uint32_t window_id)
 {
-    for (int i = 0; i < node->window_count; ++i) {
-        if (node->window_list[i] == window_id) return true;
-    }
-
-    return false;
+    return yabai_window_node_contains_window(node, window_id);
 }
 
 int window_node_index_of_window(struct window_node *node, uint32_t window_id)
 {
-    for (int i = 0; i < node->window_count; ++i) {
-        if (node->window_list[i] == window_id) return i;
-    }
-
-    return 0;
+    return yabai_window_node_index_of_window(node, window_id);
 }
 
 void window_node_swap_window_list(struct window_node *a_node, struct window_node *b_node)
@@ -446,18 +443,7 @@ struct window_node *window_node_mirror(struct window_node *node, enum window_nod
 
 struct window_node *window_node_fence(struct window_node *node, int dir)
 {
-    if (!node) return NULL;
-
-    for (struct window_node *parent = node->parent; parent; parent = parent->parent) {
-        if ((dir == DIR_NORTH && parent->split == SPLIT_X && parent->area.y < node->area.y) ||
-            (dir == DIR_WEST  && parent->split == SPLIT_Y && parent->area.x < node->area.x) ||
-            (dir == DIR_SOUTH && parent->split == SPLIT_X && (parent->area.y + parent->area.h) > (node->area.y + node->area.h)) ||
-            (dir == DIR_EAST  && parent->split == SPLIT_Y && (parent->area.x + parent->area.w) > (node->area.x + node->area.w))) {
-                return parent;
-        }
-    }
-
-    return NULL;
+    return yabai_window_node_fence(node, dir);
 }
 
 struct window_node *view_find_min_depth_leaf_node(struct window_node *node)
@@ -773,12 +759,12 @@ uint32_t *view_find_window_list(struct view *view, int *window_count)
 
 bool view_is_invalid(struct view *view)
 {
-    return !view_check_flag(view, VIEW_IS_VALID);
+    return yabai_view_is_invalid((const struct yabai_view *) view);
 }
 
 bool view_is_dirty(struct view *view)
 {
-    return view_check_flag(view, VIEW_IS_DIRTY);
+    return yabai_view_is_dirty((const struct yabai_view *) view);
 }
 
 void view_flush(struct view *view)

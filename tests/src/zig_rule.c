@@ -97,10 +97,39 @@ TEST_FUNC(zig_rule_combine_display_space,
     yabai_rule_combine_effects(fx, z_res);
 
     TEST_CHECK(effects_match(c_res, z_res), 1);
+    /* Hand-pinned C literals. */
     TEST_CHECK(c_res->did, 5);
     TEST_CHECK(rule_effects_check_flag(c_res, RULE_FOLLOW_SPACE), true);
     TEST_CHECK(c_res->sid, 0x1234);
     TEST_CHECK(c_res->opacity == 0.5f, 1);
+    TEST_CHECK(rule_effects_check_flag(c_res, RULE_OPACITY), true);
+    /* Hand-pinned Zig literals: identical to the C oracle. */
+    TEST_CHECK(z_res->did, 5);
+    TEST_CHECK(rule_effects_check_flag(z_res, RULE_FOLLOW_SPACE), true);
+    TEST_CHECK(z_res->sid, 0x1234);
+    TEST_CHECK(z_res->opacity == 0.5f, 1);
+    TEST_CHECK(rule_effects_check_flag(z_res, RULE_OPACITY), true);
+    /* Untouched-field paths (literal zeros on both sides). */
+    TEST_CHECK(c_res->scratchpad == NULL, true);
+    TEST_CHECK(z_res->scratchpad == NULL, true);
+    TEST_CHECK(c_res->manage, RULE_PROP_UD);
+    TEST_CHECK(z_res->manage, RULE_PROP_UD);
+    TEST_CHECK(c_res->sticky, RULE_PROP_UD);
+    TEST_CHECK(z_res->sticky, RULE_PROP_UD);
+    TEST_CHECK(c_res->mff, RULE_PROP_UD);
+    TEST_CHECK(z_res->mff, RULE_PROP_UD);
+    TEST_CHECK(c_res->fullscreen, RULE_PROP_UD);
+    TEST_CHECK(z_res->fullscreen, RULE_PROP_UD);
+    TEST_CHECK(c_res->layer, 0);
+    TEST_CHECK(z_res->layer, 0);
+    TEST_CHECK(rule_effects_check_flag(c_res, RULE_LAYER), false);
+    TEST_CHECK(rule_effects_check_flag(z_res, RULE_LAYER), false);
+    TEST_CHECK(c_res->grid[0], 0);
+    TEST_CHECK(z_res->grid[0], 0);
+    TEST_CHECK(c_res->grid[1], 0);
+    TEST_CHECK(z_res->grid[1], 0);
+    TEST_CHECK(c_res->grid[5], 0);
+    TEST_CHECK(z_res->grid[5], 0);
 
     free_effects(fx);
     free_effects(c_res);
@@ -127,11 +156,37 @@ TEST_FUNC(zig_rule_combine_flags_cleared,
     yabai_rule_combine_effects(fx, z_res);
 
     TEST_CHECK(effects_match(c_res, z_res), 1);
+    /* Hand-pinned C literals. */
+    TEST_CHECK(c_res->sid, 0x99);
     TEST_CHECK(rule_effects_check_flag(c_res, RULE_FOLLOW_SPACE), false);
     TEST_CHECK(rule_effects_check_flag(c_res, RULE_OPACITY), false);
     TEST_CHECK(c_res->opacity == 0.0f, 1);
     TEST_CHECK(c_res->layer, 3);
     TEST_CHECK(rule_effects_check_flag(c_res, RULE_LAYER), true);
+    /* Hand-pinned Zig literals: identical to the C oracle. */
+    TEST_CHECK(z_res->sid, 0x99);
+    TEST_CHECK(rule_effects_check_flag(z_res, RULE_FOLLOW_SPACE), false);
+    TEST_CHECK(rule_effects_check_flag(z_res, RULE_OPACITY), false);
+    TEST_CHECK(z_res->opacity == 0.0f, 1);
+    TEST_CHECK(z_res->layer, 3);
+    TEST_CHECK(rule_effects_check_flag(z_res, RULE_LAYER), true);
+    /* Untouched-field paths: did==0 leaves did alone on both sides. */
+    TEST_CHECK(c_res->did, 0);
+    TEST_CHECK(z_res->did, 0);
+    TEST_CHECK(c_res->scratchpad == NULL, true);
+    TEST_CHECK(z_res->scratchpad == NULL, true);
+    TEST_CHECK(c_res->manage, RULE_PROP_UD);
+    TEST_CHECK(z_res->manage, RULE_PROP_UD);
+    TEST_CHECK(c_res->sticky, RULE_PROP_UD);
+    TEST_CHECK(z_res->sticky, RULE_PROP_UD);
+    TEST_CHECK(c_res->mff, RULE_PROP_UD);
+    TEST_CHECK(z_res->mff, RULE_PROP_UD);
+    TEST_CHECK(c_res->fullscreen, RULE_PROP_UD);
+    TEST_CHECK(z_res->fullscreen, RULE_PROP_UD);
+    TEST_CHECK(c_res->grid[0], 0);
+    TEST_CHECK(z_res->grid[0], 0);
+    TEST_CHECK(c_res->grid[5], 0);
+    TEST_CHECK(z_res->grid[5], 0);
 
     free_effects(fx);
     free_effects(c_res);
@@ -162,28 +217,88 @@ TEST_FUNC(zig_rule_combine_scratchpad_props_grid,
     yabai_rule_combine_effects(fx, z_res);
 
     TEST_CHECK(effects_match(c_res, z_res), 1);
+    /* Hand-pinned C literals: scratchpad ownership + props + grid. */
     TEST_CHECK(strcmp(c_res->scratchpad, "newpad"), 0);
     int same_ptr = (c_res->scratchpad == fx->scratchpad);
     TEST_CHECK(same_ptr, 0);
+    TEST_CHECK(strcmp(fx->scratchpad, "newpad"), 0);
     TEST_CHECK(c_res->manage, RULE_PROP_ON);
     TEST_CHECK(c_res->sticky, RULE_PROP_OFF);
     TEST_CHECK(c_res->mff, RULE_PROP_ON);
     TEST_CHECK(c_res->fullscreen, RULE_PROP_UD);
+    TEST_CHECK(c_res->grid[0], 1);
+    TEST_CHECK(c_res->grid[1], 2);
+    TEST_CHECK(c_res->grid[2], 3);
+    TEST_CHECK(c_res->grid[3], 4);
+    TEST_CHECK(c_res->grid[4], 5);
     TEST_CHECK(c_res->grid[5], 6);
+    /* Hand-pinned Zig literals: fresh copy, not aliased, source intact. */
+    TEST_CHECK(strcmp(z_res->scratchpad, "newpad"), 0);
+    int z_same_ptr = (z_res->scratchpad == fx->scratchpad);
+    TEST_CHECK(z_same_ptr, 0);
+    TEST_CHECK(z_res->manage, RULE_PROP_ON);
+    TEST_CHECK(z_res->sticky, RULE_PROP_OFF);
+    TEST_CHECK(z_res->mff, RULE_PROP_ON);
+    TEST_CHECK(z_res->fullscreen, RULE_PROP_UD);
+    TEST_CHECK(z_res->grid[0], 1);
+    TEST_CHECK(z_res->grid[1], 2);
+    TEST_CHECK(z_res->grid[2], 3);
+    TEST_CHECK(z_res->grid[3], 4);
+    TEST_CHECK(z_res->grid[4], 5);
+    TEST_CHECK(z_res->grid[5], 6);
+    /* Untouched-field paths: no did/sid/opacity/layer takes. */
+    TEST_CHECK(c_res->did, 0);
+    TEST_CHECK(z_res->did, 0);
+    TEST_CHECK(c_res->sid, 0);
+    TEST_CHECK(z_res->sid, 0);
+    TEST_CHECK(c_res->opacity == 0.0f, 1);
+    TEST_CHECK(z_res->opacity == 0.0f, 1);
+    TEST_CHECK(rule_effects_check_flag(c_res, RULE_OPACITY), false);
+    TEST_CHECK(rule_effects_check_flag(z_res, RULE_OPACITY), false);
+    TEST_CHECK(c_res->layer, 0);
+    TEST_CHECK(z_res->layer, 0);
+    TEST_CHECK(rule_effects_check_flag(c_res, RULE_LAYER), false);
+    TEST_CHECK(rule_effects_check_flag(z_res, RULE_LAYER), false);
+    TEST_CHECK(rule_effects_check_flag(c_res, RULE_FOLLOW_SPACE), false);
+    TEST_CHECK(rule_effects_check_flag(z_res, RULE_FOLLOW_SPACE), false);
 
     /* Zero grid pair leaves the result grid untouched. */
     struct rule_effects *fx2 = make_effects();
     fx2->grid[2] = 9;
     c_res->grid[0] = 7;
     z_res->grid[0] = 7;
+    char *c_pad_before = c_res->scratchpad;
+    char *z_pad_before = z_res->scratchpad;
     rule_combine_effects(fx2, c_res);
     yabai_rule_combine_effects(fx2, z_res);
     TEST_CHECK(effects_match(c_res, z_res), 1);
     TEST_CHECK(c_res->grid[0], 7);
+    TEST_CHECK(z_res->grid[0], 7);
+    TEST_CHECK(c_res->grid[1], 2);
+    TEST_CHECK(z_res->grid[1], 2);
     TEST_CHECK(c_res->grid[2], 3);
+    TEST_CHECK(z_res->grid[2], 3);
+    TEST_CHECK(c_res->grid[3], 4);
+    TEST_CHECK(z_res->grid[3], 4);
+    TEST_CHECK(c_res->grid[4], 5);
+    TEST_CHECK(z_res->grid[4], 5);
+    TEST_CHECK(c_res->grid[5], 6);
+    TEST_CHECK(z_res->grid[5], 6);
 
     /* NULL scratchpad leaves the result scratchpad untouched. */
     TEST_CHECK(strcmp(c_res->scratchpad, "newpad"), 0);
+    TEST_CHECK(strcmp(z_res->scratchpad, "newpad"), 0);
+    TEST_CHECK(c_res->scratchpad == c_pad_before, true);
+    TEST_CHECK(z_res->scratchpad == z_pad_before, true);
+    /* NULL-source combine leaves props untouched too. */
+    TEST_CHECK(c_res->manage, RULE_PROP_ON);
+    TEST_CHECK(z_res->manage, RULE_PROP_ON);
+    TEST_CHECK(c_res->sticky, RULE_PROP_OFF);
+    TEST_CHECK(z_res->sticky, RULE_PROP_OFF);
+    TEST_CHECK(c_res->did, 0);
+    TEST_CHECK(z_res->did, 0);
+    TEST_CHECK(c_res->sid, 0);
+    TEST_CHECK(z_res->sid, 0);
 
     free_effects(fx);
     free_effects(fx2);

@@ -1,9 +1,12 @@
 extern struct space_manager g_space_manager;
 extern struct window_manager g_window_manager;
 
-/* Zig delegate (zig/rule.zig): parity-proven equivalent of the JSON
- * emission below. Signature in src/rule.h is unchanged. */
+/* Zig delegates (zig/rule.zig): parity-proven equivalents of the JSON
+ * emission and rule_combine_effects below. Signatures in src/rule.h are
+ * unchanged. The combine export reuses the shared yabai_in_range_ii_f
+ * across objects (defined in zig/util.zig). */
 void yabai_rule_serialize(FILE *rsp, struct rule *rule, int index, int did_index, int sid_index);
+void yabai_rule_combine_effects(struct rule_effects *effects, struct rule_effects *result);
 
 void rule_serialize(FILE *rsp, struct rule *rule, int index)
 {
@@ -16,52 +19,7 @@ void rule_serialize(FILE *rsp, struct rule *rule, int index)
 
 void rule_combine_effects(struct rule_effects *effects, struct rule_effects *result)
 {
-    if (effects->did) {
-        result->did = effects->did;
-        if (rule_effects_check_flag(effects, RULE_FOLLOW_SPACE)) {
-            rule_effects_set_flag(result, RULE_FOLLOW_SPACE);
-        } else {
-            rule_effects_clear_flag(result, RULE_FOLLOW_SPACE);
-        }
-    }
-
-    if (effects->sid) {
-        result->sid = effects->sid;
-        if (rule_effects_check_flag(effects, RULE_FOLLOW_SPACE)) {
-            rule_effects_set_flag(result, RULE_FOLLOW_SPACE);
-        } else {
-            rule_effects_clear_flag(result, RULE_FOLLOW_SPACE);
-        }
-    }
-
-    if (rule_effects_check_flag(effects, RULE_OPACITY) && in_range_ii(effects->opacity, 0.0f, 1.0f)) {
-        result->opacity = effects->opacity;
-        rule_effects_set_flag(result, RULE_OPACITY);
-    }
-
-    if (rule_effects_check_flag(effects, RULE_LAYER)) {
-        result->layer = effects->layer;
-        rule_effects_set_flag(result, RULE_LAYER);
-    }
-
-    if (effects->scratchpad) {
-        if (result->scratchpad) free(result->scratchpad);
-        result->scratchpad = string_copy(effects->scratchpad);
-    }
-
-    if (effects->manage     != RULE_PROP_UD) result->manage     = effects->manage;
-    if (effects->sticky     != RULE_PROP_UD) result->sticky     = effects->sticky;
-    if (effects->mff        != RULE_PROP_UD) result->mff        = effects->mff;
-    if (effects->fullscreen != RULE_PROP_UD) result->fullscreen = effects->fullscreen;
-
-    if (effects->grid[0] != 0 && effects->grid[1] != 0) {
-        result->grid[0] = effects->grid[0];
-        result->grid[1] = effects->grid[1];
-        result->grid[2] = effects->grid[2];
-        result->grid[3] = effects->grid[3];
-        result->grid[4] = effects->grid[4];
-        result->grid[5] = effects->grid[5];
-    }
+    yabai_rule_combine_effects(effects, result);
 }
 
 void rule_reapply_all(void)

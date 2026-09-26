@@ -203,6 +203,10 @@ unless doc/zig-refactor-plan.md explicitly allows a change.
 - Warp-site routing: window_manager_warp_window's area_make_pair
   line calls the Zig exports with g_space_manager lifts; gap pins
   added to the geometry suite. 71/71 tests; leaks 0; 101 exports.
+- Predicate routing: fence, contains/index lookups, and VALID/DIRTY
+  readers delegate to Zig (mouse, window, event-loop call sites).
+- Combine routing: rule_combine_effects delegates with fresh-copy
+  ownership pins. 71/71 tests; leaks 0; fat daemon, 101 exports.
 - Pure-helper slice (TDD) in zig/util.zig: `balance_node_add`,
   `clampf_range` (incl. NaN bit-parity), `json_bool`,
   `json_optional_bool`, float+int `in_range_ii/ei/ie` for the exact

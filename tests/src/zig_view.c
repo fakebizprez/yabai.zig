@@ -176,13 +176,30 @@ TEST_FUNC(zig_view_window_lookup,
     TEST_CHECK(window_node_contains_window(d, 6) != yabai_window_node_contains_window(d, 6), 0);
     TEST_CHECK(window_node_contains_window(d, 6), false);
     TEST_CHECK(window_node_contains_window(c, 7) != yabai_window_node_contains_window(c, 7), 0);
+    TEST_CHECK(window_node_contains_window(c, 7), true);
+    TEST_CHECK(yabai_window_node_contains_window(c, 7), true);
     TEST_CHECK(window_node_contains_window(e, 5) != yabai_window_node_contains_window(e, 5), 0);
+    TEST_CHECK(window_node_contains_window(e, 5), false);
+    TEST_CHECK(yabai_window_node_contains_window(e, 5), false);
+    /* Hand-pinned: empty leaf contains nothing on either side. */
+    TEST_CHECK(window_node_contains_window(e, 7), false);
+    TEST_CHECK(yabai_window_node_contains_window(e, 7), false);
 
     TEST_CHECK(window_node_index_of_window(d, 9) != yabai_window_node_index_of_window(d, 9), 0);
     TEST_CHECK(window_node_index_of_window(d, 9), 1);
+    TEST_CHECK(yabai_window_node_index_of_window(d, 9), 1);
+    /* Hand-pinned: first element resolves to index 0 on both sides. */
+    TEST_CHECK(window_node_index_of_window(d, 5) != yabai_window_node_index_of_window(d, 5), 0);
+    TEST_CHECK(window_node_index_of_window(d, 5), 0);
+    TEST_CHECK(yabai_window_node_index_of_window(d, 5), 0);
     /* C returns 0 (not -1) for a missing window; the port must match. */
     TEST_CHECK(window_node_index_of_window(d, 6) != yabai_window_node_index_of_window(d, 6), 0);
     TEST_CHECK(window_node_index_of_window(d, 6), 0);
+    TEST_CHECK(yabai_window_node_index_of_window(d, 6), 0);
+    /* Hand-pinned: empty leaf index falls back to 0 on both sides. */
+    TEST_CHECK(window_node_index_of_window(e, 5) != yabai_window_node_index_of_window(e, 5), 0);
+    TEST_CHECK(window_node_index_of_window(e, 5), 0);
+    TEST_CHECK(yabai_window_node_index_of_window(e, 5), 0);
 
     free_test_tree(r, a, c, d, e);
 })
@@ -1442,8 +1459,8 @@ TEST_FUNC(zig_view_swap_window_list,
 struct window_node *view_find_min_depth_leaf_node(struct window_node *node);
 
 struct window_node *yabai_view_find_min_depth_leaf_node(struct window_node *node);
-bool yabai_view_is_invalid(struct view *view);
-bool yabai_view_is_dirty(struct view *view);
+bool yabai_view_is_invalid(const struct yabai_view *view);
+bool yabai_view_is_dirty(const struct yabai_view *view);
 void yabai_window_node_clear_zoom(struct window_node *node);
 
 /* Pin the mirrored flag values (zig/view.zig VIEW_IS_VALID/DIRTY). */
@@ -1560,55 +1577,55 @@ TEST_FUNC(zig_view_invalid_dirty,
 
     /* flags == 0: invalid (VALID clear), clean (DIRTY clear). */
     v->flags = 0;
-    TEST_CHECK(view_is_invalid(v) != yabai_view_is_invalid(v), 0);
+    TEST_CHECK(view_is_invalid(v) != yabai_view_is_invalid((const struct yabai_view *) v), 0);
     TEST_CHECK(view_is_invalid(v), true);
-    TEST_CHECK(yabai_view_is_invalid(v), true);
-    TEST_CHECK(view_is_dirty(v) != yabai_view_is_dirty(v), 0);
+    TEST_CHECK(yabai_view_is_invalid((const struct yabai_view *) v), true);
+    TEST_CHECK(view_is_dirty(v) != yabai_view_is_dirty((const struct yabai_view *) v), 0);
     TEST_CHECK(view_is_dirty(v), false);
-    TEST_CHECK(yabai_view_is_dirty(v), false);
+    TEST_CHECK(yabai_view_is_dirty((const struct yabai_view *) v), false);
 
     /* Only VALID: valid, clean. */
     v->flags = VIEW_IS_VALID;
-    TEST_CHECK(view_is_invalid(v) != yabai_view_is_invalid(v), 0);
+    TEST_CHECK(view_is_invalid(v) != yabai_view_is_invalid((const struct yabai_view *) v), 0);
     TEST_CHECK(view_is_invalid(v), false);
-    TEST_CHECK(yabai_view_is_invalid(v), false);
-    TEST_CHECK(view_is_dirty(v) != yabai_view_is_dirty(v), 0);
+    TEST_CHECK(yabai_view_is_invalid((const struct yabai_view *) v), false);
+    TEST_CHECK(view_is_dirty(v) != yabai_view_is_dirty((const struct yabai_view *) v), 0);
     TEST_CHECK(view_is_dirty(v), false);
 
     /* Only DIRTY: invalid, dirty. */
     v->flags = VIEW_IS_DIRTY;
-    TEST_CHECK(view_is_invalid(v) != yabai_view_is_invalid(v), 0);
+    TEST_CHECK(view_is_invalid(v) != yabai_view_is_invalid((const struct yabai_view *) v), 0);
     TEST_CHECK(view_is_invalid(v), true);
-    TEST_CHECK(view_is_dirty(v) != yabai_view_is_dirty(v), 0);
+    TEST_CHECK(view_is_dirty(v) != yabai_view_is_dirty((const struct yabai_view *) v), 0);
     TEST_CHECK(view_is_dirty(v), true);
-    TEST_CHECK(yabai_view_is_dirty(v), true);
+    TEST_CHECK(yabai_view_is_dirty((const struct yabai_view *) v), true);
 
     /* VALID|DIRTY: valid, dirty. */
     v->flags = VIEW_IS_VALID | VIEW_IS_DIRTY;
-    TEST_CHECK(view_is_invalid(v) != yabai_view_is_invalid(v), 0);
+    TEST_CHECK(view_is_invalid(v) != yabai_view_is_invalid((const struct yabai_view *) v), 0);
     TEST_CHECK(view_is_invalid(v), false);
-    TEST_CHECK(view_is_dirty(v) != yabai_view_is_dirty(v), 0);
+    TEST_CHECK(view_is_dirty(v) != yabai_view_is_dirty((const struct yabai_view *) v), 0);
     TEST_CHECK(view_is_dirty(v), true);
 
     /* Neighboring flag bits must not alias either bit. */
     v->flags = VIEW_LAYOUT | VIEW_TOP_PADDING | VIEW_WINDOW_GAP | VIEW_ENABLE_GAP | VIEW_ENABLE_PADDING | VIEW_SPLIT_TYPE;
-    TEST_CHECK(view_is_invalid(v) != yabai_view_is_invalid(v), 0);
+    TEST_CHECK(view_is_invalid(v) != yabai_view_is_invalid((const struct yabai_view *) v), 0);
     TEST_CHECK(view_is_invalid(v), true);
-    TEST_CHECK(yabai_view_is_invalid(v), true);
-    TEST_CHECK(view_is_dirty(v) != yabai_view_is_dirty(v), 0);
+    TEST_CHECK(yabai_view_is_invalid((const struct yabai_view *) v), true);
+    TEST_CHECK(view_is_dirty(v) != yabai_view_is_dirty((const struct yabai_view *) v), 0);
     TEST_CHECK(view_is_dirty(v), false);
-    TEST_CHECK(yabai_view_is_dirty(v), false);
+    TEST_CHECK(yabai_view_is_dirty((const struct yabai_view *) v), false);
 
     /* Complement shapes: every bit except the pair set. */
     v->flags = ~(VIEW_IS_VALID | VIEW_IS_DIRTY);
-    TEST_CHECK(view_is_invalid(v) != yabai_view_is_invalid(v), 0);
+    TEST_CHECK(view_is_invalid(v) != yabai_view_is_invalid((const struct yabai_view *) v), 0);
     TEST_CHECK(view_is_invalid(v), true);
-    TEST_CHECK(view_is_dirty(v) != yabai_view_is_dirty(v), 0);
+    TEST_CHECK(view_is_dirty(v) != yabai_view_is_dirty((const struct yabai_view *) v), 0);
     TEST_CHECK(view_is_dirty(v), false);
     v->flags = ~((uint64_t) 0);
-    TEST_CHECK(view_is_invalid(v) != yabai_view_is_invalid(v), 0);
+    TEST_CHECK(view_is_invalid(v) != yabai_view_is_invalid((const struct yabai_view *) v), 0);
     TEST_CHECK(view_is_invalid(v), false);
-    TEST_CHECK(view_is_dirty(v) != yabai_view_is_dirty(v), 0);
+    TEST_CHECK(view_is_dirty(v) != yabai_view_is_dirty((const struct yabai_view *) v), 0);
     TEST_CHECK(view_is_dirty(v), true);
 
     free(v);
