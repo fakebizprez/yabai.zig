@@ -4,8 +4,13 @@ extern struct space_manager g_space_manager;
 extern struct window_manager g_window_manager;
 
 /* Zig delegates (zig/view.zig): parity-proven equivalents of the swap,
- * rotate, mirror, leaf walk, window lookup, fence, contains/index, and
- * invalid/dirty predicates below. Signatures in src/view.h are unchanged. */
+ * rotate, mirror, leaf walk, window lookup, fence, contains/index,
+ * invalid/dirty predicates, and stack insert below. Signatures in
+ * src/view.h are unchanged. view_find_window_list intentionally stays
+ * in C: the Zig export returns caller-frees malloc memory where C
+ * returns temp-pool memory, and the sole daemon caller
+ * (window_manager_validate_windows_on_space in src/window_manager.c)
+ * never frees, so routing would leak per validation. */
 bool yabai_window_node_contains_window(struct window_node *node, uint32_t window_id);
 int yabai_window_node_index_of_window(struct window_node *node, uint32_t window_id);
 struct window_node *yabai_window_node_fence(struct window_node *node, int dir);
@@ -20,6 +25,7 @@ struct yabai_view;
 struct window_node *yabai_view_find_window_node(const struct yabai_view *view, uint32_t window_id);
 bool yabai_view_is_invalid(const struct yabai_view *view);
 bool yabai_view_is_dirty(const struct yabai_view *view);
+void yabai_view_stack_window(struct window_node *node, uint32_t window_id);
 
 #define INSERT_FEEDBACK_WIDTH 2
 #define INSERT_FEEDBACK_RADIUS 9
@@ -649,23 +655,7 @@ struct window_node *view_remove_window_node(struct view *view, struct window *wi
 
 void view_stack_window_node(struct window_node *node, struct window *window)
 {
-    int insert_index = node->window_count;
-
-    for (int i = 0; i < node->window_count; ++i) {
-        if (node->window_list[i] == node->window_order[0]) {
-            insert_index = i+1;
-            break;
-        }
-    }
-
-    if (insert_index < node->window_count) {
-        memmove(node->window_list + insert_index + 1, node->window_list + insert_index, sizeof(uint32_t) * (node->window_count - insert_index));
-    }
-
-    node->window_list[insert_index] = window->id;
-    memmove(node->window_order + 1, node->window_order, sizeof(uint32_t) * node->window_count);
-    node->window_order[0] = window->id;
-    ++node->window_count;
+    yabai_view_stack_window(node, window->id);
 }
 
 struct window_node *view_add_window_node_with_insertion_point(struct view *view, struct window *window, uint32_t insertion_point)

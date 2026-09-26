@@ -2593,7 +2593,16 @@ static void handle_domain_query(FILE *rsp, struct token domain, char *message)
     }
 }
 
-static bool parse_rule(FILE *rsp, char **message, struct rule *rule, struct token token)
+/* Zig delegate (zig/rule.zig): parity-proven equivalent of parse_rule
+ * below, which stays as the test oracle. The acting display/space ids
+ * arrive lifted in, so call sites evaluate
+ * display_manager_active_display_id() and space_manager_active_space()
+ * eagerly. struct rule passes as the Rule pointer, the message cursor
+ * passes directly, and token passes by address. rule_add()/
+ * rule_destroy() stay C. */
+bool yabai_parse_rule(FILE *rsp, char **message, struct rule *rule, const struct token *token, uint32_t acting_did, uint64_t acting_sid);
+
+__attribute__((unused)) static bool parse_rule(FILE *rsp, char **message, struct rule *rule, struct token token)
 {
     TIME_FUNCTION;
 
@@ -2817,7 +2826,7 @@ static void handle_domain_rule(FILE *rsp, struct token domain, char *message)
             token = get_token(&message);
         }
 
-        if (parse_rule(rsp, &message, &rule, token)) {
+        if (yabai_parse_rule(rsp, &message, &rule, &token, display_manager_active_display_id(), space_manager_active_space())) {
             rule_add(&rule);
         } else {
             rule_destroy(&rule);
@@ -2831,7 +2840,7 @@ static void handle_domain_rule(FILE *rsp, struct token domain, char *message)
         } else if (value.type == TOKEN_TYPE_STRING) {
             if (!rule_reapply_by_label(value.string_value)) {
                 struct rule rule = {0};
-                if (parse_rule(rsp, &message, &rule, value.token)) {
+                if (yabai_parse_rule(rsp, &message, &rule, &value.token, display_manager_active_display_id(), space_manager_active_space())) {
                     rule_apply(&rule);
                 }
                 rule_destroy(&rule);
