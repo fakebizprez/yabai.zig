@@ -1147,3 +1147,60 @@ export fn yabai_rule_destroy(rule: *Rule) void {
     if (rule.subrole) |p| free(p);
     if (rule.effects.scratchpad) |p| free(p);
 }
+
+// Mirrors REGEX_MATCH_* in src/misc/macros.h.
+pub const REGEX_MATCH_UD: c_int = 0;
+pub const REGEX_MATCH_YES: c_int = 1;
+pub const REGEX_MATCH_NO: c_int = 2;
+
+comptime {
+    if (REGEX_MATCH_UD != 0) @compileError("REGEX_MATCH_UD drift");
+    if (REGEX_MATCH_YES != 1) @compileError("REGEX_MATCH_YES drift");
+    if (REGEX_MATCH_NO != 2) @compileError("REGEX_MATCH_NO drift");
+}
+
+extern "c" fn regexec(regex: *const anyopaque, string: [*:0]const u8, nmatch: usize, pmatch: ?*anyopaque, eflags: c_int) c_int;
+
+// Byte-identical port of regex_match() in src/misc/helpers.h: without
+// VALID the field is undecided (UD, string untouched); otherwise the
+// libc regexec result maps 0 to YES and anything else to NO. C passes
+// the string straight into regexec, which dereferences it, so NULL
+// with VALID set is a segfault in C; the daemon never produces NULL
+// here (the title/role/subrole accessors fall back to ""), and the
+// guard below only defines that unreachable case as NO.
+fn regexMatch(valid: bool, regex: *const RegexT, match: ?[*:0]const u8) c_int {
+    @setRuntimeSafety(false);
+    if (!valid) return REGEX_MATCH_UD;
+    const m = match orelse return REGEX_MATCH_NO;
+    const rc = regexec(@ptrCast(regex), m, 0, null, 0);
+    return if (rc == 0) REGEX_MATCH_YES else REGEX_MATCH_NO;
+}
+
+export fn yabai_regex_match(valid: bool, regex: *const RegexT, match: ?[*:0]const u8) c_int {
+    @setRuntimeSafety(false);
+    return regexMatch(valid, regex, match);
+}
+
+// Byte-identical port of window_manager_rule_matches_window() in
+// src/window_manager.c. The window's application name is lifted in as
+// a plain string (the only window touch in C is
+// window->application->name), so no window struct crosses the
+// boundary. Each of the four fields short-circuits to false when its
+// match result equals the EXCLUDE-flipped expectation; VALID-clear
+// fields take the UD path and never filter.
+export fn yabai_rule_matches_window(rule: *const Rule, app_name: ?[*:0]const u8, window_title: ?[*:0]const u8, window_role: ?[*:0]const u8, window_subrole: ?[*:0]const u8) bool {
+    @setRuntimeSafety(false);
+    const expect_app: c_int = if (yabai_rule_check_flag(rule, RULE_APP_EXCLUDE)) REGEX_MATCH_YES else REGEX_MATCH_NO;
+    if (regexMatch(yabai_rule_check_flag(rule, RULE_APP_VALID), &rule.app_regex, app_name) == expect_app) return false;
+
+    const expect_title: c_int = if (yabai_rule_check_flag(rule, RULE_TITLE_EXCLUDE)) REGEX_MATCH_YES else REGEX_MATCH_NO;
+    if (regexMatch(yabai_rule_check_flag(rule, RULE_TITLE_VALID), &rule.title_regex, window_title) == expect_title) return false;
+
+    const expect_role: c_int = if (yabai_rule_check_flag(rule, RULE_ROLE_EXCLUDE)) REGEX_MATCH_YES else REGEX_MATCH_NO;
+    if (regexMatch(yabai_rule_check_flag(rule, RULE_ROLE_VALID), &rule.role_regex, window_role) == expect_role) return false;
+
+    const expect_subrole: c_int = if (yabai_rule_check_flag(rule, RULE_SUBROLE_EXCLUDE)) REGEX_MATCH_YES else REGEX_MATCH_NO;
+    if (regexMatch(yabai_rule_check_flag(rule, RULE_SUBROLE_VALID), &rule.subrole_regex, window_subrole) == expect_subrole) return false;
+
+    return true;
+}
