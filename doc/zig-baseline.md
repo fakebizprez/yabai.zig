@@ -290,3 +290,37 @@ The DAEMON_MESSAGE handler allocates `bytes_to_read` bytes via
 `ts_alloc_unaligned` with no validation of the declared length. The Zig
 decoder must add the checked lengths above while preserving every valid
 message byte for byte.
+
+## Routing map (2026-09-26, 107 exports, 8 objects, 77/77 tests)
+
+Census via `nm -gU zig/*.o` plus C call-site grep. 36 exports have
+live C callers (the daemon runs them); the rest are test-oracle
+parallels or Zig-to-Zig shared helpers.
+
+Routed (daemon runs Zig): area_make_pair (warp site);
+in_range_ii_f; rule_combine_effects, rule_matches_window,
+rule_serialize; parse_rule (both handle_domain_rule sites, C kept as
+oracle); window_can_move/can_resize/is_undersized;
+move/resize_frame_math and get_split/get_gap/get_ratio (warp site);
+view_create/clear/destroy, view_serialize, view_find_window_list
+(caller frees), view_find_window_node (+in_direction),
+first/last/next/prev_leaf, fence, contains/index lookups,
+is_valid/is_dirty, stack_window, swap/rotate/mirror;
+display_serialize; mouse_determine_drop_action.
+
+Zig-to-Zig shared (no C callers, reused across objects): token
+stream/equals/to_value/get_token, area predicates/distance/max-point,
+balance_node_add, find_rank_in_list, json_bool/optional,
+ts_string_escape, parse_property/label/key-value internals.
+
+Deliberately unrouted: 21 easing curves (C-derived vectors would go
+tautological; only 5 exact-value pins exist); same-TU statics with
+zero boundary value (message decoders, view split/balance/equalize/
+clear_zoom/getters/predicates, window_layer, mouse mod/triangle);
+rule_destroy/flags (same-file/header-inline callers);
+view_find_min_depth_leaf (no callers).
+
+Never ported (coupled, needs live sessions): display/space/window
+selector resolution beyond parse_rule's call-through, node
+add/remove/flush/update/capture, window/space/display AX/SLS query
+paths, all manager tables and event/signal flow, easing dispatch.
