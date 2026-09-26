@@ -186,6 +186,12 @@ unless doc/zig-refactor-plan.md explicitly allows a change.
   the seam, and C rule_serialize delegates to Zig (managers resolved
   at the call site) — the query path runs Zig code in the daemon.
   100 exports; 70/70 tests; leaks 0; x86_64 verified.
+- View-serialize routing: both-sides JSON golden guards the seam;
+  C view_serialize delegates with flag-guarded manager lifts.
+- Display serializer (TDD): new zig/display.zig object (7th),
+  wired through build.sh and both makefiles, with lifted uuid,
+  indices, label, frame, spaces, and focus. 101 exports; 71/71
+  tests; leaks 0; x86_64 verified.
 - Pure-helper slice (TDD) in zig/util.zig: `balance_node_add`,
   `clampf_range` (incl. NaN bit-parity), `json_bool`,
   `json_optional_bool`, float+int `in_range_ii/ei/ie` for the exact

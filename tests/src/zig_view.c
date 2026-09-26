@@ -2061,6 +2061,53 @@ static int serialize_view_parity(struct view *c_view, struct yabai_view *z_view,
     return ok;
 }
 
+/* Hand-pinned full-JSON golden for BOTH oracles over SLS-free flags.
+ * Expectations transcribed by hand from the fprintf format in
+ * src/view.c (open brace, tab-quoted fields in ID/UUID/LABEL/TYPE/
+ * FIRST/LAST/HAS_FOCUS order joined with ",\n", closing "\n}"):
+ * id %lld of the sid, uuid quoted verbatim ("<unknown>" when the
+ * uuid_str is NULL), label quoted verbatim ("" when absent), type
+ * from view_type_str[layout], first/last-window %d of the outer
+ * leaves' window_order[0] (0 on an empty leaf), has-focus from
+ * json_bool. Both C and Zig outputs must match these exact bytes. */
+static int serialize_view_golden_both(struct view *c_view, struct yabai_view *z_view, uint64_t flags, const char *uuid_str, const char *label_str, bool has_focus, const char *expected)
+{
+    char *c_msg = NULL;
+    size_t c_len = 0;
+    char *z_msg = NULL;
+    size_t z_len = 0;
+    FILE *c_rsp = open_memstream(&c_msg, &c_len);
+    FILE *z_rsp = open_memstream(&z_msg, &z_len);
+    if (!c_rsp || !z_rsp) {
+        if (c_rsp) fclose(c_rsp);
+        if (z_rsp) fclose(z_rsp);
+        free(c_msg);
+        free(z_msg);
+        return 0;
+    }
+    view_serialize(c_rsp, c_view, flags);
+    yabai_view_serialize(z_rsp, z_view, flags, uuid_str, 0, label_str, 0, NULL, 0, has_focus, false, false);
+    fflush(c_rsp);
+    fflush(z_rsp);
+    fclose(c_rsp);
+    fclose(z_rsp);
+    size_t exp_len = strlen(expected);
+    int ok = 1;
+    if (!c_msg || c_len != exp_len || strcmp(c_msg, expected) != 0) {
+        printf("view serialize C golden mismatch flags 0x%llx\n---got---\n%s\n---want---\n%s\n",
+               (unsigned long long) flags, c_msg ? c_msg : "(null)", expected);
+        ok = 0;
+    }
+    if (!z_msg || z_len != exp_len || strcmp(z_msg, expected) != 0) {
+        printf("view serialize Zig golden mismatch flags 0x%llx\n---got---\n%s\n---want---\n%s\n",
+               (unsigned long long) flags, z_msg ? z_msg : "(null)", expected);
+        ok = 0;
+    }
+    free(c_msg);
+    free(z_msg);
+    return ok;
+}
+
 /* Zig-only hand vector for SLS-backed flags, all-flags, and flags==0. */
 static int serialize_view_zig_only(struct yabai_view *z_view, uint64_t flags, const char *uuid_str, int mission_index, const char *label_str, int display_index, const uint32_t *window_list, int window_count, bool has_focus, bool is_visible, bool is_fullscreen, const char *expected)
 {
@@ -2205,6 +2252,57 @@ TEST_FUNC(zig_view_serialize,
         init_serialize_views(&c_view, &z_view, 1, (void *) uuid, empty, VIEW_DEFAULT);
         const char *bare = "{\n\t\"id\":1,\n\t\"uuid\":\"<unknown>\",\n\t\"index\":0,\n\t\"label\":\"\",\n\t\"type\":\"default\",\n\t\"display\":0,\n\t\"windows\":[],\n\t\"first-window\":0,\n\t\"last-window\":0,\n\t\"has-focus\":false,\n\t\"is-visible\":false,\n\t\"is-native-fullscreen\":false\n}";
         TEST_CHECK(serialize_view_zig_only(&z_view, 0, NULL, 0, NULL, 0, NULL, 0, false, false, false, bare), 1);
+    }
+
+    /* Hand-pinned full-JSON golden for BOTH oracles: fixed views over
+     * every SLS-free flag alone plus the full SLS-free subset, on an
+     * empty root and on the populated multi-leaf tree. Expectations
+     * computed by hand from the fprintf format in src/view.c, not
+     * copied from output. flags==0 expands to the full 12-property
+     * document including SLS-backed branches, which abort the C oracle
+     * headless (g_connection == 0); it stays pinned Zig-only above. */
+    {
+        uint64_t sls_free = SPACE_PROPERTY_ID | SPACE_PROPERTY_UUID | SPACE_PROPERTY_LABEL |
+                            SPACE_PROPERTY_TYPE | SPACE_PROPERTY_FIRST_WINDOW |
+                            SPACE_PROPERTY_LAST_WINDOW | SPACE_PROPERTY_HAS_FOCUS;
+
+        /* Empty root: sid 1, no label, default layout, focus false. */
+        init_serialize_views(&c_view, &z_view, 1, (void *) uuid, empty, VIEW_DEFAULT);
+        space_manager_remove_label_for_space(&g_space_manager, 1);
+        g_space_manager.current_space_id = 0;
+        TEST_CHECK(serialize_view_golden_both(&c_view, &z_view, sls_free, "test-uuid-1", NULL, false,
+                   "{\n\t\"id\":1,\n\t\"uuid\":\"test-uuid-1\",\n\t\"label\":\"\",\n\t\"type\":\"default\",\n\t\"first-window\":0,\n\t\"last-window\":0,\n\t\"has-focus\":false\n}"), 1);
+
+        /* Populated multi-leaf tree: first=5, last=7, stack, focus true. */
+        init_serialize_views(&c_view, &z_view, 4242, (void *) uuid, r, VIEW_STACK);
+        space_manager_set_label_for_space(&g_space_manager, 4242, string_copy("test-label"));
+        g_space_manager.current_space_id = 4242;
+        TEST_CHECK(serialize_view_golden_both(&c_view, &z_view, sls_free, "test-uuid-1", "test-label", true,
+                   "{\n\t\"id\":4242,\n\t\"uuid\":\"test-uuid-1\",\n\t\"label\":\"test-label\",\n\t\"type\":\"stack\",\n\t\"first-window\":5,\n\t\"last-window\":7,\n\t\"has-focus\":true\n}"), 1);
+        space_manager_remove_label_for_space(&g_space_manager, 4242);
+
+        /* Every SLS-free flag alone on the solo leaf (sid >32 bits). */
+        init_serialize_views(&c_view, &z_view, 98765432101ull, (void *) uuid, solo, VIEW_BSP);
+        space_manager_remove_label_for_space(&g_space_manager, 98765432101ull);
+        g_space_manager.current_space_id = 0;
+        TEST_CHECK(serialize_view_golden_both(&c_view, &z_view, SPACE_PROPERTY_ID, "test-uuid-1", NULL, false,
+                   "{\n\t\"id\":98765432101\n}"), 1);
+        TEST_CHECK(serialize_view_golden_both(&c_view, &z_view, SPACE_PROPERTY_UUID, "test-uuid-1", NULL, false,
+                   "{\n\t\"uuid\":\"test-uuid-1\"\n}"), 1);
+        TEST_CHECK(serialize_view_golden_both(&c_view, &z_view, SPACE_PROPERTY_LABEL, "test-uuid-1", NULL, false,
+                   "{\n\t\"label\":\"\"\n}"), 1);
+        TEST_CHECK(serialize_view_golden_both(&c_view, &z_view, SPACE_PROPERTY_TYPE, "test-uuid-1", NULL, false,
+                   "{\n\t\"type\":\"bsp\"\n}"), 1);
+        TEST_CHECK(serialize_view_golden_both(&c_view, &z_view, SPACE_PROPERTY_FIRST_WINDOW, "test-uuid-1", NULL, false,
+                   "{\n\t\"first-window\":7\n}"), 1);
+        TEST_CHECK(serialize_view_golden_both(&c_view, &z_view, SPACE_PROPERTY_LAST_WINDOW, "test-uuid-1", NULL, false,
+                   "{\n\t\"last-window\":7\n}"), 1);
+        TEST_CHECK(serialize_view_golden_both(&c_view, &z_view, SPACE_PROPERTY_HAS_FOCUS, "test-uuid-1", NULL, false,
+                   "{\n\t\"has-focus\":false\n}"), 1);
+        g_space_manager.current_space_id = 98765432101ull;
+        TEST_CHECK(serialize_view_golden_both(&c_view, &z_view, SPACE_PROPERTY_HAS_FOCUS, "test-uuid-1", NULL, true,
+                   "{\n\t\"has-focus\":true\n}"), 1);
+        g_space_manager.current_space_id = 0;
     }
 
     free(solo);
