@@ -508,6 +508,9 @@ TEST_FUNC(zig_view_stack_window,
     /* Empty node. */
     TEST_CHECK(stack_case(0, 0, 0, 0, 0, 0, 42), 1);
 
+    /* Hand-pinned: order[0]=9 found at list[1], so 42 inserts at
+     * list[2], shifting the old tail right: list [5,9,42,7],
+     * order [42,9,5], count 4. */
     struct window_node *c_node = make_test_node();
     struct window_node *z_node = make_test_node();
     set_stack_lists(c_node, 5, 9, 7, 9, 5, 3);
@@ -516,12 +519,70 @@ TEST_FUNC(zig_view_stack_window,
     view_stack_window_node(c_node, window);
     yabai_view_stack_window(z_node, 42);
     free(window);
+    TEST_CHECK(c_node->window_list[0], 5);
+    TEST_CHECK(c_node->window_list[1], 9);
     TEST_CHECK(c_node->window_list[2], 42);
-    TEST_CHECK(z_node->window_list[2], 42);
+    TEST_CHECK(c_node->window_list[3], 7);
     TEST_CHECK(c_node->window_order[0], 42);
-    TEST_CHECK(z_node->window_order[0], 42);
+    TEST_CHECK(c_node->window_order[1], 9);
+    TEST_CHECK(c_node->window_order[2], 5);
     TEST_CHECK(c_node->window_count, 4);
+    TEST_CHECK(z_node->window_list[0], 5);
+    TEST_CHECK(z_node->window_list[1], 9);
+    TEST_CHECK(z_node->window_list[2], 42);
+    TEST_CHECK(z_node->window_list[3], 7);
+    TEST_CHECK(z_node->window_order[0], 42);
+    TEST_CHECK(z_node->window_order[1], 9);
+    TEST_CHECK(z_node->window_order[2], 5);
     TEST_CHECK(z_node->window_count, 4);
+    free(c_node);
+    free(z_node);
+
+    /* Hand-pinned: order[0]=99 absent from the list, so 42 appends:
+     * list [5,9,7,42], order [42,99,5], count 4. */
+    c_node = make_test_node();
+    z_node = make_test_node();
+    set_stack_lists(c_node, 5, 9, 7, 99, 5, 3);
+    set_stack_lists(z_node, 5, 9, 7, 99, 5, 3);
+    window = make_test_window(42);
+    view_stack_window_node(c_node, window);
+    yabai_view_stack_window(z_node, 42);
+    free(window);
+    TEST_CHECK(c_node->window_list[0], 5);
+    TEST_CHECK(c_node->window_list[1], 9);
+    TEST_CHECK(c_node->window_list[2], 7);
+    TEST_CHECK(c_node->window_list[3], 42);
+    TEST_CHECK(c_node->window_order[0], 42);
+    TEST_CHECK(c_node->window_order[1], 99);
+    TEST_CHECK(c_node->window_order[2], 5);
+    TEST_CHECK(c_node->window_count, 4);
+    TEST_CHECK(z_node->window_list[0], 5);
+    TEST_CHECK(z_node->window_list[1], 9);
+    TEST_CHECK(z_node->window_list[2], 7);
+    TEST_CHECK(z_node->window_list[3], 42);
+    TEST_CHECK(z_node->window_order[0], 42);
+    TEST_CHECK(z_node->window_order[1], 99);
+    TEST_CHECK(z_node->window_order[2], 5);
+    TEST_CHECK(z_node->window_count, 4);
+    free(c_node);
+    free(z_node);
+
+    /* Hand-pinned: empty node stacks the first window:
+     * list [42], order [42], count 1. */
+    c_node = make_test_node();
+    z_node = make_test_node();
+    set_stack_lists(c_node, 0, 0, 0, 0, 0, 0);
+    set_stack_lists(z_node, 0, 0, 0, 0, 0, 0);
+    window = make_test_window(42);
+    view_stack_window_node(c_node, window);
+    yabai_view_stack_window(z_node, 42);
+    free(window);
+    TEST_CHECK(c_node->window_list[0], 42);
+    TEST_CHECK(c_node->window_order[0], 42);
+    TEST_CHECK(c_node->window_count, 1);
+    TEST_CHECK(z_node->window_list[0], 42);
+    TEST_CHECK(z_node->window_order[0], 42);
+    TEST_CHECK(z_node->window_count, 1);
     free(c_node);
     free(z_node);
 })
@@ -1757,6 +1818,34 @@ TEST_FUNC(zig_view_find_window_list,
     solo = make_test_node();
     set_leaf_windows(solo, 101, 3);
     TEST_CHECK(window_list_case(solo, 3), 1);
+    /* Hand-pinned: sequential ids [101,102,103], count 3, both sides. */
+    {
+        struct view *cv2 = malloc(sizeof(struct view));
+        memset(cv2, 0, sizeof(struct view));
+        cv2->root = solo;
+        struct yabai_view *zv2 = malloc(sizeof(struct yabai_view));
+        memset(zv2, 0, sizeof(struct yabai_view));
+        zv2->root = solo;
+        int cc2 = -1;
+        int zc2 = -2;
+        uint32_t *cl2 = view_find_window_list(cv2, &cc2);
+        uint32_t *zl2 = yabai_view_find_window_list(zv2, &zc2);
+        TEST_CHECK(cc2, 3);
+        TEST_CHECK(zc2, 3);
+        if (cl2 && zl2) {
+            TEST_CHECK(cl2[0], 101);
+            TEST_CHECK(cl2[1], 102);
+            TEST_CHECK(cl2[2], 103);
+            TEST_CHECK(zl2[0], 101);
+            TEST_CHECK(zl2[1], 102);
+            TEST_CHECK(zl2[2], 103);
+        } else {
+            TEST_CHECK(cl2 != NULL && zl2 != NULL, 1);
+        }
+        if (zl2) free(zl2);
+        free(cv2);
+        free(zv2);
+    }
     free(solo);
 
     /* Empty multi-leaf tree: every leaf holds nothing. */
@@ -1775,23 +1864,30 @@ TEST_FUNC(zig_view_find_window_list,
     set_test_windows(c, 7, 0, 1);
     TEST_CHECK(window_list_case(r, 3), 1);
 
-    /* Hand vector: leaf visit order is D, E, C. */
+    /* Hand vector: leaf visit order is D, E, C, so the flattened
+     * list is [5,9,7], count 3, on both sides. */
     struct view *c_view = malloc(sizeof(struct view));
     memset(c_view, 0, sizeof(struct view));
     c_view->root = r;
     struct yabai_view *z_view = malloc(sizeof(struct yabai_view));
     memset(z_view, 0, sizeof(struct yabai_view));
     z_view->root = r;
+    int c_count = -1;
     int z_count = -1;
+    uint32_t *c_list = view_find_window_list(c_view, &c_count);
     uint32_t *z_list = yabai_view_find_window_list(z_view, &z_count);
+    TEST_CHECK(c_count, 3);
     TEST_CHECK(z_count, 3);
-    if (z_list) {
+    if (c_list && z_list) {
+        TEST_CHECK(c_list[0], 5);
+        TEST_CHECK(c_list[1], 9);
+        TEST_CHECK(c_list[2], 7);
         TEST_CHECK(z_list[0], 5);
         TEST_CHECK(z_list[1], 9);
         TEST_CHECK(z_list[2], 7);
         free(z_list);
     } else {
-        TEST_CHECK(z_list != NULL, 1);
+        TEST_CHECK(c_list != NULL && z_list != NULL, 1);
     }
     free(c_view);
     free(z_view);

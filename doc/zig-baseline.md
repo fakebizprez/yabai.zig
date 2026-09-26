@@ -207,6 +207,12 @@ unless doc/zig-refactor-plan.md explicitly allows a change.
   readers delegate to Zig (mouse, window, event-loop call sites).
 - Combine routing: rule_combine_effects delegates with fresh-copy
   ownership pins. 71/71 tests; leaks 0; fat daemon, 101 exports.
+- Stack routing: view_stack_window_node delegates to Zig.
+  find_window_list deliberately stays C (sole caller never frees;
+  Zig returns caller-frees memory — routing would leak).
+- Rule call-site routing: both handle_domain_rule parse sites call
+  Zig with eager acting ids; C parse_rule stays as the live oracle.
+  71/71 tests; leaks 0; fat daemon, 101 exports.
 - Pure-helper slice (TDD) in zig/util.zig: `balance_node_add`,
   `clampf_range` (incl. NaN bit-parity), `json_bool`,
   `json_optional_bool`, float+int `in_range_ii/ei/ie` for the exact
