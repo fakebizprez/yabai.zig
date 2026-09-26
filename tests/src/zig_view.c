@@ -253,6 +253,30 @@ static int tree_struct_equal(struct window_node **cn, struct window_node **zn)
     return tree_struct_equal_n(cn, zn, 5);
 }
 
+/* Hand-pin check for the rotate/mirror seam: literal split, ratio, and
+ * child-index expectations for the R(X,0.6)->(A,C); A(Y,0.5)->(D,E)
+ * fixture (nodes array order R,A,C,D,E; leaves split NONE). Unlike the
+ * C-vs-Z structural comparison, these stay meaningful after the C
+ * bodies delegate to the Zig exports. */
+static int tree_shape_ok(struct window_node **nodes, int r_split, float r_ratio, int r_left, int r_right, int a_split, float a_ratio, int a_left, int a_right, float leaf_ratio)
+{
+    struct window_node *r = nodes[0];
+    struct window_node *a = nodes[1];
+    if (r->split != r_split) return 0;
+    if (memcmp(&r->ratio, &r_ratio, sizeof(float)) != 0) return 0;
+    if (node_rel(nodes, r->left) != r_left) return 0;
+    if (node_rel(nodes, r->right) != r_right) return 0;
+    if (a->split != a_split) return 0;
+    if (memcmp(&a->ratio, &a_ratio, sizeof(float)) != 0) return 0;
+    if (node_rel(nodes, a->left) != a_left) return 0;
+    if (node_rel(nodes, a->right) != a_right) return 0;
+    if (nodes[2]->split != SPLIT_NONE || nodes[3]->split != SPLIT_NONE || nodes[4]->split != SPLIT_NONE) return 0;
+    if (memcmp(&nodes[2]->ratio, &leaf_ratio, sizeof(float)) != 0) return 0;
+    if (memcmp(&nodes[3]->ratio, &leaf_ratio, sizeof(float)) != 0) return 0;
+    if (memcmp(&nodes[4]->ratio, &leaf_ratio, sizeof(float)) != 0) return 0;
+    return 1;
+}
+
 TEST_FUNC(zig_view_tree_mutate,
 {
     struct window_node *cn[5];
@@ -290,6 +314,60 @@ TEST_FUNC(zig_view_tree_mutate,
     TEST_CHECK(c_ret != cn[0], 0);
     TEST_CHECK(z_ret != zn[0], 0);
     TEST_CHECK(tree_struct_equal(cn, zn), 1);
+    free_test_pair(cn, zn);
+
+    /* Hand-pinned vectors: 90-degree rotation flips splits X->Y and
+     * swaps only the Y-split node (A: D,E -> E,D, ratio 1-0.5). */
+    make_test_pair(cn, zn);
+    window_node_rotate(cn[0], 90);
+    yabai_window_node_rotate(zn[0], 90);
+    TEST_CHECK(tree_struct_equal(cn, zn), 1);
+    TEST_CHECK(tree_shape_ok(cn, SPLIT_Y, 0.6f, 1, 2, SPLIT_X, 0.5f, 4, 3, 0.0f), 1);
+    TEST_CHECK(tree_shape_ok(zn, SPLIT_Y, 0.6f, 1, 2, SPLIT_X, 0.5f, 4, 3, 0.0f), 1);
+    free_test_pair(cn, zn);
+
+    /* Hand-pinned vectors: 180-degree rotation keeps splits, swaps
+     * every node (R: A,C -> C,A ratio 1-0.6; A: D,E -> E,D) and
+     * complements the zero leaf ratios to 1. */
+    make_test_pair(cn, zn);
+    window_node_rotate(cn[0], 180);
+    yabai_window_node_rotate(zn[0], 180);
+    TEST_CHECK(tree_struct_equal(cn, zn), 1);
+    TEST_CHECK(tree_shape_ok(cn, SPLIT_X, (1.0f - 0.6f), 2, 1, SPLIT_Y, 0.5f, 4, 3, 1.0f), 1);
+    TEST_CHECK(tree_shape_ok(zn, SPLIT_X, (1.0f - 0.6f), 2, 1, SPLIT_Y, 0.5f, 4, 3, 1.0f), 1);
+    free_test_pair(cn, zn);
+
+    /* Hand-pinned vectors: 270-degree rotation swaps only the X-split
+     * node (R: A,C -> C,A ratio 1-0.6) and flips both splits. */
+    make_test_pair(cn, zn);
+    window_node_rotate(cn[0], 270);
+    yabai_window_node_rotate(zn[0], 270);
+    TEST_CHECK(tree_struct_equal(cn, zn), 1);
+    TEST_CHECK(tree_shape_ok(cn, SPLIT_Y, (1.0f - 0.6f), 2, 1, SPLIT_X, 0.5f, 3, 4, 0.0f), 1);
+    TEST_CHECK(tree_shape_ok(zn, SPLIT_Y, (1.0f - 0.6f), 2, 1, SPLIT_X, 0.5f, 3, 4, 0.0f), 1);
+    free_test_pair(cn, zn);
+
+    /* Hand-pinned vectors: mirror about Y swaps only the Y-split node
+     * (A: D,E -> E,D); mirror about X swaps only R (A,C -> C,A).
+     * Splits and ratios are untouched; mirror returns its argument. */
+    make_test_pair(cn, zn);
+    c_ret = window_node_mirror(cn[0], SPLIT_Y);
+    z_ret = yabai_window_node_mirror(zn[0], SPLIT_Y);
+    TEST_CHECK(c_ret != cn[0], 0);
+    TEST_CHECK(z_ret != zn[0], 0);
+    TEST_CHECK(tree_struct_equal(cn, zn), 1);
+    TEST_CHECK(tree_shape_ok(cn, SPLIT_X, 0.6f, 1, 2, SPLIT_Y, 0.5f, 4, 3, 0.0f), 1);
+    TEST_CHECK(tree_shape_ok(zn, SPLIT_X, 0.6f, 1, 2, SPLIT_Y, 0.5f, 4, 3, 0.0f), 1);
+    free_test_pair(cn, zn);
+
+    make_test_pair(cn, zn);
+    c_ret = window_node_mirror(cn[0], SPLIT_X);
+    z_ret = yabai_window_node_mirror(zn[0], SPLIT_X);
+    TEST_CHECK(c_ret != cn[0], 0);
+    TEST_CHECK(z_ret != zn[0], 0);
+    TEST_CHECK(tree_struct_equal(cn, zn), 1);
+    TEST_CHECK(tree_shape_ok(cn, SPLIT_X, 0.6f, 2, 1, SPLIT_Y, 0.5f, 3, 4, 0.0f), 1);
+    TEST_CHECK(tree_shape_ok(zn, SPLIT_X, 0.6f, 2, 1, SPLIT_Y, 0.5f, 3, 4, 0.0f), 1);
     free_test_pair(cn, zn);
 })
 
