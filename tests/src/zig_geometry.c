@@ -152,4 +152,25 @@ TEST_FUNC(zig_area_make_pair_rounding,
     yabai_area_make_pair(SPLIT_X, 0, 0.5f, &parent, &left, &right);
     TEST_CHECK(memcmp(&left, &expected_left, sizeof(struct area)), 0);
     TEST_CHECK(memcmp(&right, &expected_right, sizeof(struct area)), 0);
+
+    /* Hand-computed with gap: SPLIT_Y over (0,0,200,100), ratio 0.5,
+     * gap 10. left_width = (200-10)*0.5 = 95, so left w=95 and
+     * right x=(int)(95.5)=95 + gap=105, right w=95. */
+    init_test_area(&parent, 0, 0, 200, 100);
+    init_test_area(&expected_left, 0, 0, 95, 100);
+    init_test_area(&expected_right, 105, 0, 95, 100);
+
+    yabai_area_make_pair(SPLIT_Y, 10, 0.5f, &parent, &left, &right);
+    TEST_CHECK(memcmp(&left, &expected_left, sizeof(struct area)), 0);
+    TEST_CHECK(memcmp(&right, &expected_right, sizeof(struct area)), 0);
+
+    /* Same gap rounding on the vertical axis for SPLIT_X:
+     * (0,0,100,200) gives left h=95, right y=105, right h=95. */
+    init_test_area(&parent, 0, 0, 100, 200);
+    init_test_area(&expected_left, 0, 0, 100, 95);
+    init_test_area(&expected_right, 0, 105, 100, 95);
+
+    yabai_area_make_pair(SPLIT_X, 10, 0.5f, &parent, &left, &right);
+    TEST_CHECK(memcmp(&left, &expected_left, sizeof(struct area)), 0);
+    TEST_CHECK(memcmp(&right, &expected_right, sizeof(struct area)), 0);
 })

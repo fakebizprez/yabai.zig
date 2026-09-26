@@ -127,19 +127,37 @@ TEST_FUNC(zig_view_leaf_walk,
 
     TEST_CHECK((void *) window_node_find_first_leaf(r) != (void *) yabai_window_node_find_first_leaf(r), 0);
     TEST_CHECK((void *) window_node_find_first_leaf(r) != (void *) d, 0);
+    TEST_CHECK((void *) yabai_window_node_find_first_leaf(r) != (void *) d, 0);
     TEST_CHECK((void *) window_node_find_last_leaf(r) != (void *) yabai_window_node_find_last_leaf(r), 0);
     TEST_CHECK((void *) window_node_find_last_leaf(r) != (void *) c, 0);
+    TEST_CHECK((void *) yabai_window_node_find_last_leaf(r) != (void *) c, 0);
 
     TEST_CHECK((void *) window_node_find_prev_leaf(e) != (void *) yabai_window_node_find_prev_leaf(e), 0);
     TEST_CHECK((void *) window_node_find_prev_leaf(e) != (void *) d, 0);
+    TEST_CHECK((void *) yabai_window_node_find_prev_leaf(e) != (void *) d, 0);
     TEST_CHECK((void *) window_node_find_prev_leaf(d) != (void *) yabai_window_node_find_prev_leaf(d), 0);
-    TEST_CHECK(window_node_find_prev_leaf(d) != yabai_window_node_find_prev_leaf(d), 0);
+    /* Hand-pinned boundary: first leaf in walk order has no predecessor. */
+    TEST_CHECK(window_node_find_prev_leaf(d), NULL);
+    TEST_CHECK(yabai_window_node_find_prev_leaf(d), NULL);
     TEST_CHECK((void *) window_node_find_next_leaf(d) != (void *) yabai_window_node_find_next_leaf(d), 0);
     TEST_CHECK((void *) window_node_find_next_leaf(d) != (void *) e, 0);
+    TEST_CHECK((void *) yabai_window_node_find_next_leaf(d) != (void *) e, 0);
     TEST_CHECK((void *) window_node_find_next_leaf(e) != (void *) yabai_window_node_find_next_leaf(e), 0);
     TEST_CHECK((void *) window_node_find_next_leaf(e) != (void *) c, 0);
+    TEST_CHECK((void *) yabai_window_node_find_next_leaf(e) != (void *) c, 0);
     TEST_CHECK((void *) window_node_find_next_leaf(c) != (void *) yabai_window_node_find_next_leaf(c), 0);
-    TEST_CHECK(window_node_find_next_leaf(c) != yabai_window_node_find_next_leaf(c), 0);
+    /* Hand-pinned boundary: last leaf in walk order has no successor. */
+    TEST_CHECK(window_node_find_next_leaf(c), NULL);
+    TEST_CHECK(yabai_window_node_find_next_leaf(c), NULL);
+
+    /* Hand-pinned vector: degenerate single-node tree is its own
+     * first and last leaf on both sides. */
+    struct window_node *solo_leaf = make_test_node();
+    TEST_CHECK((void *) window_node_find_first_leaf(solo_leaf) != (void *) solo_leaf, 0);
+    TEST_CHECK((void *) yabai_window_node_find_first_leaf(solo_leaf) != (void *) solo_leaf, 0);
+    TEST_CHECK((void *) window_node_find_last_leaf(solo_leaf) != (void *) solo_leaf, 0);
+    TEST_CHECK((void *) yabai_window_node_find_last_leaf(solo_leaf) != (void *) solo_leaf, 0);
+    free(solo_leaf);
 
     free_test_tree(r, a, c, d, e);
 })
@@ -512,10 +530,17 @@ TEST_FUNC(zig_view_find_window_node,
 
     TEST_CHECK((void *) view_find_window_node(c_view, 9) != (void *) yabai_view_find_window_node(z_view, 9), 0);
     TEST_CHECK((void *) view_find_window_node(c_view, 9) != (void *) d, 0);
+    TEST_CHECK((void *) yabai_view_find_window_node(z_view, 9) != (void *) d, 0);
+    /* Hand-pinned vector: second window id in the same multi-window leaf. */
+    TEST_CHECK((void *) view_find_window_node(c_view, 5) != (void *) d, 0);
+    TEST_CHECK((void *) yabai_view_find_window_node(z_view, 5) != (void *) d, 0);
     TEST_CHECK((void *) view_find_window_node(c_view, 7) != (void *) yabai_view_find_window_node(z_view, 7), 0);
     TEST_CHECK((void *) view_find_window_node(c_view, 7) != (void *) c, 0);
+    TEST_CHECK((void *) yabai_view_find_window_node(z_view, 7) != (void *) c, 0);
     TEST_CHECK((void *) view_find_window_node(c_view, 12345) != (void *) yabai_view_find_window_node(z_view, 12345), 0);
-    TEST_CHECK(view_find_window_node(c_view, 12345) != yabai_view_find_window_node(z_view, 12345), 0);
+    /* Hand-pinned vector: absent id resolves to NULL on both sides. */
+    TEST_CHECK(view_find_window_node(c_view, 12345), NULL);
+    TEST_CHECK(yabai_view_find_window_node(z_view, 12345), NULL);
 
     free(c_view);
     free(z_view);
@@ -623,6 +648,7 @@ TEST_FUNC(zig_view_child_split_ratio_gap,
     init_test_area(&sn->area, 0, 0, 100, 200);
     TEST_CHECK(window_node_get_split(v, sn) != yabai_window_node_get_split(v, sn, g_space_manager.split_type), 0);
     TEST_CHECK(window_node_get_split(v, sn), SPLIT_X);
+    TEST_CHECK(yabai_window_node_get_split(v, sn, SPLIT_X), SPLIT_X);
 
     v->split_type = SPLIT_NONE;
     g_space_manager.split_type = SPLIT_Y;
@@ -632,6 +658,7 @@ TEST_FUNC(zig_view_child_split_ratio_gap,
     g_space_manager.split_type = SPLIT_X;
     TEST_CHECK(window_node_get_split(v, sn) != yabai_window_node_get_split(v, sn, g_space_manager.split_type), 0);
     TEST_CHECK(window_node_get_split(v, sn), SPLIT_X);
+    TEST_CHECK(yabai_window_node_get_split(v, sn, SPLIT_X), SPLIT_X);
 
     v->split_type = SPLIT_NONE;
     g_space_manager.split_type = SPLIT_AUTO;
@@ -654,11 +681,13 @@ TEST_FUNC(zig_view_child_split_ratio_gap,
     TEST_CHECK(memcmp(&(float){0.5f}, &(float){yabai_window_node_get_ratio(sn, 0.5f)}, sizeof(float)), 0);
     sn->ratio = 0.95f;
     TEST_CHECK(memcmp(&(float){window_node_get_ratio(sn)}, &(float){yabai_window_node_get_ratio(sn, g_space_manager.split_ratio)}, sizeof(float)), 0);
+    TEST_CHECK(memcmp(&(float){0.5f}, &(float){yabai_window_node_get_ratio(sn, 0.5f)}, sizeof(float)), 0);
     sn->ratio = 0.1f;
     TEST_CHECK(memcmp(&(float){window_node_get_ratio(sn)}, &(float){yabai_window_node_get_ratio(sn, g_space_manager.split_ratio)}, sizeof(float)), 0);
     TEST_CHECK(memcmp(&(float){0.1f}, &(float){yabai_window_node_get_ratio(sn, 0.5f)}, sizeof(float)), 0);
     sn->ratio = 0.9f;
     TEST_CHECK(memcmp(&(float){window_node_get_ratio(sn)}, &(float){yabai_window_node_get_ratio(sn, g_space_manager.split_ratio)}, sizeof(float)), 0);
+    TEST_CHECK(memcmp(&(float){0.9f}, &(float){yabai_window_node_get_ratio(sn, 0.5f)}, sizeof(float)), 0);
     sn->ratio = 0.09f;
     TEST_CHECK(memcmp(&(float){0.5f}, &(float){yabai_window_node_get_ratio(sn, 0.5f)}, sizeof(float)), 0);
     sn->ratio = 0.91f;

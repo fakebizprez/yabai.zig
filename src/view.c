@@ -4,10 +4,17 @@ extern struct space_manager g_space_manager;
 extern struct window_manager g_window_manager;
 
 /* Zig delegates (zig/view.zig): parity-proven equivalents of the swap,
- * rotate, and mirror below. Signatures in src/view.h are unchanged. */
+ * rotate, mirror, leaf walk, and window lookup below. Signatures in
+ * src/view.h are unchanged. */
 void yabai_window_node_swap_window_list(struct window_node *a_node, struct window_node *b_node);
 void yabai_window_node_rotate(struct window_node *node, int degrees);
 struct window_node *yabai_window_node_mirror(struct window_node *node, int axis);
+struct window_node *yabai_window_node_find_first_leaf(struct window_node *root);
+struct window_node *yabai_window_node_find_last_leaf(struct window_node *root);
+struct window_node *yabai_window_node_find_prev_leaf(struct window_node *node);
+struct window_node *yabai_window_node_find_next_leaf(struct window_node *node);
+struct yabai_view;
+struct window_node *yabai_view_find_window_node(const struct yabai_view *view, uint32_t window_id);
 
 #define INSERT_FEEDBACK_WIDTH 2
 #define INSERT_FEEDBACK_RADIUS 9
@@ -409,50 +416,22 @@ void window_node_swap_window_list(struct window_node *a_node, struct window_node
 
 struct window_node *window_node_find_first_leaf(struct window_node *root)
 {
-    struct window_node *node = root;
-    while (!window_node_is_leaf(node)) {
-        node = node->left;
-    }
-    return node;
+    return yabai_window_node_find_first_leaf(root);
 }
 
 struct window_node *window_node_find_last_leaf(struct window_node *root)
 {
-    struct window_node *node = root;
-    while (!window_node_is_leaf(node)) {
-        node = node->right;
-    }
-    return node;
+    return yabai_window_node_find_last_leaf(root);
 }
 
 struct window_node *window_node_find_prev_leaf(struct window_node *node)
 {
-    if (!node->parent) return NULL;
-
-    if (window_node_is_left_child(node)) {
-        return window_node_find_prev_leaf(node->parent);
-    }
-
-    if (window_node_is_leaf(node->parent->left)) {
-        return node->parent->left;
-    }
-
-    return window_node_find_last_leaf(node->parent->left->right);
+    return yabai_window_node_find_prev_leaf(node);
 }
 
 struct window_node *window_node_find_next_leaf(struct window_node *node)
 {
-    if (!node->parent) return NULL;
-
-    if (window_node_is_right_child(node)) {
-        return window_node_find_next_leaf(node->parent);
-    }
-
-    if (window_node_is_leaf(node->parent->right)) {
-        return node->parent->right;
-    }
-
-    return window_node_find_first_leaf(node->parent->right->left);
+    return yabai_window_node_find_next_leaf(node);
 }
 
 void window_node_rotate(struct window_node *node, int degrees)
@@ -570,11 +549,7 @@ struct window_node *view_find_window_node_in_direction(struct view *view, struct
 
 struct window_node *view_find_window_node(struct view *view, uint32_t window_id)
 {
-    for (struct window_node *node = window_node_find_first_leaf(view->root); node; node = window_node_find_next_leaf(node)) {
-        if (window_node_contains_window(node, window_id)) return node;
-    }
-
-    return NULL;
+    return yabai_view_find_window_node((const struct yabai_view *) view, window_id);
 }
 
 struct window_node *view_remove_window_node(struct view *view, struct window *window)
