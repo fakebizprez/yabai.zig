@@ -217,6 +217,11 @@ unless doc/zig-refactor-plan.md explicitly allows a change.
   (SLS uuid and defaults lifted in wrappers; trailing view_update
   kept; dead C destroy body removed). Space-manager call sites now
   allocate views through Zig. 71/71 tests; leaks 0; 101 exports.
+- List routing: view_find_window_list delegates to Zig with
+  hand-pinned id arrays; the sole caller frees (no early returns).
+  Audit close-out in doc/zig-event-ownership.md: borrowed label
+  lifetimes, DAEMON_MESSAGE path, x86_64 parity — all evidenced.
+  71/71 tests; leaks 0; fat daemon, 101 exports.
 - Pure-helper slice (TDD) in zig/util.zig: `balance_node_add`,
   `clampf_range` (incl. NaN bit-parity), `json_bool`,
   `json_optional_bool`, float+int `in_range_ii/ei/ie` for the exact

@@ -10,11 +10,11 @@ extern struct window_manager g_window_manager;
  * uuid and the manager-defaults block here exactly as the C bodies
  * did, then call the Zig exports; the SLS-backed trailing
  * view_update stays in the wrappers. Signatures in src/view.h are
- * unchanged. view_find_window_list intentionally stays
- * in C: the Zig export returns caller-frees malloc memory where C
- * returns temp-pool memory, and the sole daemon caller
+ * unchanged. view_find_window_list delegates to Zig: the export
+ * returns caller-frees malloc memory (where C returned temp-pool
+ * memory), and the sole daemon caller
  * (window_manager_validate_windows_on_space in src/window_manager.c)
- * never frees, so routing would leak per validation. */
+ * frees it after its last use. */
 bool yabai_window_node_contains_window(struct window_node *node, uint32_t window_id);
 int yabai_window_node_index_of_window(struct window_node *node, uint32_t window_id);
 struct window_node *yabai_window_node_fence(struct window_node *node, int dir);
@@ -27,6 +27,7 @@ struct window_node *yabai_window_node_find_prev_leaf(struct window_node *node);
 struct window_node *yabai_window_node_find_next_leaf(struct window_node *node);
 struct yabai_view;
 struct window_node *yabai_view_find_window_node(const struct yabai_view *view, uint32_t window_id);
+uint32_t *yabai_view_find_window_list(const struct yabai_view *view, int *window_count);
 bool yabai_view_is_invalid(const struct yabai_view *view);
 bool yabai_view_is_dirty(const struct yabai_view *view);
 void yabai_view_stack_window(struct window_node *node, uint32_t window_id);
@@ -741,23 +742,7 @@ struct window_node *view_add_window_node(struct view *view, struct window *windo
 
 uint32_t *view_find_window_list(struct view *view, int *window_count)
 {
-    *window_count = 0;
-
-    int capacity = 13;
-    uint32_t *window_list = ts_alloc_list(uint32_t, capacity);
-
-    for (struct window_node *node = window_node_find_first_leaf(view->root); node; node = window_node_find_next_leaf(node)) {
-        if (*window_count + node->window_count >= capacity) {
-            ts_expand(window_list, sizeof(uint32_t) * capacity, sizeof(uint32_t) * capacity);
-            capacity *= 2;
-        }
-
-        for (int i = 0; i < node->window_count; ++i) {
-            window_list[(*window_count)++] = node->window_list[i];
-        }
-    }
-
-    return window_list;
+    return yabai_view_find_window_list((const struct yabai_view *) view, window_count);
 }
 
 bool view_is_invalid(struct view *view)

@@ -215,3 +215,98 @@ easing/rgba/find_rank/layer — no C call sites found for any of these.
   synchronous read-only use at the call sites — lifetime not traced into
   the manager implementations); x86_64-slice ownership parity (build
   evidence cited from baseline, not re-verified here).
+
+## 2026-09-26 close-out of §(5) verification items (@ 483174a)
+
+Worktree was detached at 483174a (no branch checked out), working tree
+clean before this append. No source/test/build files touched.
+
+Plan reconciliation: doc/zig-refactor-plan.md IS present in this
+worktree (it was missing at f0fe453, so the 2026-09-26 audit could not
+check it). Step 4 (plan :63) allows Zig-owned managers/worker only
+after callback payload ownership, queue ordering, temporary
+allocations, and shutdown behavior are explicit — that record is this
+document — with exit tests (launch/relaunch, window
+create/destroy/focus/move, display changes, sleep/wake, Dock restart,
+service lifecycle) passing on real macOS sessions.
+
+### (a) Label getters return borrowed pointers — CONFIRMED
+
+- `space_manager_get_label_for_space` (src/space_manager.c:145-155):
+  linear scan of `sm->labels`, returns `&sm->labels[i]` on sid match,
+  NULL otherwise. Zero allocation on the path.
+- `display_manager_get_label_for_display`
+  (src/display_manager.c:23-33): identical shape, returns
+  `&dm->labels[i]` on did match, NULL otherwise. Zero allocation.
+- Entries live in manager-owned buf arrays (`struct space_label
+  { uint64_t sid; char *label; }`, src/space_manager.h:4-8, store at
+  :28; `struct display_label { uint32_t did; char *label; }`,
+  src/display_manager.h:36-40, store at :53). `buf_push`
+  (src/space_manager.c:196, src/display_manager.c:74) may realloc and
+  `buf_del` (src/space_manager.c:175,191; src/display_manager.c:53,69)
+  frees/shifts entries, so the borrowed pointer is valid synchronously
+  only. Consumers honor that: src/display.c:45 reads the entry and
+  passes `display_label->label` into `yabai_display_serialize` at :64-70;
+  src/view.c:801 reads the entry and passes `space_label->label` into
+  `yabai_view_serialize` at :812-818. A third synchronous in-place use
+  (relabel on space recycle, src/space_manager.c:1184-1185) mutates
+  `label->sid` directly — borrowed, no transfer.
+- Zig side stores nothing: both exports take the label as an optional
+  NUL-terminated `const` pointer and emit it synchronously via fwrite
+  (zig/display.zig:82-118; zig/view.zig:802); a grep for file-scope
+  `var` in zig/display.zig, zig/rule.zig, zig/view.zig returns no
+  matches (only `extern var` decls of C globals, which Zig never
+  assigns). The audit's "borrowed" assumption is now traced, not
+  assumed.
+
+### (b) DAEMON_MESSAGE early-return path — CONFIRMED against the consumer
+
+- Handler src/event_loop.c:1614-1644: frame from `ts_alloc_unaligned`
+  at :1623 (NO length validation — unchanged); success path calls
+  `handle_message(rsp, message)` synchronously at :1634, flushes/closes
+  `rsp`, and `return`s at :1639.
+- The skipped code is in the consumer `event_loop_run`
+  (src/event_loop.c:1647-1679): `event_signal_flush()` at :1670 and
+  `ts_reset()` at :1671 run after every other event but not on this
+  path — the documented skip is exact.
+- `ts_*` semantics (src/misc/ts.h): bump allocator (:52-71),
+  `ts_reset` only zeroes `used` (:100-103). Therefore the frame and
+  every ts_-backed serialize input — `uuid` via `ts_cfstring_copy`
+  (src/misc/helpers.h:361-369, itself `ts_alloc_unaligned`), `space_mci`
+  via `ts_alloc_list` (src/display.c:56), the intermediate space list
+  via `ts_alloc_list` (src/display.c:209), `window_list` via
+  `ts_alloc_list`/`ts_resize` (src/space.c:35,71) — survive until the
+  NEXT dequeued event's `ts_reset`, exactly as the "Temporary storage
+  lifetime" section claims.
+- Zig retains nothing across the skip: the serialize exports run
+  synchronously inside `handle_message` (:1634) with borrowed inputs
+  (see (a)), and per the grep above no Zig object holds file-scope
+  mutable state. No-retention now cites the consumer (:1634, :1639 vs
+  :1670-1671), not just the exports.
+
+### (c) x86_64-slice ownership parity via `nm -u` — CONFIRMED, no divergence
+
+- Built with ./zig/build.sh (pinned zig 0.16.0, ReleaseSafe, macos.11.0
+  targets; lipo fat objects confirm `x86_64 arm64`).
+- zig-rule.o: undefined-symbol sets byte-identical across slices (all
+  manager externs — `_g_display_manager`, `_g_space_manager`, the
+  cursor/prev/next/first/last/mission-control selectors, both
+  get-for-label lookups — plus libc/regex/fwrite helpers).
+- zig-view.o: identical EXCEPT one arch-intrinsic spelling:
+  `___bzero` (x86_64) vs `_bzero` (arm64) — the same libc symbol with
+  the toolchain's per-arch builtin prefix; no `bzero`/`memset` source
+  exists in zig/view.zig, so it is compiler-emitted zeroing, not a
+  dependency difference. All manager externs (`_g_window_manager`,
+  `_window_manager_remove_managed_window`, `_insert_feedback_destroy`,
+  `_CFRelease`) match exactly. No ownership divergence.
+
+### Still open after this close-out
+
+- Step-4 live-session exit tests (plan :63: launch/relaunch, window
+  create/destroy/focus/move, display changes, sleep/wake, Dock restart,
+  service lifecycle on real macOS sessions) — unrunnable here, still
+  unverified.
+- Unchanged from the audit: parse_rule's manager-coupled branches
+  beyond zero-state; the combine_effects scratchpad libc-only
+  invariant; find_window_list routing decision; unrouted exports
+  (view_create/clear/destroy, rule_destroy and the test-only set).
