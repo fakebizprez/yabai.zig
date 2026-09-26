@@ -1751,8 +1751,8 @@ TEST_FUNC(zig_view_clear_zoom,
 
 uint32_t *yabai_view_find_window_list(const struct yabai_view *view, int *window_count);
 
-/* Temp-pool init for the C oracle (mirrors zig_rule.c): the Zig side
- * uses libc malloc and never touches the pool. */
+/* Temp-pool init (mirrors zig_rule.c): both list sides now use libc
+ * malloc and never touch the pool; the reset keeps pool state sane. */
 static void ensure_ts_for_window_list(void)
 {
     static bool ts_ready = false;
@@ -1773,9 +1773,10 @@ static void set_leaf_windows(struct window_node *node, uint32_t base, int count)
     node->window_count = count;
 }
 
-/* Oracle parity: the C temp-pool list vs the Zig malloc'd list. Compares
- * the count and the out bytes with memcmp, then frees only the Zig side
- * (the C side is temp-pool memory the caller never frees). */
+/* Oracle parity: the C delegate list vs the Zig malloc'd list (both
+ * caller-frees malloc since routing; the hand-pinned vectors below
+ * guard the now-tautological memcmp). Compares the count and the out
+ * bytes with memcmp, then frees both sides. */
 static int window_list_case(struct window_node *root, int expected_count)
 {
     struct view *c_view = malloc(sizeof(struct view));
@@ -1799,6 +1800,7 @@ static int window_list_case(struct window_node *root, int expected_count)
         else if (memcmp(c_list, z_list, (size_t) c_count * sizeof(uint32_t)) != 0) ok = 0;
     }
 
+    if (c_list) free(c_list);
     if (z_list) free(z_list);
     free(c_view);
     free(z_view);
@@ -1842,6 +1844,7 @@ TEST_FUNC(zig_view_find_window_list,
         } else {
             TEST_CHECK(cl2 != NULL && zl2 != NULL, 1);
         }
+        if (cl2) free(cl2);
         if (zl2) free(zl2);
         free(cv2);
         free(zv2);
@@ -1885,6 +1888,7 @@ TEST_FUNC(zig_view_find_window_list,
         TEST_CHECK(z_list[0], 5);
         TEST_CHECK(z_list[1], 9);
         TEST_CHECK(z_list[2], 7);
+        free(c_list);
         free(z_list);
     } else {
         TEST_CHECK(c_list != NULL && z_list != NULL, 1);
@@ -1899,6 +1903,60 @@ TEST_FUNC(zig_view_find_window_list,
     set_leaf_windows(e, 101, 7);
     set_leaf_windows(c, 201, 1);
     TEST_CHECK(window_list_case(r, 15), 1);
+    /* Hand-pinned: leaf visit order is D, E, C, so the flattened
+     * list is [1..7, 101..107, 201], count 15, on both sides. */
+    {
+        struct view *cv3 = malloc(sizeof(struct view));
+        memset(cv3, 0, sizeof(struct view));
+        cv3->root = r;
+        struct yabai_view *zv3 = malloc(sizeof(struct yabai_view));
+        memset(zv3, 0, sizeof(struct yabai_view));
+        zv3->root = r;
+        int cc3 = -1;
+        int zc3 = -2;
+        uint32_t *cl3 = view_find_window_list(cv3, &cc3);
+        uint32_t *zl3 = yabai_view_find_window_list(zv3, &zc3);
+        TEST_CHECK(cc3, 15);
+        TEST_CHECK(zc3, 15);
+        if (cl3 && zl3) {
+            TEST_CHECK(cl3[0], 1);
+            TEST_CHECK(cl3[1], 2);
+            TEST_CHECK(cl3[2], 3);
+            TEST_CHECK(cl3[3], 4);
+            TEST_CHECK(cl3[4], 5);
+            TEST_CHECK(cl3[5], 6);
+            TEST_CHECK(cl3[6], 7);
+            TEST_CHECK(cl3[7], 101);
+            TEST_CHECK(cl3[8], 102);
+            TEST_CHECK(cl3[9], 103);
+            TEST_CHECK(cl3[10], 104);
+            TEST_CHECK(cl3[11], 105);
+            TEST_CHECK(cl3[12], 106);
+            TEST_CHECK(cl3[13], 107);
+            TEST_CHECK(cl3[14], 201);
+            TEST_CHECK(zl3[0], 1);
+            TEST_CHECK(zl3[1], 2);
+            TEST_CHECK(zl3[2], 3);
+            TEST_CHECK(zl3[3], 4);
+            TEST_CHECK(zl3[4], 5);
+            TEST_CHECK(zl3[5], 6);
+            TEST_CHECK(zl3[6], 7);
+            TEST_CHECK(zl3[7], 101);
+            TEST_CHECK(zl3[8], 102);
+            TEST_CHECK(zl3[9], 103);
+            TEST_CHECK(zl3[10], 104);
+            TEST_CHECK(zl3[11], 105);
+            TEST_CHECK(zl3[12], 106);
+            TEST_CHECK(zl3[13], 107);
+            TEST_CHECK(zl3[14], 201);
+        } else {
+            TEST_CHECK(cl3 != NULL && zl3 != NULL, 1);
+        }
+        if (cl3) free(cl3);
+        if (zl3) free(zl3);
+        free(cv3);
+        free(zv3);
+    }
     free_test_tree(r, a, c, d, e);
 
     /* Growth past 26: 10 + 10 + 10 windows force 13 -> 26 -> 52. */

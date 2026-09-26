@@ -2592,6 +2592,8 @@ static void window_manager_validate_windows_on_space(struct window_manager *wm, 
             view_set_flag(view, VIEW_IS_DIRTY);
         }
     }
+
+    free(view_window_list);
 }
 
 static void window_manager_check_for_windows_on_space(struct window_manager *wm, struct view *view, uint32_t *window_list, int window_count)
