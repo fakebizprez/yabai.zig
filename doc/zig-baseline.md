@@ -228,6 +228,12 @@ unless doc/zig-refactor-plan.md explicitly allows a change.
   (f32-narrowing mirrored), mod-bit map, drop action with CG
   min-in/max-exclusive center rect proven by fall-through vectors.
   106 exports; 76/76 tests; leaks 0; x86_64 verified.
+- Match routing: window_manager_rule_matches_window delegates with
+  the app name lifted; NULL-with-VALID defined as NO (C segfaults;
+  daemon never produces NULL).
+- Drop-action routing: mouse_determine_drop_action delegates with
+  scalar lifts; event-loop call sites run Zig. 76/76 tests; leaks 0;
+  fat daemon, 106 exports.
 - Pure-helper slice (TDD) in zig/util.zig: `balance_node_add`,
   `clampf_range` (incl. NaN bit-parity), `json_bool`,
   `json_optional_bool`, float+int `in_range_ii/ei/ie` for the exact
