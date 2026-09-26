@@ -2,6 +2,12 @@ extern struct event_loop g_event_loop;
 extern volatile bool __pending_gesture;
 extern volatile uint64_t __last_gesture_time;
 
+/* Zig delegate (zig/mouse.zig): parity-proven equivalent of the drop-action
+ * geometry below. The wrapper lifts ms->drop_action, src_node->window_count,
+ * dst_window->frame, and point to scalars here exactly as the C body read
+ * them. Signature in src/mouse_handler.h is unchanged. */
+int yabai_mouse_determine_drop_action(int drop_mode, int src_count, double fx, double fy, double fw, double fh, double px, double py);
+
 static inline uint8_t mouse_mod_from_cgflags(uint32_t cgflags)
 {
     uint8_t flags = 0;
@@ -107,27 +113,10 @@ void mouse_window_info_populate(struct mouse_state *ms, struct mouse_window_info
 
 enum mouse_drop_action mouse_determine_drop_action(struct mouse_state *ms, struct window_node *src_node, struct window *dst_window, CGPoint point)
 {
-    CGRect  f    = dst_window->frame;
-    CGPoint wp   = { point.x - f.origin.x, point.y - f.origin.y };
-    CGRect  c    = {{ 0.25f * f.size.width, 0.25f * f.size.height }, { 0.50f * f.size.width, 0.50f * f.size.height }};
-    CGPoint t[3] = {{ 0.0f, 0.0f}, { 0.5f * f.size.width, 0.5f * f.size.height }, { f.size.width, 0.0f }};
-    CGPoint r[3] = {{ f.size.width, 0.0f }, { 0.5f * f.size.width, 0.5f * f.size.height }, { f.size.width, f.size.height }};
-    CGPoint b[3] = {{ f.size.width, f.size.height }, { 0.5f * f.size.width, 0.5f * f.size.height }, { 0.0f, f.size.height }};
-    CGPoint l[3] = {{ 0.0f, f.size.height }, { 0.5f * f.size.width, 0.5f * f.size.height }, { 0.0f, 0.0f }};
-
-    if ((CGRectContainsPoint(c, wp)) && (src_node->window_count == 1)) {
-        return ms->drop_action == MOUSE_MODE_STACK ? MOUSE_DROP_ACTION_STACK : MOUSE_DROP_ACTION_SWAP;
-    } else if (triangle_contains_point(t, wp)) {
-        return MOUSE_DROP_ACTION_WARP_TOP;
-    } else if (triangle_contains_point(r, wp)) {
-        return MOUSE_DROP_ACTION_WARP_RIGHT;
-    } else if (triangle_contains_point(b, wp)) {
-        return MOUSE_DROP_ACTION_WARP_BOTTOM;
-    } else if (triangle_contains_point(l, wp)) {
-        return MOUSE_DROP_ACTION_WARP_LEFT;
-    }
-
-    return MOUSE_DROP_ACTION_NONE;
+    return yabai_mouse_determine_drop_action(ms->drop_action, src_node->window_count,
+                                             dst_window->frame.origin.x, dst_window->frame.origin.y,
+                                             dst_window->frame.size.width, dst_window->frame.size.height,
+                                             point.x, point.y);
 }
 
 void mouse_drop_action_stack(struct window_manager *wm, struct view *src_view, struct window *src_window, struct view *dst_view, struct window *dst_window)

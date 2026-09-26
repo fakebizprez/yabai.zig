@@ -1584,6 +1584,20 @@ static int match_parity(struct rule *r, const char *app, const char *title, cons
     return 1;
 }
 
+/* C-oracle literal probe: same window construction as match_parity but
+ * returns the C result directly so hand-pinned true/false vectors pin
+ * the oracle itself, not just C-vs-Z agreement. */
+static bool c_matches_window(struct rule *r, const char *app, const char *title, const char *role, const char *subrole)
+{
+    struct application appl;
+    struct window win;
+    memset(&appl, 0, sizeof(appl));
+    memset(&win, 0, sizeof(win));
+    appl.name = (char *) app;
+    win.application = &appl;
+    return window_manager_rule_matches_window(r, &win, (char *) title, (char *) role, (char *) subrole);
+}
+
 TEST_FUNC(zig_rule_matches_window_parity,
 {
     /* Single-field include rules: hit matches, miss does not. */
@@ -1728,6 +1742,97 @@ TEST_FUNC(zig_rule_matches_window_parity,
         init_match_rule(&r, ".*", NULL, NULL, NULL, RULE_APP_VALID);
         TEST_CHECK(match_parity(&r, "", "bash", "AXWindow", "AXStandardWindow"), 1);
         TEST_CHECK(yabai_rule_matches_window(&r, "", "bash", "AXWindow", "AXStandardWindow"), true);
+        rule_destroy(&r);
+    }
+
+    /* Hand-pinned C-oracle literals per field: same vectors as above but
+     * asserting the C result directly, so a shared C+Z bug cannot hide
+     * behind parity agreement. Each field covers hit (true), miss
+     * (false), EXCLUDE inversion, and the UD path (VALID-clear). */
+    {
+        struct rule r;
+        init_match_rule(&r, "Terminal", NULL, NULL, NULL, RULE_APP_VALID);
+        TEST_CHECK(c_matches_window(&r, "Terminal", "bash", "AXWindow", "AXStandardWindow"), true);
+        TEST_CHECK(c_matches_window(&r, "Safari", "bash", "AXWindow", "AXStandardWindow"), false);
+        rule_destroy(&r);
+    }
+    {
+        struct rule r;
+        init_match_rule(&r, NULL, "^bash$", NULL, NULL, RULE_TITLE_VALID);
+        TEST_CHECK(c_matches_window(&r, "Terminal", "bash", "AXWindow", "AXStandardWindow"), true);
+        TEST_CHECK(c_matches_window(&r, "Terminal", "zsh", "AXWindow", "AXStandardWindow"), false);
+        rule_destroy(&r);
+    }
+    {
+        struct rule r;
+        init_match_rule(&r, NULL, NULL, "AXWindow", NULL, RULE_ROLE_VALID);
+        TEST_CHECK(c_matches_window(&r, "Terminal", "bash", "AXWindow", "AXStandardWindow"), true);
+        TEST_CHECK(c_matches_window(&r, "Terminal", "bash", "AXDialog", "AXStandardWindow"), false);
+        rule_destroy(&r);
+    }
+    {
+        struct rule r;
+        init_match_rule(&r, NULL, NULL, NULL, "AXStandardWindow", RULE_SUBROLE_VALID);
+        TEST_CHECK(c_matches_window(&r, "Terminal", "bash", "AXWindow", "AXStandardWindow"), true);
+        TEST_CHECK(c_matches_window(&r, "Terminal", "bash", "AXWindow", "AXUnknown"), false);
+        rule_destroy(&r);
+    }
+    {
+        struct rule r;
+        init_match_rule(&r, "Terminal", NULL, NULL, NULL, RULE_APP_VALID | RULE_APP_EXCLUDE);
+        TEST_CHECK(c_matches_window(&r, "Terminal", "bash", "AXWindow", "AXStandardWindow"), false);
+        TEST_CHECK(c_matches_window(&r, "Safari", "bash", "AXWindow", "AXStandardWindow"), true);
+        rule_destroy(&r);
+    }
+    {
+        struct rule r;
+        init_match_rule(&r, NULL, "^bash$", NULL, NULL, RULE_TITLE_VALID | RULE_TITLE_EXCLUDE);
+        TEST_CHECK(c_matches_window(&r, "Terminal", "bash", "AXWindow", "AXStandardWindow"), false);
+        TEST_CHECK(c_matches_window(&r, "Terminal", "zsh", "AXWindow", "AXStandardWindow"), true);
+        rule_destroy(&r);
+    }
+    {
+        struct rule r;
+        init_match_rule(&r, NULL, NULL, "AXWindow", NULL, RULE_ROLE_VALID | RULE_ROLE_EXCLUDE);
+        TEST_CHECK(c_matches_window(&r, "Terminal", "bash", "AXWindow", "AXStandardWindow"), false);
+        TEST_CHECK(c_matches_window(&r, "Terminal", "bash", "AXDialog", "AXStandardWindow"), true);
+        rule_destroy(&r);
+    }
+    {
+        struct rule r;
+        init_match_rule(&r, NULL, NULL, NULL, "AXStandardWindow", RULE_SUBROLE_VALID | RULE_SUBROLE_EXCLUDE);
+        TEST_CHECK(c_matches_window(&r, "Terminal", "bash", "AXWindow", "AXStandardWindow"), false);
+        TEST_CHECK(c_matches_window(&r, "Terminal", "bash", "AXWindow", "AXUnknown"), true);
+        rule_destroy(&r);
+    }
+    {
+        struct rule r;
+        init_match_rule(&r, "Terminal", "^bash$", "AXWindow", "AXStandardWindow",
+                        RULE_APP_VALID | RULE_TITLE_VALID | RULE_ROLE_VALID | RULE_SUBROLE_VALID);
+        TEST_CHECK(c_matches_window(&r, "Terminal", "bash", "AXWindow", "AXStandardWindow"), true);
+        TEST_CHECK(c_matches_window(&r, "Safari", "bash", "AXWindow", "AXStandardWindow"), false);
+        TEST_CHECK(c_matches_window(&r, "Terminal", "zsh", "AXWindow", "AXStandardWindow"), false);
+        TEST_CHECK(c_matches_window(&r, "Terminal", "bash", "AXDialog", "AXStandardWindow"), false);
+        TEST_CHECK(c_matches_window(&r, "Terminal", "bash", "AXWindow", "AXUnknown"), false);
+        rule_destroy(&r);
+    }
+    {
+        struct rule r;
+        init_match_rule(&r, NULL, NULL, NULL, NULL, 0);
+        TEST_CHECK(c_matches_window(&r, "Terminal", "bash", "AXWindow", "AXStandardWindow"), true);
+        TEST_CHECK(c_matches_window(&r, NULL, NULL, NULL, NULL), true);
+        rule_destroy(&r);
+    }
+    {
+        struct rule r;
+        init_match_rule(&r, "Terminal", NULL, NULL, NULL, RULE_APP_VALID);
+        TEST_CHECK(c_matches_window(&r, "", "bash", "AXWindow", "AXStandardWindow"), false);
+        rule_destroy(&r);
+    }
+    {
+        struct rule r;
+        init_match_rule(&r, ".*", NULL, NULL, NULL, RULE_APP_VALID);
+        TEST_CHECK(c_matches_window(&r, "", "bash", "AXWindow", "AXStandardWindow"), true);
         rule_destroy(&r);
     }
 })

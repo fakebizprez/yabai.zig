@@ -19,6 +19,12 @@ int yabai_window_node_get_gap(struct view *view);
 float yabai_window_node_get_ratio(struct window_node *node, float space_split_ratio);
 void yabai_area_make_pair(int split, int gap, float ratio, const struct area *parent, struct area *left, struct area *right);
 
+/* Zig delegate (zig/rule.zig): parity-proven equivalent of
+ * window_manager_rule_matches_window below. Signature in
+ * src/window_manager.h is unchanged; the window's application name
+ * is lifted as a plain string at the boundary. */
+bool yabai_rule_matches_window(const struct rule *rule, const char *app_name, const char *window_title, const char *window_role, const char *window_subrole);
+
 static TABLE_HASH_FUNC(hash_wm)
 {
     return *(uint32_t *) key;
@@ -103,19 +109,7 @@ void window_manager_query_windows_for_displays(FILE *rsp, uint64_t flags)
 
 bool window_manager_rule_matches_window(struct rule *rule, struct window *window, char *window_title, char *window_role, char *window_subrole)
 {
-    int regex_match_app = rule_check_flag(rule, RULE_APP_EXCLUDE) ? REGEX_MATCH_YES : REGEX_MATCH_NO;
-    if (regex_match(rule_check_flag(rule, RULE_APP_VALID), &rule->app_regex, window->application->name) == regex_match_app) return false;
-
-    int regex_match_title = rule_check_flag(rule, RULE_TITLE_EXCLUDE) ? REGEX_MATCH_YES : REGEX_MATCH_NO;
-    if (regex_match(rule_check_flag(rule, RULE_TITLE_VALID), &rule->title_regex, window_title) == regex_match_title) return false;
-
-    int regex_match_role = rule_check_flag(rule, RULE_ROLE_EXCLUDE) ? REGEX_MATCH_YES : REGEX_MATCH_NO;
-    if (regex_match(rule_check_flag(rule, RULE_ROLE_VALID), &rule->role_regex, window_role) == regex_match_role) return false;
-
-    int regex_match_subrole = rule_check_flag(rule, RULE_SUBROLE_EXCLUDE) ? REGEX_MATCH_YES : REGEX_MATCH_NO;
-    if (regex_match(rule_check_flag(rule, RULE_SUBROLE_VALID), &rule->subrole_regex, window_subrole) == regex_match_subrole) return false;
-
-    return true;
+    return yabai_rule_matches_window(rule, window->application->name, window_title, window_role, window_subrole);
 }
 
 void window_manager_apply_manage_rule_effects_to_window(struct space_manager *sm, struct window_manager *wm, struct window *window, struct rule_effects *effects)
