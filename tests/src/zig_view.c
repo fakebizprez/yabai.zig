@@ -1928,22 +1928,9 @@ TEST_FUNC(zig_view_find_window_list,
  * CFRelease, all headless-safe once the table below is initialized).
  */
 
-struct yabai_view_defaults
-{
-    int layout;
-    int top_padding;
-    int bottom_padding;
-    int left_padding;
-    int right_padding;
-    int window_gap;
-    uint32_t auto_balance;
-    int split_type;
-};
-
-struct yabai_view *yabai_view_create(uint64_t sid, void *uuid, bool is_user, const struct yabai_view_defaults *defaults);
-void yabai_view_clear(struct yabai_view *view);
-void yabai_view_destroy(struct yabai_view *view);
-
+/* yabai_view_create/clear/destroy and struct yabai_view_defaults come
+ * from src/view.c (included via manifest.m above): a single
+ * definition shared by the daemon and the suite. */
 _Static_assert(sizeof(struct yabai_view_defaults) == 32, "view defaults size drift");
 
 /* Snapshots the live manager defaults the C user branch copies. */
@@ -1957,6 +1944,22 @@ static void fill_view_defaults(struct yabai_view_defaults *d)
     d->window_gap = g_space_manager.window_gap;
     d->auto_balance = g_space_manager.auto_balance;
     d->split_type = g_space_manager.split_type;
+}
+
+/* Fixed hand-pinned defaults (not the live snapshot): stack layout,
+ * paddings 11/22/33/44, gap 8, both-axis balance, X split. Every
+ * lifecycle pin below asserts these literals verbatim, so the vectors
+ * stay meaningful after the C bodies delegate to the Zig exports. */
+static void fill_fixed_view_defaults(struct yabai_view_defaults *d)
+{
+    d->layout = VIEW_STACK;
+    d->top_padding = 11;
+    d->bottom_padding = 22;
+    d->left_padding = 33;
+    d->right_padding = 44;
+    d->window_gap = 8;
+    d->auto_balance = (uint32_t)(SPLIT_Y | SPLIT_X);
+    d->split_type = SPLIT_X;
 }
 
 /* The destroy/clear remove path needs a live managed_window table
@@ -2013,6 +2016,38 @@ TEST_FUNC(zig_view_lifecycle_create,
         free(z);
     }
 
+    /* Hand-pinned vector: fixed defaults pin every user-branch field
+     * to a literal. sid 777001, stack layout (2), paddings
+     * 11/22/33/44, gap 8, balance 3 (Y|X axis bits), X split (2);
+     * flags exactly ENABLE_PADDING|ENABLE_GAP (0x180). */
+    struct yabai_view_defaults fixed;
+    fill_fixed_view_defaults(&fixed);
+    struct yabai_view *zh = yabai_view_create(777001, NULL, true, &fixed);
+    TEST_CHECK(zh != NULL, 1);
+    if (zh) {
+        TEST_CHECK(zh->uuid, NULL);
+        TEST_CHECK(zh->sid != 777001, 0);
+        TEST_CHECK(zh->root != NULL, 1);
+        TEST_CHECK(zh->insertion_point, 0);
+        TEST_CHECK(zh->layout, VIEW_STACK);
+        TEST_CHECK(zh->layout, 2);
+        TEST_CHECK(zh->top_padding, 11);
+        TEST_CHECK(zh->bottom_padding, 22);
+        TEST_CHECK(zh->left_padding, 33);
+        TEST_CHECK(zh->right_padding, 44);
+        TEST_CHECK(zh->window_gap, 8);
+        TEST_CHECK(zh->auto_balance != 3, 0);
+        TEST_CHECK(zh->split_type, SPLIT_X);
+        TEST_CHECK(zh->split_type, 2);
+        TEST_CHECK(zh->flags, (uint64_t)(VIEW_ENABLE_PADDING | VIEW_ENABLE_GAP));
+        TEST_CHECK(zh->flags != 0x180, 0);
+        struct window_node hzero;
+        memset(&hzero, 0, sizeof(hzero));
+        TEST_CHECK(memcmp(zh->root, &hzero, sizeof(hzero)), 0);
+        yabai_view_destroy(zh);
+        free(zh);
+    }
+
     /* Non-NULL uuid assigns verbatim and releases on destroy: the +1
      * here is balanced by the destroy path (leaks-clean under -atExit). */
     CFStringRef owned = CFStringCreateWithCString(NULL, "yabai-test-uuid", kCFStringEncodingUTF8);
@@ -2048,6 +2083,33 @@ TEST_FUNC(zig_view_lifecycle_create,
         TEST_CHECK(zf->flags, (uint64_t)(VIEW_ENABLE_PADDING | VIEW_ENABLE_GAP));
         yabai_view_destroy(zf);
         free(zf);
+    }
+
+    /* Hand-pinned vector: the non-user branch ignores the fixed
+     * tunables and pins VIEW_FLOAT (3) with zeroed fields. */
+    struct yabai_view *zfh = yabai_view_create(777001, NULL, false, &fixed);
+    TEST_CHECK(zfh != NULL, 1);
+    if (zfh) {
+        TEST_CHECK(zfh->uuid, NULL);
+        TEST_CHECK(zfh->sid != 777001, 0);
+        TEST_CHECK(zfh->root != NULL, 1);
+        TEST_CHECK(zfh->insertion_point, 0);
+        TEST_CHECK(zfh->layout, VIEW_FLOAT);
+        TEST_CHECK(zfh->layout, 3);
+        TEST_CHECK(zfh->top_padding, 0);
+        TEST_CHECK(zfh->bottom_padding, 0);
+        TEST_CHECK(zfh->left_padding, 0);
+        TEST_CHECK(zfh->right_padding, 0);
+        TEST_CHECK(zfh->window_gap, 0);
+        TEST_CHECK(zfh->auto_balance, 0);
+        TEST_CHECK(zfh->split_type, 0);
+        TEST_CHECK(zfh->flags, (uint64_t)(VIEW_ENABLE_PADDING | VIEW_ENABLE_GAP));
+        TEST_CHECK(zfh->flags != 0x180, 0);
+        struct window_node fzero;
+        memset(&fzero, 0, sizeof(fzero));
+        TEST_CHECK(memcmp(zfh->root, &fzero, sizeof(fzero)), 0);
+        yabai_view_destroy(zfh);
+        free(zfh);
     }
 })
 
@@ -2103,6 +2165,36 @@ TEST_FUNC(zig_view_lifecycle_clear,
     TEST_CHECK(memcmp(z->root, &zero, sizeof(zero)), 0);
     TEST_CHECK(z->root->window_count, 0);
 
+    /* Hand-pinned vector: a fixed-defaults view keeps every scalar
+     * through clear while the grafted fork (root {53,54} over
+     * L {50,51} and R {52}) drops and the root zeroes for reuse. */
+    struct yabai_view_defaults f2;
+    fill_fixed_view_defaults(&f2);
+    struct yabai_view *z2 = yabai_view_create(777002, NULL, true, &f2);
+    graft_clear_tree(z2->root, 50);
+    yabai_view_clear(z2);
+    TEST_CHECK(memcmp(z2->root, &zero, sizeof(zero)), 0);
+    TEST_CHECK(z2->root->window_count, 0);
+    TEST_CHECK(z2->root->left, NULL);
+    TEST_CHECK(z2->root->right, NULL);
+    TEST_CHECK(z2->sid != 777002, 0);
+    TEST_CHECK(z2->uuid, NULL);
+    TEST_CHECK(z2->insertion_point, 0);
+    TEST_CHECK(z2->layout, VIEW_STACK);
+    TEST_CHECK(z2->layout, 2);
+    TEST_CHECK(z2->top_padding, 11);
+    TEST_CHECK(z2->bottom_padding, 22);
+    TEST_CHECK(z2->left_padding, 33);
+    TEST_CHECK(z2->right_padding, 44);
+    TEST_CHECK(z2->window_gap, 8);
+    TEST_CHECK(z2->auto_balance != 3, 0);
+    TEST_CHECK(z2->split_type, SPLIT_X);
+    TEST_CHECK(z2->split_type, 2);
+    TEST_CHECK(z2->flags, (uint64_t)(VIEW_ENABLE_PADDING | VIEW_ENABLE_GAP));
+    TEST_CHECK(z2->flags != 0x180, 0);
+    yabai_view_destroy(z2);
+    free(z2);
+
     /* NULL-root clear is a no-op. */
     struct yabai_view *zn = malloc(sizeof(struct yabai_view));
     memset(zn, 0, sizeof(struct yabai_view));
@@ -2136,6 +2228,52 @@ TEST_FUNC(zig_view_lifecycle_destroy,
     graft_clear_tree(z->root, 60);
     yabai_view_destroy(z);
     free(z);
+
+    /* Hand-pinned traversal shapes: plant every window id of the
+     * grafted fork in the managed table, destroy, and prove the walk
+     * visited each node (a skipped subtree would leave its ids
+     * behind). Graft base 60: L {60,61}, R {62}, root {63,64}. */
+    struct view *cd = malloc(sizeof(struct view));
+    memset(cd, 0, sizeof(struct view));
+    cd->sid = sid;
+    cd->root = make_test_node();
+    graft_clear_tree(cd->root, 60);
+    uint32_t cd_ids[5];
+    cd_ids[0] = 60; cd_ids[1] = 61; cd_ids[2] = 62; cd_ids[3] = 63; cd_ids[4] = 64;
+    int k = 0;
+    for (k = 0; k < 5; ++k) table_add(&g_window_manager.managed_window, &cd_ids[k], cd);
+    view_destroy(cd);
+    for (k = 0; k < 5; ++k) TEST_CHECK(table_find(&g_window_manager.managed_window, &cd_ids[k]), NULL);
+    free(cd);
+
+    struct yabai_view *zd = yabai_view_create(sid, NULL, true, &d);
+    graft_clear_tree(zd->root, 70);
+    uint32_t zd_ids[5];
+    zd_ids[0] = 70; zd_ids[1] = 71; zd_ids[2] = 72; zd_ids[3] = 73; zd_ids[4] = 74;
+    for (k = 0; k < 5; ++k) table_add(&g_window_manager.managed_window, &zd_ids[k], zd);
+    yabai_view_destroy(zd);
+    for (k = 0; k < 5; ++k) TEST_CHECK(table_find(&g_window_manager.managed_window, &zd_ids[k]), NULL);
+    free(zd);
+
+    /* Deep traversal: five-node R -> (A, C); A -> (D, E) with
+     * D {80,81} and C {82} drains through the intermediate level. */
+    struct yabai_view *zt = yabai_view_create(sid, NULL, true, &d);
+    struct window_node *tr;
+    struct window_node *ta;
+    struct window_node *tc;
+    struct window_node *td;
+    struct window_node *te;
+    make_test_tree(&tr, &ta, &tc, &td, &te);
+    set_test_windows(td, 80, 81, 2);
+    set_test_windows(tc, 82, 0, 1);
+    free(zt->root);
+    zt->root = tr;
+    uint32_t zt_ids[3];
+    zt_ids[0] = 80; zt_ids[1] = 81; zt_ids[2] = 82;
+    for (k = 0; k < 3; ++k) table_add(&g_window_manager.managed_window, &zt_ids[k], zt);
+    yabai_view_destroy(zt);
+    for (k = 0; k < 3; ++k) TEST_CHECK(table_find(&g_window_manager.managed_window, &zt_ids[k]), NULL);
+    free(zt);
 
     /* Owned uuids release exactly once on both sides. */
     struct view *cu = malloc(sizeof(struct view));

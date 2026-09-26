@@ -5,8 +5,12 @@ extern struct window_manager g_window_manager;
 
 /* Zig delegates (zig/view.zig): parity-proven equivalents of the swap,
  * rotate, mirror, leaf walk, window lookup, fence, contains/index,
- * invalid/dirty predicates, and stack insert below. Signatures in
- * src/view.h are unchanged. view_find_window_list intentionally stays
+ * invalid/dirty predicates, stack insert, and view lifecycle
+ * (create/clear/destroy) below. The lifecycle wrappers lift the SLS
+ * uuid and the manager-defaults block here exactly as the C bodies
+ * did, then call the Zig exports; the SLS-backed trailing
+ * view_update stays in the wrappers. Signatures in src/view.h are
+ * unchanged. view_find_window_list intentionally stays
  * in C: the Zig export returns caller-frees malloc memory where C
  * returns temp-pool memory, and the sole daemon caller
  * (window_manager_validate_windows_on_space in src/window_manager.c)
@@ -26,6 +30,25 @@ struct window_node *yabai_view_find_window_node(const struct yabai_view *view, u
 bool yabai_view_is_invalid(const struct yabai_view *view);
 bool yabai_view_is_dirty(const struct yabai_view *view);
 void yabai_view_stack_window(struct window_node *node, uint32_t window_id);
+
+/* Caller-lifted inputs for yabai_view_create (zig/view.zig
+ * ViewDefaults): field order mirrors the C user-branch assignment
+ * order (layout, paddings, gap, auto_balance, split_type). */
+struct yabai_view_defaults
+{
+    int layout;
+    int top_padding;
+    int bottom_padding;
+    int left_padding;
+    int right_padding;
+    int window_gap;
+    uint32_t auto_balance;
+    int split_type;
+};
+struct yabai_view *yabai_view_create(uint64_t sid, CFStringRef uuid, bool is_user, const struct yabai_view_defaults *defaults);
+void yabai_view_clear(struct yabai_view *view);
+void yabai_view_destroy(struct yabai_view *view);
+_Static_assert(sizeof(struct yabai_view_defaults) == 32, "view defaults size drift");
 
 #define INSERT_FEEDBACK_WIDTH 2
 #define INSERT_FEEDBACK_RADIUS 9
@@ -356,18 +379,8 @@ void window_node_update(struct view *view, struct window_node *node)
     }
 }
 
-static void window_node_destroy(struct window_node *node)
-{
-    if (node->left)  window_node_destroy(node->left);
-    if (node->right) window_node_destroy(node->right);
-
-    for (int i = 0; i < node->window_count; ++i) {
-        window_manager_remove_managed_window(&g_window_manager, node->window_list[i]);
-    }
-
-    insert_feedback_destroy(node);
-    free(node);
-}
+/* window_node_destroy's logic now lives in Zig's destroyNode
+ * (zig/view.zig), reached via yabai_view_clear/yabai_view_destroy. */
 
 static void window_node_clear_zoom(struct window_node *node)
 {
@@ -825,31 +838,28 @@ void view_update(struct view *view)
 
 struct view *view_create(uint64_t sid)
 {
-    struct view *view = malloc(sizeof(struct view));
-    memset(view, 0, sizeof(struct view));
+    /* The SLS-derived uuid and the manager-defaults block are lifted
+     * here exactly as the C body derived them, then the Zig export
+     * does the malloc/memset/assign. The user-branch view_update
+     * stays here: it is SLS-backed (display bounds) and cannot move
+     * into the export. The non-user branch (VIEW_FLOAT, no update) is
+     * fully covered by the export. */
+    CFStringRef uuid = SLSSpaceCopyName(g_connection, sid);
+    bool is_user = space_is_user(sid);
+    struct yabai_view_defaults defaults = {
+        .layout         = g_space_manager.layout,
+        .top_padding    = g_space_manager.top_padding,
+        .bottom_padding = g_space_manager.bottom_padding,
+        .left_padding   = g_space_manager.left_padding,
+        .right_padding  = g_space_manager.right_padding,
+        .window_gap     = g_space_manager.window_gap,
+        .auto_balance   = g_space_manager.auto_balance,
+        .split_type     = g_space_manager.split_type,
+    };
 
-    view->root = malloc(sizeof(struct window_node));
-    memset(view->root, 0, sizeof(struct window_node));
+    struct view *view = (struct view *) yabai_view_create(sid, uuid, is_user, &defaults);
 
-    view->sid = sid;
-    view->uuid = SLSSpaceCopyName(g_connection, sid);
-
-    view_set_flag(view, VIEW_ENABLE_PADDING);
-    view_set_flag(view, VIEW_ENABLE_GAP);
-
-    if (space_is_user(view->sid)) {
-        if (!view_check_flag(view, VIEW_LAYOUT))         view->layout         = g_space_manager.layout;
-        if (!view_check_flag(view, VIEW_TOP_PADDING))    view->top_padding    = g_space_manager.top_padding;
-        if (!view_check_flag(view, VIEW_BOTTOM_PADDING)) view->bottom_padding = g_space_manager.bottom_padding;
-        if (!view_check_flag(view, VIEW_LEFT_PADDING))   view->left_padding   = g_space_manager.left_padding;
-        if (!view_check_flag(view, VIEW_RIGHT_PADDING))  view->right_padding  = g_space_manager.right_padding;
-        if (!view_check_flag(view, VIEW_WINDOW_GAP))     view->window_gap     = g_space_manager.window_gap;
-        if (!view_check_flag(view, VIEW_AUTO_BALANCE))   view->auto_balance   = g_space_manager.auto_balance;
-        if (!view_check_flag(view, VIEW_SPLIT_TYPE))     view->split_type     = g_space_manager.split_type;
-        view_update(view);
-    } else {
-        view->layout = VIEW_FLOAT;
-    }
+    if (is_user) view_update(view);
 
     return view;
 }
@@ -857,26 +867,12 @@ struct view *view_create(uint64_t sid)
 void view_clear(struct view *view)
 {
     if (view->root) {
-        if (view->root->left)  window_node_destroy(view->root->left);
-        if (view->root->right) window_node_destroy(view->root->right);
-
-        for (int i = 0; i < view->root->window_count; ++i) {
-            window_manager_remove_managed_window(&g_window_manager, view->root->window_list[i]);
-        }
-
-        insert_feedback_destroy(view->root);
-        memset(view->root, 0, sizeof(struct window_node));
+        yabai_view_clear((struct yabai_view *) view);
         view_update(view);
     }
 }
 
 void view_destroy(struct view *view)
 {
-    if (view->root) {
-        window_node_destroy(view->root);
-    }
-
-    if (view->uuid) {
-        CFRelease(view->uuid);
-    }
+    yabai_view_destroy((struct yabai_view *) view);
 }

@@ -213,6 +213,10 @@ unless doc/zig-refactor-plan.md explicitly allows a change.
 - Rule call-site routing: both handle_domain_rule parse sites call
   Zig with eager acting ids; C parse_rule stays as the live oracle.
   71/71 tests; leaks 0; fat daemon, 101 exports.
+- Lifecycle routing: view_create/clear/destroy delegate to Zig
+  (SLS uuid and defaults lifted in wrappers; trailing view_update
+  kept; dead C destroy body removed). Space-manager call sites now
+  allocate views through Zig. 71/71 tests; leaks 0; 101 exports.
 - Pure-helper slice (TDD) in zig/util.zig: `balance_node_add`,
   `clampf_range` (incl. NaN bit-parity), `json_bool`,
   `json_optional_bool`, float+int `in_range_ii/ei/ie` for the exact
