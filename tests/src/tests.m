@@ -71,6 +71,7 @@ typedef TEST_SIG(function);
     TEST_ENTRY(zig_view_lifecycle_clear)                         \
     TEST_ENTRY(zig_view_lifecycle_destroy)                       \
     TEST_ENTRY(zig_view_serialize)                               \
+    TEST_ENTRY(zig_view_find_in_direction)                       \
     TEST_ENTRY(zig_display_serialize)                            \
     TEST_ENTRY(zig_regex_match_parity)                           \
     TEST_ENTRY(zig_rule_matches_window_parity)                   \

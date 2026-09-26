@@ -4,9 +4,11 @@ extern struct space_manager g_space_manager;
 extern struct window_manager g_window_manager;
 
 /* Zig delegates (zig/view.zig): parity-proven equivalents of the swap,
- * rotate, mirror, leaf walk, window lookup, fence, contains/index,
- * invalid/dirty predicates, stack insert, and view lifecycle
- * (create/clear/destroy) below. The lifecycle wrappers lift the SLS
+ * rotate, mirror, leaf walk, window lookup, directional search, fence,
+ * contains/index, invalid/dirty predicates, stack insert, and view
+ * lifecycle (create/clear/destroy) below. The directional-search
+ * wrapper lifts the SLS space_window_list here exactly as the C body
+ * derived it. The lifecycle wrappers lift the SLS
  * uuid and the manager-defaults block here exactly as the C bodies
  * did, then call the Zig exports; the SLS-backed trailing
  * view_update stays in the wrappers. Signatures in src/view.h are
@@ -27,6 +29,7 @@ struct window_node *yabai_window_node_find_prev_leaf(struct window_node *node);
 struct window_node *yabai_window_node_find_next_leaf(struct window_node *node);
 struct yabai_view;
 struct window_node *yabai_view_find_window_node(const struct yabai_view *view, uint32_t window_id);
+struct window_node *yabai_view_find_window_node_in_direction(const struct yabai_view *view, struct window_node *source, int direction, const uint32_t *window_list, int window_count);
 uint32_t *yabai_view_find_window_list(const struct yabai_view *view, int *window_count);
 bool yabai_view_is_invalid(const struct yabai_view *view);
 bool yabai_view_is_dirty(const struct yabai_view *view);
@@ -526,31 +529,14 @@ static inline int area_distance_in_direction(struct area *r1, CGPoint r1_max, st
 
 struct window_node *view_find_window_node_in_direction(struct view *view, struct window_node *source, int direction)
 {
+    /* The SLS space_window_list is lifted here exactly as the C body
+     * derived it, then the Zig export does the leaf walk and the
+     * best-distance/best-rank selection. Signature unchanged. */
     int window_count;
     uint32_t *window_list = space_window_list(view->sid, &window_count, false);
     if (!window_list) return NULL;
 
-    int best_distance = INT_MAX;
-    int best_rank = INT_MAX;
-    struct window_node *best_node = NULL;
-    CGPoint source_area_max = area_max_point(source->area);
-
-    for (struct window_node *target = window_node_find_first_leaf(view->root); target; target = window_node_find_next_leaf(target)) {
-        if (source == target) continue;
-
-        CGPoint target_area_max = area_max_point(target->area);
-        if (area_is_in_direction(&source->area, source_area_max, &target->area, target_area_max, direction)) {
-            int distance = area_distance_in_direction(&source->area, source_area_max, &target->area, target_area_max, direction);
-            int rank = window_manager_find_rank_of_window_in_list(target->window_order[0], window_list, window_count);
-            if ((distance < best_distance) || (distance == best_distance && rank < best_rank)) {
-                best_node = target;
-                best_distance = distance;
-                best_rank = rank;
-            }
-        }
-    }
-
-    return best_node;
+    return yabai_view_find_window_node_in_direction((const struct yabai_view *) view, source, direction, window_list, window_count);
 }
 
 struct window_node *view_find_window_node(struct view *view, uint32_t window_id)
