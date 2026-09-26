@@ -11,6 +11,14 @@ extern double g_cv_host_clock_frequency;
 void yabai_move_frame_math(const CGRect *frame, int type, float dx, float dy, float *x, float *y, float *w, float *h);
 void yabai_resize_frame_math(const CGRect *frame, int direction, float dx, float dy, float *fx, float *fy, float *fw, float *fh);
 
+/* Zig delegates (zig/view.zig, zig/geometry.zig): parity-proven
+ * equivalents of the warp split seam below. Signatures elsewhere
+ * are unchanged. */
+int yabai_window_node_get_split(struct view *view, struct window_node *node, int space_split_type);
+int yabai_window_node_get_gap(struct view *view);
+float yabai_window_node_get_ratio(struct window_node *node, float space_split_ratio);
+void yabai_area_make_pair(int split, int gap, float ratio, const struct area *parent, struct area *left, struct area *right);
+
 static TABLE_HASH_FUNC(hash_wm)
 {
     return *(uint32_t *) key;
@@ -1899,7 +1907,9 @@ enum window_op_error window_manager_warp_window(struct space_manager *sm, struct
             //
 
             struct area cf, cs;
-            area_make_pair(window_node_get_split(b_view, b_node), window_node_get_gap(b_view), window_node_get_ratio(b_node), &b_node->area, &cf, &cs);
+            /* The space split_type/split_ratio lifts are evaluated here
+             * exactly as the C getters did, so the Zig exports stay pure. */
+            yabai_area_make_pair(yabai_window_node_get_split(b_view, b_node, g_space_manager.split_type), yabai_window_node_get_gap(b_view), yabai_window_node_get_ratio(b_node, g_space_manager.split_ratio), &b_node->area, &cf, &cs);
 
             CGPoint ca = { (int)(0.5f + a_node->area.x + a_node->area.w / 2.0f), (int)(0.5f + a_node->area.y + a_node->area.h / 2.0f) };
             float dcf = powf((ca.x - (int)(0.5f + cf.x + cf.w / 2.0f)), 2.0f) + powf((ca.y - (int)(0.5f + cf.y + cf.h / 2.0f)), 2.0f);

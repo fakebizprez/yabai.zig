@@ -197,6 +197,12 @@ unless doc/zig-refactor-plan.md explicitly allows a change.
 - Transform routing: rotate/mirror delegate to self-recursive Zig
   exports after a pin audit added hand-computed tree vectors.
   71/71 tests; leaks 0; fat daemon unchanged at 101 exports.
+- Walk/lookup routing: first/last/next/prev leaf and
+  view_find_window_node delegate to self-contained Zig walks
+  (window_manager, event_loop, space_manager call sites now run Zig).
+- Warp-site routing: window_manager_warp_window's area_make_pair
+  line calls the Zig exports with g_space_manager lifts; gap pins
+  added to the geometry suite. 71/71 tests; leaks 0; 101 exports.
 - Pure-helper slice (TDD) in zig/util.zig: `balance_node_add`,
   `clampf_range` (incl. NaN bit-parity), `json_bool`,
   `json_optional_bool`, float+int `in_range_ii/ei/ie` for the exact
