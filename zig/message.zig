@@ -1,6 +1,6 @@
 // Message tokenizer boundary for the yabai migration (step 3).
 //
-// Pinned toolchain: Zig 0.16.0. Mirrors the token helpers in
+// Pinned toolchain: Zig 0.17.0. Mirrors the token helpers in
 // src/message.c. Layout contract with the C structs, checked both by
 // the comptime block below and by _Static_assert in tests/src/zig_message.c.
 

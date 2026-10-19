@@ -1,6 +1,6 @@
 // View-tree traversal boundary for the yabai migration (step 3).
 //
-// Pinned toolchain: Zig 0.16.0. Mirrors the pure tree helpers in
+// Pinned toolchain: Zig 0.17.0. Mirrors the pure tree helpers in
 // src/view.c. WindowNode mirrors struct window_node in src/view.h
 // byte for byte (344 bytes; offsets verified with
 // clang -fdump-record-layouts and asserted below and in
@@ -569,7 +569,7 @@ export fn yabai_window_node_swap_window_list(a_node: *WindowNode, b_node: *Windo
 // the first leaf, NULL when the slots exhaust without finding one.
 export fn yabai_view_find_min_depth_leaf_node(node: *WindowNode) ?*WindowNode {
     @setRuntimeSafety(false);
-    var list: [256]?*WindowNode = [_]?*WindowNode{null} ** 256;
+    var list: [256]?*WindowNode = @splat(null);
     list[0] = node;
     var j: usize = 0;
     var i: usize = 0;
