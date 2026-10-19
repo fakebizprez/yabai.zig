@@ -1,10 +1,10 @@
 /* Resize-math parity tests (doc/zig-refactor-plan.md step 3).
  *
- * The Zig export in zig/window.zig must match resize_frame_math() in
- * src/window_manager.c exactly. The C helper was extracted verbatim
- * from window_manager_resize_window_relative_internal() (pure frame
- * math; the AX/animate effects stay in the caller), so the helper is
- * both the oracle and the seam the Zig port targets. CGRect fields
+ * The Zig export in zig/window.zig must match the frozen dd84572 frame
+ * math (ref_resize_frame_math in tests/src/ref_upstream_view.c)
+ * exactly. That helper holds the statements of the dd84572
+ * window_manager_resize_window_relative_internal() (pure frame math;
+ * the AX/animate effects stay in the caller), so it is the oracle. CGRect fields
  * are doubles; the narrowing to float outputs is part of the pinned
  * behavior.
  */
@@ -74,7 +74,7 @@ TEST_FUNC(zig_window_resize_math,
         float z_fy;
         float z_fw;
         float z_fh;
-        resize_frame_math(frame, resize_cases[i].dir, resize_cases[i].dx, resize_cases[i].dy, &c_fx, &c_fy, &c_fw, &c_fh);
+        ref_resize_frame_math(frame, resize_cases[i].dir, resize_cases[i].dx, resize_cases[i].dy, &c_fx, &c_fy, &c_fw, &c_fh);
         yabai_resize_frame_math(&frame, resize_cases[i].dir, resize_cases[i].dx, resize_cases[i].dy, &z_fx, &z_fy, &z_fw, &z_fh);
 
         TEST_CHECK(memcmp(&c_fx, &z_fx, sizeof(float)), 0);
@@ -98,7 +98,7 @@ TEST_FUNC(zig_window_resize_math,
     float z_fw;
     float c_dummy;
     float z_dummy;
-    resize_frame_math(frame, 0x08, nan_v, 0, &c_dummy, &c_dummy, &c_fw, &c_dummy);
+    ref_resize_frame_math(frame, 0x08, nan_v, 0, &c_dummy, &c_dummy, &c_fw, &c_dummy);
     yabai_resize_frame_math(&frame, 0x08, nan_v, 0, &z_dummy, &z_dummy, &z_fw, &z_dummy);
     TEST_CHECK(memcmp(&c_fw, &z_fw, sizeof(float)), 0);
 })
@@ -146,7 +146,7 @@ TEST_FUNC(zig_window_move_math,
         float z_y;
         float z_w;
         float z_h;
-        move_frame_math(frame, move_cases[i].type, move_cases[i].dx, move_cases[i].dy, &c_x, &c_y, &c_w, &c_h);
+        ref_move_frame_math(frame, move_cases[i].type, move_cases[i].dx, move_cases[i].dy, &c_x, &c_y, &c_w, &c_h);
         yabai_move_frame_math(&frame, move_cases[i].type, move_cases[i].dx, move_cases[i].dy, &z_x, &z_y, &z_w, &z_h);
 
         TEST_CHECK(memcmp(&c_x, &z_x, sizeof(float)), 0);
@@ -197,7 +197,7 @@ TEST_FUNC(zig_window_undersized_parity,
         window.frame.size.width = undersized_cases[i].w;
         window.frame.size.height = undersized_cases[i].h;
 
-        bool c = window_is_undersized(&window);
+        bool c = ref_window_is_undersized(&window);
         bool z = yabai_window_is_undersized(undersized_cases[i].w, undersized_cases[i].h);
 
         TEST_CHECK(c != z, 0);
@@ -211,7 +211,7 @@ TEST_FUNC(zig_window_undersized_parity,
     memset(&nan_window, 0, sizeof(nan_window));
     nan_window.frame.size.width = nan_v;
     nan_window.frame.size.height = 600;
-    bool c_nan = window_is_undersized(&nan_window);
+    bool c_nan = ref_window_is_undersized(&nan_window);
     bool z_nan = yabai_window_is_undersized(nan_v, 600);
     TEST_CHECK(c_nan != z_nan, 0);
     TEST_CHECK(c_nan, false);
@@ -229,11 +229,11 @@ TEST_FUNC(zig_window_flag_parity,
         memset(&window, 0, sizeof(window));
         window.flags = (uint8_t) f;
 
-        bool c_move = window_can_move(&window);
+        bool c_move = ref_window_can_move(&window);
         bool z_move = yabai_window_can_move((uint8_t) f);
         TEST_CHECK(c_move != z_move, 0);
 
-        bool c_resize = window_can_resize(&window);
+        bool c_resize = ref_window_can_resize(&window);
         bool z_resize = yabai_window_can_resize((uint8_t) f);
         TEST_CHECK(c_resize != z_resize, 0);
     }
