@@ -1,15 +1,7 @@
 /* Regression tests for memory-safety fixes in zig/view.zig and
- * zig/rule.zig. Included after zig_view.c and zig_rule.c, so struct
- * yabai_view comes from zig_view.c; the prototypes are re-declared here
- * (identical redeclarations are legal C). */
+ * zig/rule.zig. Prototypes come from src/zig_abi.h via manifest.m. */
 
 #include <malloc/malloc.h>
-
-struct window_node *yabai_window_node_find_first_leaf(struct window_node *root);
-uint32_t *yabai_view_find_window_list(const struct yabai_view *view, int *window_count);
-bool yabai_parse_rule(FILE *rsp, char **message, struct rule *rule, const struct token *token, uint32_t acting_did, uint64_t acting_sid);
-void yabai_rule_serialize(FILE *rsp, struct rule *rule, int index, int did_index, int sid_index);
-void yabai_rule_destroy(struct rule *rule);
 
 static struct window_node *regress_leaf(uint32_t base, int count)
 {
@@ -23,7 +15,7 @@ static struct window_node *regress_leaf(uint32_t base, int count)
  * sequential from base) and that the malloc block really holds them. */
 static int regress_window_list_case(struct window_node *root, uint32_t base, int expected)
 {
-    struct yabai_view view;
+    struct view view;
     memset(&view, 0, sizeof(view));
     view.root = root;
 

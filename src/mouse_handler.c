@@ -6,7 +6,6 @@ extern volatile uint64_t __last_gesture_time;
  * geometry below. The wrapper lifts ms->drop_action, src_node->window_count,
  * dst_window->frame, and point to scalars here exactly as the C body read
  * them. Signature in src/mouse_handler.h is unchanged. */
-int yabai_mouse_determine_drop_action(int drop_mode, int src_count, double fx, double fy, double fw, double fh, double px, double py);
 
 static inline uint8_t mouse_mod_from_cgflags(uint32_t cgflags)
 {

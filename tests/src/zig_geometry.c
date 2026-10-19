@@ -8,10 +8,6 @@
  * together unnoticed.
  */
 
-void yabai_area_make_pair(int split, int gap, float ratio, const struct area *parent, struct area *left, struct area *right);
-bool yabai_area_is_in_direction(const struct area *r1, const CGPoint *r1_max, const struct area *r2, const CGPoint *r2_max, int direction);
-int yabai_area_distance_in_direction(const struct area *r1, const CGPoint *r1_max, const struct area *r2, const CGPoint *r2_max, int direction);
-
 struct area_pair_case
 {
     int split;
@@ -181,7 +177,6 @@ TEST_FUNC(zig_area_make_pair_rounding,
  * and Zig; the cases avoid the separate signed-overflow UB of
  * `(int)(left_width + 0.5f) + gap` by pairing a saturating width only
  * with gap 0 or with a sign that cannot overflow. */
-void yabai_area_max_point(const struct area *area, CGPoint *out);
 
 static const struct area_pair_case extreme_pair_cases[] =
 {

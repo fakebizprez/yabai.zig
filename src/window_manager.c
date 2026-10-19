@@ -6,24 +6,11 @@ extern struct process_manager g_process_manager;
 extern struct mouse_state g_mouse_state;
 extern double g_cv_host_clock_frequency;
 
-/* Zig delegates (zig/window.zig): parity-proven equivalents of the
- * frame math below. Signatures and call sites are unchanged. */
-void yabai_move_frame_math(const CGRect *frame, int type, float dx, float dy, float *x, float *y, float *w, float *h);
-void yabai_resize_frame_math(const CGRect *frame, int direction, float dx, float dy, float *fx, float *fy, float *fw, float *fh);
-
-/* Zig delegates (zig/view.zig, zig/geometry.zig): parity-proven
- * equivalents of the warp split seam below. Signatures elsewhere
- * are unchanged. */
-int yabai_window_node_get_split(struct view *view, struct window_node *node, int space_split_type);
-int yabai_window_node_get_gap(struct view *view);
-float yabai_window_node_get_ratio(struct window_node *node, float space_split_ratio);
-void yabai_area_make_pair(int split, int gap, float ratio, const struct area *parent, struct area *left, struct area *right);
-
-/* Zig delegate (zig/rule.zig): parity-proven equivalent of
- * window_manager_rule_matches_window below. Signature in
- * src/window_manager.h is unchanged; the window's application name
- * is lifted as a plain string at the boundary. */
-bool yabai_rule_matches_window(const struct rule *rule, const char *app_name, const char *window_title, const char *window_role, const char *window_subrole);
+/* Zig delegates (prototypes in src/zig_abi.h): zig/window.zig backs the
+ * frame math, zig/view.zig and zig/geometry.zig the warp split seam,
+ * and zig/rule.zig window_manager_rule_matches_window (the window's
+ * application name is lifted as a plain string at the boundary).
+ * Signatures and call sites are unchanged. */
 
 static TABLE_HASH_FUNC(hash_wm)
 {

@@ -6,9 +6,6 @@ extern int g_connection;
 
 /* Zig delegates (zig/window.zig): parity-proven equivalents of the
  * flag/size reads below. Signatures in src/window.h are unchanged. */
-bool yabai_window_can_move(uint8_t flags);
-bool yabai_window_can_resize(uint8_t flags);
-bool yabai_window_is_undersized(double w, double h);
 
 bool window_observe(struct window *window)
 {

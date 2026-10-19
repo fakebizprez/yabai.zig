@@ -2,68 +2,9 @@
  *
  * The Zig exports in zig/view.zig must match the pure tree helpers of
  * the frozen dd84572 src/view.c (ref_ copies in
- * tests/src/ref_upstream_view.c) exactly. Layout contract: struct window_node is 344 bytes
- * with the offsets below (verified with clang -fdump-record-layouts);
- * both sides assert it.
+ * tests/src/ref_upstream_view.c) exactly. Layout contract: src/zig_abi.h
+ * pins struct window_node and struct view against zig/abi.zig.
  */
-
-bool yabai_window_node_is_leaf(struct window_node *node);
-bool yabai_window_node_is_left_child(struct window_node *node);
-bool yabai_window_node_is_right_child(struct window_node *node);
-struct window_node *yabai_window_node_find_first_leaf(struct window_node *root);
-struct window_node *yabai_window_node_find_last_leaf(struct window_node *root);
-struct window_node *yabai_window_node_find_prev_leaf(struct window_node *node);
-struct window_node *yabai_window_node_find_next_leaf(struct window_node *node);
-bool yabai_window_node_contains_window(struct window_node *node, uint32_t window_id);
-int yabai_window_node_index_of_window(struct window_node *node, uint32_t window_id);
-void yabai_window_node_rotate(struct window_node *node, int degrees);
-struct window_node *yabai_window_node_mirror(struct window_node *node, int axis);
-struct window_node *yabai_window_node_fence(struct window_node *node, int dir);
-void yabai_view_stack_window(struct window_node *node, uint32_t window_id);
-bool yabai_window_node_is_occupied(struct window_node *node);
-bool yabai_window_node_is_intermediate(struct window_node *node);
-int yabai_window_node_get_child(struct window_node *node, int window_placement);
-int yabai_window_node_get_split(struct view *view, struct window_node *node, int space_split_type);
-float yabai_window_node_get_ratio(struct window_node *node, float space_split_ratio);
-int yabai_window_node_get_gap(struct view *view);
-void yabai_area_from_cgrect(const CGRect *rect, struct area *out);
-void yabai_area_max_point(const struct area *area, CGPoint *out);
-void yabai_window_node_equalize(struct window_node *node, uint32_t axis_flag, float space_split_ratio);
-void yabai_window_node_balance(struct window_node *node, uint32_t axis_flag, struct balance_node *out);
-void yabai_area_make_pair_for_node(struct view *view, struct window_node *node, int space_split_type, float space_split_ratio);
-void yabai_window_node_split(struct view *view, struct window_node *node, uint32_t window_id, bool window_zoom_persist, int window_placement, int space_split_type, float space_split_ratio);
-void yabai_window_node_swap_window_list(struct window_node *a_node, struct window_node *b_node);
-struct window_node *yabai_view_find_window_node_in_direction(const struct yabai_view *view, struct window_node *source, int direction, const uint32_t *window_list, int window_count);
-
-struct yabai_view
-{
-    void *uuid;
-    uint64_t sid;
-    struct window_node *root;
-    uint32_t insertion_point;
-    int layout;
-    int split_type;
-    int top_padding;
-    int bottom_padding;
-    int left_padding;
-    int right_padding;
-    int window_gap;
-    uint32_t auto_balance;
-    uint64_t flags;
-};
-
-struct window_node *yabai_view_find_window_node(const struct yabai_view *view, uint32_t window_id);
-
-_Static_assert(sizeof(struct view) == 72, "C view size drift");
-_Static_assert(sizeof(struct yabai_view) == 72, "view size drift");
-_Static_assert(offsetof(struct view, root) == 16, "C view.root drift");
-
-_Static_assert(sizeof(struct window_node) == 344, "window_node size drift");
-_Static_assert(sizeof(struct feedback_window) == 16, "feedback_window size drift");
-_Static_assert(offsetof(struct window_node, left) == 24, "window_node.left drift");
-_Static_assert(offsetof(struct window_node, window_list) == 48, "window_node.window_list drift");
-_Static_assert(offsetof(struct window_node, window_count) == 304, "window_node.window_count drift");
-_Static_assert(offsetof(struct window_node, feedback_window) == 328, "window_node.feedback_window drift");
 
 static struct window_node *make_test_node(void)
 {
@@ -603,8 +544,8 @@ TEST_FUNC(zig_view_find_window_node,
     c_view->root = r;
     c_view->sid = 3;
 
-    struct yabai_view *z_view = malloc(sizeof(struct yabai_view));
-    memset(z_view, 0, sizeof(struct yabai_view));
+    struct view *z_view = malloc(sizeof(struct view));
+    memset(z_view, 0, sizeof(struct view));
     z_view->root = r;
     z_view->sid = 3;
 
@@ -1521,17 +1462,6 @@ TEST_FUNC(zig_view_swap_window_list,
  * comparisons below. */
 struct window_node *view_find_min_depth_leaf_node(struct window_node *node);
 
-struct window_node *yabai_view_find_min_depth_leaf_node(struct window_node *node);
-bool yabai_view_is_invalid(const struct yabai_view *view);
-bool yabai_view_is_dirty(const struct yabai_view *view);
-void yabai_window_node_clear_zoom(struct window_node *node);
-
-/* Pin the mirrored flag values (zig/view.zig VIEW_IS_VALID/DIRTY). */
-_Static_assert(VIEW_IS_VALID == 0x200, "VIEW_IS_VALID drift");
-_Static_assert(VIEW_IS_DIRTY == 0x400, "VIEW_IS_DIRTY drift");
-_Static_assert(VIEW_ENABLE_PADDING == 0x080, "VIEW_ENABLE_PADDING drift");
-_Static_assert(VIEW_FLOAT == 3, "VIEW_FLOAT drift");
-
 /* Builds an asymmetric fork: root -> (deep, shallow-leaf) when
  * deep_left is nonzero, root -> (shallow-leaf, deep) otherwise. The
  * deep side is a two-leaf parent at depth 1, so BFS must return the
@@ -1640,55 +1570,55 @@ TEST_FUNC(zig_view_invalid_dirty,
 
     /* flags == 0: invalid (VALID clear), clean (DIRTY clear). */
     v->flags = 0;
-    TEST_CHECK(ref_view_is_invalid(v) != yabai_view_is_invalid((const struct yabai_view *) v), 0);
+    TEST_CHECK(ref_view_is_invalid(v) != yabai_view_is_invalid((const struct view *) v), 0);
     TEST_CHECK(ref_view_is_invalid(v), true);
-    TEST_CHECK(yabai_view_is_invalid((const struct yabai_view *) v), true);
-    TEST_CHECK(ref_view_is_dirty(v) != yabai_view_is_dirty((const struct yabai_view *) v), 0);
+    TEST_CHECK(yabai_view_is_invalid((const struct view *) v), true);
+    TEST_CHECK(ref_view_is_dirty(v) != yabai_view_is_dirty((const struct view *) v), 0);
     TEST_CHECK(ref_view_is_dirty(v), false);
-    TEST_CHECK(yabai_view_is_dirty((const struct yabai_view *) v), false);
+    TEST_CHECK(yabai_view_is_dirty((const struct view *) v), false);
 
     /* Only VALID: valid, clean. */
     v->flags = VIEW_IS_VALID;
-    TEST_CHECK(ref_view_is_invalid(v) != yabai_view_is_invalid((const struct yabai_view *) v), 0);
+    TEST_CHECK(ref_view_is_invalid(v) != yabai_view_is_invalid((const struct view *) v), 0);
     TEST_CHECK(ref_view_is_invalid(v), false);
-    TEST_CHECK(yabai_view_is_invalid((const struct yabai_view *) v), false);
-    TEST_CHECK(ref_view_is_dirty(v) != yabai_view_is_dirty((const struct yabai_view *) v), 0);
+    TEST_CHECK(yabai_view_is_invalid((const struct view *) v), false);
+    TEST_CHECK(ref_view_is_dirty(v) != yabai_view_is_dirty((const struct view *) v), 0);
     TEST_CHECK(ref_view_is_dirty(v), false);
 
     /* Only DIRTY: invalid, dirty. */
     v->flags = VIEW_IS_DIRTY;
-    TEST_CHECK(ref_view_is_invalid(v) != yabai_view_is_invalid((const struct yabai_view *) v), 0);
+    TEST_CHECK(ref_view_is_invalid(v) != yabai_view_is_invalid((const struct view *) v), 0);
     TEST_CHECK(ref_view_is_invalid(v), true);
-    TEST_CHECK(ref_view_is_dirty(v) != yabai_view_is_dirty((const struct yabai_view *) v), 0);
+    TEST_CHECK(ref_view_is_dirty(v) != yabai_view_is_dirty((const struct view *) v), 0);
     TEST_CHECK(ref_view_is_dirty(v), true);
-    TEST_CHECK(yabai_view_is_dirty((const struct yabai_view *) v), true);
+    TEST_CHECK(yabai_view_is_dirty((const struct view *) v), true);
 
     /* VALID|DIRTY: valid, dirty. */
     v->flags = VIEW_IS_VALID | VIEW_IS_DIRTY;
-    TEST_CHECK(ref_view_is_invalid(v) != yabai_view_is_invalid((const struct yabai_view *) v), 0);
+    TEST_CHECK(ref_view_is_invalid(v) != yabai_view_is_invalid((const struct view *) v), 0);
     TEST_CHECK(ref_view_is_invalid(v), false);
-    TEST_CHECK(ref_view_is_dirty(v) != yabai_view_is_dirty((const struct yabai_view *) v), 0);
+    TEST_CHECK(ref_view_is_dirty(v) != yabai_view_is_dirty((const struct view *) v), 0);
     TEST_CHECK(ref_view_is_dirty(v), true);
 
     /* Neighboring flag bits must not alias either bit. */
     v->flags = VIEW_LAYOUT | VIEW_TOP_PADDING | VIEW_WINDOW_GAP | VIEW_ENABLE_GAP | VIEW_ENABLE_PADDING | VIEW_SPLIT_TYPE;
-    TEST_CHECK(ref_view_is_invalid(v) != yabai_view_is_invalid((const struct yabai_view *) v), 0);
+    TEST_CHECK(ref_view_is_invalid(v) != yabai_view_is_invalid((const struct view *) v), 0);
     TEST_CHECK(ref_view_is_invalid(v), true);
-    TEST_CHECK(yabai_view_is_invalid((const struct yabai_view *) v), true);
-    TEST_CHECK(ref_view_is_dirty(v) != yabai_view_is_dirty((const struct yabai_view *) v), 0);
+    TEST_CHECK(yabai_view_is_invalid((const struct view *) v), true);
+    TEST_CHECK(ref_view_is_dirty(v) != yabai_view_is_dirty((const struct view *) v), 0);
     TEST_CHECK(ref_view_is_dirty(v), false);
-    TEST_CHECK(yabai_view_is_dirty((const struct yabai_view *) v), false);
+    TEST_CHECK(yabai_view_is_dirty((const struct view *) v), false);
 
     /* Complement shapes: every bit except the pair set. */
     v->flags = ~(VIEW_IS_VALID | VIEW_IS_DIRTY);
-    TEST_CHECK(ref_view_is_invalid(v) != yabai_view_is_invalid((const struct yabai_view *) v), 0);
+    TEST_CHECK(ref_view_is_invalid(v) != yabai_view_is_invalid((const struct view *) v), 0);
     TEST_CHECK(ref_view_is_invalid(v), true);
-    TEST_CHECK(ref_view_is_dirty(v) != yabai_view_is_dirty((const struct yabai_view *) v), 0);
+    TEST_CHECK(ref_view_is_dirty(v) != yabai_view_is_dirty((const struct view *) v), 0);
     TEST_CHECK(ref_view_is_dirty(v), false);
     v->flags = ~((uint64_t) 0);
-    TEST_CHECK(ref_view_is_invalid(v) != yabai_view_is_invalid((const struct yabai_view *) v), 0);
+    TEST_CHECK(ref_view_is_invalid(v) != yabai_view_is_invalid((const struct view *) v), 0);
     TEST_CHECK(ref_view_is_invalid(v), false);
-    TEST_CHECK(ref_view_is_dirty(v) != yabai_view_is_dirty((const struct yabai_view *) v), 0);
+    TEST_CHECK(ref_view_is_dirty(v) != yabai_view_is_dirty((const struct view *) v), 0);
     TEST_CHECK(ref_view_is_dirty(v), true);
 
     free(v);
@@ -1751,8 +1681,6 @@ TEST_FUNC(zig_view_clear_zoom,
     free_test_tree(r, a, c, d, e);
 })
 
-uint32_t *yabai_view_find_window_list(const struct yabai_view *view, int *window_count);
-
 /* Temp-pool init (mirrors zig_rule.c): the frozen reference list lives
  * in the ts pool (ts_alloc_list/ts_expand); the Zig side uses malloc. */
 static void ensure_ts_for_window_list(void)
@@ -1783,8 +1711,8 @@ static int window_list_case(struct window_node *root, int expected_count)
     struct view *c_view = malloc(sizeof(struct view));
     memset(c_view, 0, sizeof(struct view));
     c_view->root = root;
-    struct yabai_view *z_view = malloc(sizeof(struct yabai_view));
-    memset(z_view, 0, sizeof(struct yabai_view));
+    struct view *z_view = malloc(sizeof(struct view));
+    memset(z_view, 0, sizeof(struct view));
     z_view->root = root;
 
     int c_count = -1;
@@ -1825,8 +1753,8 @@ TEST_FUNC(zig_view_find_window_list,
         struct view *cv2 = malloc(sizeof(struct view));
         memset(cv2, 0, sizeof(struct view));
         cv2->root = solo;
-        struct yabai_view *zv2 = malloc(sizeof(struct yabai_view));
-        memset(zv2, 0, sizeof(struct yabai_view));
+        struct view *zv2 = malloc(sizeof(struct view));
+        memset(zv2, 0, sizeof(struct view));
         zv2->root = solo;
         int cc2 = -1;
         int zc2 = -2;
@@ -1871,8 +1799,8 @@ TEST_FUNC(zig_view_find_window_list,
     struct view *c_view = malloc(sizeof(struct view));
     memset(c_view, 0, sizeof(struct view));
     c_view->root = r;
-    struct yabai_view *z_view = malloc(sizeof(struct yabai_view));
-    memset(z_view, 0, sizeof(struct yabai_view));
+    struct view *z_view = malloc(sizeof(struct view));
+    memset(z_view, 0, sizeof(struct view));
     z_view->root = r;
     int c_count = -1;
     int z_count = -1;
@@ -1907,8 +1835,8 @@ TEST_FUNC(zig_view_find_window_list,
         struct view *cv3 = malloc(sizeof(struct view));
         memset(cv3, 0, sizeof(struct view));
         cv3->root = r;
-        struct yabai_view *zv3 = malloc(sizeof(struct yabai_view));
-        memset(zv3, 0, sizeof(struct yabai_view));
+        struct view *zv3 = malloc(sizeof(struct view));
+        memset(zv3, 0, sizeof(struct view));
         zv3->root = r;
         int cc3 = -1;
         int zc3 = -2;
@@ -1984,9 +1912,8 @@ TEST_FUNC(zig_view_find_window_list,
  */
 
 /* yabai_view_create/clear/destroy and struct yabai_view_defaults come
- * from src/view.c (included via manifest.m above): a single
+ * from src/zig_abi.h (included via manifest.m above): a single
  * definition shared by the daemon and the suite. */
-_Static_assert(sizeof(struct yabai_view_defaults) == 32, "view defaults size drift");
 
 /* Snapshots the live manager defaults the C user branch copies. */
 static void fill_view_defaults(struct yabai_view_defaults *d)
@@ -2041,7 +1968,7 @@ static void ensure_managed_table(void)
 
 /* Field-by-field match of a frozen-reference view (ref_view_create /
  * ref_view_clear) against a Zig view, plus the root node bytes. */
-static int view_matches_ref(struct view *c, struct yabai_view *z)
+static int view_matches_ref(struct view *c, struct view *z)
 {
     if ((void *) c->uuid != z->uuid) return 0;
     if (c->sid != z->sid) return 0;
@@ -2086,7 +2013,7 @@ TEST_FUNC(zig_view_lifecycle_create,
     /* User branch: malloc/memset/assign of every C field in order.
      * No view_update runs here (SLS aborts headless; the caller owns
      * the refresh), so VALID/DIRTY stay clear and the root is zeroed. */
-    struct yabai_view *z = yabai_view_create(sid, NULL, true, &d);
+    struct view *z = yabai_view_create(sid, NULL, true, &d);
     TEST_CHECK(z != NULL, 1);
     if (z) {
         TEST_CHECK(z->uuid, NULL);
@@ -2115,7 +2042,7 @@ TEST_FUNC(zig_view_lifecycle_create,
      * flags exactly ENABLE_PADDING|ENABLE_GAP (0x180). */
     struct yabai_view_defaults fixed;
     fill_fixed_view_defaults(&fixed);
-    struct yabai_view *zh = yabai_view_create(777001, NULL, true, &fixed);
+    struct view *zh = yabai_view_create(777001, NULL, true, &fixed);
     TEST_CHECK(zh != NULL, 1);
     if (zh) {
         TEST_CHECK(zh->uuid, NULL);
@@ -2145,7 +2072,7 @@ TEST_FUNC(zig_view_lifecycle_create,
      * here is balanced by the destroy path (leaks-clean under -atExit). */
     CFStringRef owned = CFStringCreateWithCString(NULL, "yabai-test-uuid", kCFStringEncodingUTF8);
     TEST_CHECK(owned != NULL, 1);
-    struct yabai_view *zu = yabai_view_create(sid, (void *) owned, true, &d);
+    struct view *zu = yabai_view_create(sid, (void *) owned, true, &d);
     TEST_CHECK(zu != NULL, 1);
     if (zu) {
         TEST_CHECK(zu->uuid != (void *) owned, 0);
@@ -2158,7 +2085,7 @@ TEST_FUNC(zig_view_lifecycle_create,
     }
 
     /* Non-user branch pins VIEW_FLOAT with zeroed tunables. */
-    struct yabai_view *zf = yabai_view_create(sid, NULL, false, &d);
+    struct view *zf = yabai_view_create(sid, NULL, false, &d);
     TEST_CHECK(zf != NULL, 1);
     if (zf) {
         TEST_CHECK(zf->uuid, NULL);
@@ -2180,7 +2107,7 @@ TEST_FUNC(zig_view_lifecycle_create,
 
     /* Hand-pinned vector: the non-user branch ignores the fixed
      * tunables and pins VIEW_FLOAT (3) with zeroed fields. */
-    struct yabai_view *zfh = yabai_view_create(777001, NULL, false, &fixed);
+    struct view *zfh = yabai_view_create(777001, NULL, false, &fixed);
     TEST_CHECK(zfh != NULL, 1);
     if (zfh) {
         TEST_CHECK(zfh->uuid, NULL);
@@ -2212,7 +2139,7 @@ TEST_FUNC(zig_view_lifecycle_create,
     int branch = 0;
     for (branch = 0; branch < 2; ++branch) {
         struct view *rc = ref_view_create(777003, NULL, branch == 0);
-        struct yabai_view *rz = yabai_view_create(777003, NULL, branch == 0, &fixed);
+        struct view *rz = yabai_view_create(777003, NULL, branch == 0, &fixed);
         TEST_CHECK(view_matches_ref(rc, rz), 1);
         ref_view_destroy(rc);
         free(rc);
@@ -2251,7 +2178,7 @@ TEST_FUNC(zig_view_lifecycle_clear,
     fill_view_defaults(&d);
     uint64_t sid = 434343;
 
-    struct yabai_view *z = yabai_view_create(sid, NULL, true, &d);
+    struct view *z = yabai_view_create(sid, NULL, true, &d);
     graft_clear_tree(z->root, 50);
     yabai_view_clear(z);
 
@@ -2280,7 +2207,7 @@ TEST_FUNC(zig_view_lifecycle_clear,
      * L {50,51} and R {52}) drops and the root zeroes for reuse. */
     struct yabai_view_defaults f2;
     fill_fixed_view_defaults(&f2);
-    struct yabai_view *z2 = yabai_view_create(777002, NULL, true, &f2);
+    struct view *z2 = yabai_view_create(777002, NULL, true, &f2);
     graft_clear_tree(z2->root, 50);
     yabai_view_clear(z2);
     TEST_CHECK(memcmp(z2->root, &zero, sizeof(zero)), 0);
@@ -2306,8 +2233,8 @@ TEST_FUNC(zig_view_lifecycle_clear,
     free(z2);
 
     /* NULL-root clear is a no-op. */
-    struct yabai_view *zn = malloc(sizeof(struct yabai_view));
-    memset(zn, 0, sizeof(struct yabai_view));
+    struct view *zn = malloc(sizeof(struct view));
+    memset(zn, 0, sizeof(struct view));
     yabai_view_clear(zn);
     TEST_CHECK(zn->root, NULL);
     free(zn);
@@ -2316,7 +2243,7 @@ TEST_FUNC(zig_view_lifecycle_clear,
      * and the Zig export leave identical views behind on the same graft. */
     struct yabai_view_defaults saved = set_manager_defaults(&f2);
     struct view *rc = ref_view_create(777004, NULL, true);
-    struct yabai_view *rz = yabai_view_create(777004, NULL, true, &f2);
+    struct view *rz = yabai_view_create(777004, NULL, true, &f2);
     graft_clear_tree(rc->root, 90);
     graft_clear_tree(rz->root, 90);
     ref_view_clear(rc);
@@ -2350,7 +2277,7 @@ TEST_FUNC(zig_view_lifecycle_destroy,
     ref_view_destroy(c);
     free(c);
 
-    struct yabai_view *z = yabai_view_create(sid, NULL, true, &d);
+    struct view *z = yabai_view_create(sid, NULL, true, &d);
     graft_clear_tree(z->root, 60);
     yabai_view_destroy(z);
     free(z);
@@ -2372,7 +2299,7 @@ TEST_FUNC(zig_view_lifecycle_destroy,
     for (k = 0; k < 5; ++k) TEST_CHECK(table_find(&g_window_manager.managed_window, &cd_ids[k]), NULL);
     free(cd);
 
-    struct yabai_view *zd = yabai_view_create(sid, NULL, true, &d);
+    struct view *zd = yabai_view_create(sid, NULL, true, &d);
     graft_clear_tree(zd->root, 70);
     uint32_t zd_ids[5];
     zd_ids[0] = 70; zd_ids[1] = 71; zd_ids[2] = 72; zd_ids[3] = 73; zd_ids[4] = 74;
@@ -2383,7 +2310,7 @@ TEST_FUNC(zig_view_lifecycle_destroy,
 
     /* Deep traversal: five-node R -> (A, C); A -> (D, E) with
      * D {80,81} and C {82} drains through the intermediate level. */
-    struct yabai_view *zt = yabai_view_create(sid, NULL, true, &d);
+    struct view *zt = yabai_view_create(sid, NULL, true, &d);
     struct window_node *tr;
     struct window_node *ta;
     struct window_node *tc;
@@ -2409,7 +2336,7 @@ TEST_FUNC(zig_view_lifecycle_destroy,
     ref_view_destroy(cu);
     free(cu);
 
-    struct yabai_view *zu = yabai_view_create(sid, CFStringCreateWithCString(NULL, "yabai-z-uuid", kCFStringEncodingUTF8), true, &d);
+    struct view *zu = yabai_view_create(sid, CFStringCreateWithCString(NULL, "yabai-z-uuid", kCFStringEncodingUTF8), true, &d);
     yabai_view_destroy(zu);
     free(zu);
 
@@ -2418,8 +2345,8 @@ TEST_FUNC(zig_view_lifecycle_destroy,
     memset(cn, 0, sizeof(struct view));
     ref_view_destroy(cn);
     free(cn);
-    struct yabai_view *zn = malloc(sizeof(struct yabai_view));
-    memset(zn, 0, sizeof(struct yabai_view));
+    struct view *zn = malloc(sizeof(struct view));
+    memset(zn, 0, sizeof(struct view));
     yabai_view_destroy(zn);
     free(zn);
 
@@ -2434,7 +2361,7 @@ TEST_FUNC(zig_view_lifecycle_destroy,
         graft_clear_tree(cv->root, (uint32_t)(100 + i));
         ref_view_destroy(cv);
         free(cv);
-        struct yabai_view *zv = yabai_view_create(sid, NULL, true, &d);
+        struct view *zv = yabai_view_create(sid, NULL, true, &d);
         graft_clear_tree(zv->root, (uint32_t)(100 + i));
         yabai_view_destroy(zv);
         free(zv);
@@ -2462,8 +2389,6 @@ TEST_FUNC(zig_view_lifecycle_destroy,
  * against the stub (TDD red) and pass on the real port (green).
  */
 
-void yabai_view_serialize(FILE *rsp, const struct yabai_view *view, uint64_t flags, const char *uuid_str, int mission_index, const char *space_label_str, int display_index, const uint32_t *window_list, int window_count, bool has_focus, bool is_visible, bool is_fullscreen);
-
 static const uint32_t ser_wins[3] = { 5, 9, 7 };
 
 /* Temp-pool init for the C uuid oracle (mirrors zig_rule.c). */
@@ -2476,24 +2401,7 @@ static void ensure_ts_for_view_serialize(void)
     }
 }
 
-/* Pin the mirrored SPACE_PROPERTY_* bits and the layout/type table. */
-_Static_assert(SPACE_PROPERTY_ID == 0x001, "SPACE_PROPERTY_ID drift");
-_Static_assert(SPACE_PROPERTY_UUID == 0x002, "SPACE_PROPERTY_UUID drift");
-_Static_assert(SPACE_PROPERTY_INDEX == 0x004, "SPACE_PROPERTY_INDEX drift");
-_Static_assert(SPACE_PROPERTY_LABEL == 0x008, "SPACE_PROPERTY_LABEL drift");
-_Static_assert(SPACE_PROPERTY_TYPE == 0x010, "SPACE_PROPERTY_TYPE drift");
-_Static_assert(SPACE_PROPERTY_DISPLAY == 0x020, "SPACE_PROPERTY_DISPLAY drift");
-_Static_assert(SPACE_PROPERTY_WINDOWS == 0x040, "SPACE_PROPERTY_WINDOWS drift");
-_Static_assert(SPACE_PROPERTY_FIRST_WINDOW == 0x080, "SPACE_PROPERTY_FIRST_WINDOW drift");
-_Static_assert(SPACE_PROPERTY_LAST_WINDOW == 0x100, "SPACE_PROPERTY_LAST_WINDOW drift");
-_Static_assert(SPACE_PROPERTY_HAS_FOCUS == 0x200, "SPACE_PROPERTY_HAS_FOCUS drift");
-_Static_assert(SPACE_PROPERTY_IS_VISIBLE == 0x400, "SPACE_PROPERTY_IS_VISIBLE drift");
-_Static_assert(SPACE_PROPERTY_IS_FULLSCREEN == 0x800, "SPACE_PROPERTY_IS_FULLSCREEN drift");
-_Static_assert(VIEW_DEFAULT == 0, "VIEW_DEFAULT drift");
-_Static_assert(VIEW_BSP == 1, "VIEW_BSP drift");
-_Static_assert(VIEW_STACK == 2, "VIEW_STACK drift");
-
-static void init_serialize_views(struct view *c_view, struct yabai_view *z_view, uint64_t sid, void *uuid, struct window_node *root, int layout)
+static void init_serialize_views(struct view *c_view, struct view *z_view, uint64_t sid, void *uuid, struct window_node *root, int layout)
 {
     memset(c_view, 0, sizeof(*c_view));
     memset(z_view, 0, sizeof(*z_view));
@@ -2510,7 +2418,7 @@ static void init_serialize_views(struct view *c_view, struct yabai_view *z_view,
 /* C-oracle parity over SLS-free flags. The lifted args must mirror what
  * C derives: uuid_str echoes the view uuid bytes, label_str echoes the
  * registered label (or NULL), has_focus echoes sid == current_space_id. */
-static int serialize_view_parity(struct view *c_view, struct yabai_view *z_view, uint64_t flags, const char *uuid_str, const char *label_str, bool has_focus)
+static int serialize_view_parity(struct view *c_view, struct view *z_view, uint64_t flags, const char *uuid_str, const char *label_str, bool has_focus)
 {
     char *c_msg = NULL;
     size_t c_len = 0;
@@ -2554,7 +2462,7 @@ static int serialize_view_parity(struct view *c_view, struct yabai_view *z_view,
  * from view_type_str[layout], first/last-window %d of the outer
  * leaves' window_order[0] (0 on an empty leaf), has-focus from
  * json_bool. Both C and Zig outputs must match these exact bytes. */
-static int serialize_view_golden_both(struct view *c_view, struct yabai_view *z_view, uint64_t flags, const char *uuid_str, const char *label_str, bool has_focus, const char *expected)
+static int serialize_view_golden_both(struct view *c_view, struct view *z_view, uint64_t flags, const char *uuid_str, const char *label_str, bool has_focus, const char *expected)
 {
     char *c_msg = NULL;
     size_t c_len = 0;
@@ -2593,7 +2501,7 @@ static int serialize_view_golden_both(struct view *c_view, struct yabai_view *z_
 }
 
 /* Zig-only hand vector for SLS-backed flags, all-flags, and flags==0. */
-static int serialize_view_zig_only(struct yabai_view *z_view, uint64_t flags, const char *uuid_str, int mission_index, const char *label_str, int display_index, const uint32_t *window_list, int window_count, bool has_focus, bool is_visible, bool is_fullscreen, const char *expected)
+static int serialize_view_zig_only(struct view *z_view, uint64_t flags, const char *uuid_str, int mission_index, const char *label_str, int display_index, const uint32_t *window_list, int window_count, bool has_focus, bool is_visible, bool is_fullscreen, const char *expected)
 {
     char *z_msg = NULL;
     size_t z_len = 0;
@@ -2627,7 +2535,7 @@ TEST_FUNC(zig_view_serialize,
     uint64_t saved_current = g_space_manager.current_space_id;
 
     struct view c_view;
-    struct yabai_view z_view;
+    struct view z_view;
     CFStringRef uuid = CFStringCreateWithCString(NULL, "test-uuid-1", kCFStringEncodingUTF8);
     TEST_CHECK(uuid != NULL, 1);
 
@@ -2917,7 +2825,7 @@ static void free_tie_tree(struct tie_tree *t)
 
 /* Oracle parity plus the hand-pinned expected node: the frozen reference
  * and the Zig export must agree, and both must be the pinned node. Views share one root, as in zig_view_find_window_node. */
-static int direction_case(struct view *c_view, struct yabai_view *z_view, struct window_node *source, int direction, uint32_t *window_list, int window_count, struct window_node *expected)
+static int direction_case(struct view *c_view, struct view *z_view, struct window_node *source, int direction, uint32_t *window_list, int window_count, struct window_node *expected)
 {
     struct window_node *c = ref_view_find_window_node_in_direction(c_view, source, direction, window_list, window_count);
     struct window_node *z = yabai_view_find_window_node_in_direction(z_view, source, direction, window_list, window_count);
@@ -2926,7 +2834,7 @@ static int direction_case(struct view *c_view, struct yabai_view *z_view, struct
     return 1;
 }
 
-static void init_direction_views(struct view *c_view, struct yabai_view *z_view, struct window_node *root)
+static void init_direction_views(struct view *c_view, struct view *z_view, struct window_node *root)
 {
     memset(c_view, 0, sizeof(*c_view));
     memset(z_view, 0, sizeof(*z_view));
@@ -2937,7 +2845,7 @@ static void init_direction_views(struct view *c_view, struct yabai_view *z_view,
 TEST_FUNC(zig_view_find_in_direction,
 {
     struct view c_view;
-    struct yabai_view z_view;
+    struct view z_view;
 
     /* Each direction from the cardinal source, plus hand pins. */
     struct cardinal_tree ct;
