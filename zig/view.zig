@@ -257,12 +257,10 @@ extern fn yabai_find_rank_in_list(wid: u32, window_list: [*]const u32, window_co
 // window_list/window_count (the C delegate evaluates it at the site
 // exactly as the C body did) so the export stays pure. Leaf walk and
 // area_max_point reuse the same-file ports directly.
-// Rank-miss note: C window_manager_find_rank_of_window_in_list falls
-// off the end with no return on a miss (undefined value), while
-// yabai_find_rank_in_list returns INT_MAX; with consistent inputs
-// (every leaf's window_order[0] present in the SLS list) the miss path
-// never fires, so only distance-tie order among inconsistent inputs
-// could differ. A NULL list returns NULL, matching the C early-out.
+// Rank-miss note: C window_manager_find_rank_of_window_in_list and
+// yabai_find_rank_in_list both return INT_MAX on a miss, so a leaf whose
+// window_order[0] is absent from the SLS list ranks last on both sides.
+// A NULL list returns NULL, matching the C early-out.
 export fn yabai_view_find_window_node_in_direction(view: *const View, source: *WindowNode, direction: c_int, window_list: ?[*]const u32, window_count: c_int) ?*WindowNode {
     @setRuntimeSafety(false);
     const list = window_list orelse return null;
@@ -474,6 +472,8 @@ extern fn yabai_area_make_pair(split: c_int, gap: c_int, ratio: f32, parent: *co
 
 extern "c" fn malloc(size: usize) ?[*]u8;
 extern "c" fn realloc(ptr: ?*anyopaque, size: usize) ?[*]u8;
+// Out-of-memory crashes here the way C did; @panic would need a Zig runtime.
+extern "c" fn abort() noreturn;
 
 // Mirrors area_make_pair_for_node(): resolves split/ratio/gap through
 // the already-ported get_split/get_ratio/get_gap helpers (the space
@@ -498,8 +498,8 @@ export fn yabai_area_make_pair_for_node(view: *const View, node: *WindowNode, sp
 // other side, then the area pair resolved as above.
 export fn yabai_window_node_split(view: *const View, node: *WindowNode, window_id: u32, window_zoom_persist: bool, window_placement: c_int, space_split_type: c_int, space_split_ratio: f32) void {
     @setRuntimeSafety(false);
-    const left_mem = malloc(@sizeOf(WindowNode)) orelse unreachable;
-    const right_mem = malloc(@sizeOf(WindowNode)) orelse unreachable;
+    const left_mem = malloc(@sizeOf(WindowNode)) orelse abort();
+    const right_mem = malloc(@sizeOf(WindowNode)) orelse abort();
     const left: *WindowNode = @ptrCast(@alignCast(left_mem));
     const right: *WindowNode = @ptrCast(@alignCast(right_mem));
     left.* = std.mem.zeroes(WindowNode);
@@ -608,10 +608,11 @@ export fn yabai_window_node_clear_zoom(node: *WindowNode) void {
 
 // Mirrors view_find_window_list(): leaf walk in first/next order through
 // the already-ported yabai_window_node_find_first_leaf /
-// yabai_window_node_find_next_leaf, initial capacity 13 doubling when
-// count + node_count reaches capacity. ts_alloc_list never zeroes and
-// ts_expand preserves in place, mirrored here with libc malloc/realloc
-// which likewise leave fresh bytes uninitialized and preserve old ones.
+// yabai_window_node_find_next_leaf, initial capacity 13 doubling until
+// count + node_count fits, then one realloc. (Doubling only once per
+// leaf, as C does, overflows when a leaf holds more windows than the
+// doubled capacity, e.g. a 31-window stack leaf against 26 slots.)
+// Fresh bytes stay uninitialized and realloc preserves old ones.
 // Ownership asymmetry: the C original returns temp-pool memory the
 // caller never frees; this export returns libc malloc'd memory the C
 // caller must free (the parity test frees only the Zig side).
@@ -619,15 +620,16 @@ export fn yabai_view_find_window_list(view: *const View, window_count: *c_int) ?
     @setRuntimeSafety(false);
     window_count.* = 0;
     var capacity: usize = 13;
-    const first_mem = malloc(capacity * @sizeOf(u32)) orelse unreachable;
+    const first_mem = malloc(capacity * @sizeOf(u32)) orelse abort();
     var list: [*]u32 = @ptrCast(@alignCast(first_mem));
     var count: usize = 0;
     var node = yabai_window_node_find_first_leaf(view.root orelse unreachable);
     while (node) |n| {
         const node_count: usize = @intCast(n.window_count);
         if (count + node_count >= capacity) {
-            const new_capacity = capacity * 2;
-            const grown_mem = realloc(@ptrCast(list), new_capacity * @sizeOf(u32)) orelse unreachable;
+            var new_capacity = capacity * 2;
+            while (count + node_count >= new_capacity) new_capacity *= 2;
+            const grown_mem = realloc(@ptrCast(list), new_capacity * @sizeOf(u32)) orelse abort();
             list = @ptrCast(@alignCast(grown_mem));
             capacity = new_capacity;
         }
@@ -677,10 +679,10 @@ extern "c" fn free(ptr: ?*anyopaque) void;
 // window_node_update does nothing.
 export fn yabai_view_create(sid: u64, uuid: ?*anyopaque, is_user: bool, defaults: *const ViewDefaults) *View {
     @setRuntimeSafety(false);
-    const mem = malloc(@sizeOf(View)) orelse unreachable;
+    const mem = malloc(@sizeOf(View)) orelse abort();
     const view: *View = @ptrCast(@alignCast(mem));
     view.* = std.mem.zeroes(View);
-    const root_mem = malloc(@sizeOf(WindowNode)) orelse unreachable;
+    const root_mem = malloc(@sizeOf(WindowNode)) orelse abort();
     const root: *WindowNode = @ptrCast(@alignCast(root_mem));
     root.* = std.mem.zeroes(WindowNode);
     view.root = root;
