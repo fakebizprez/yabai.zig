@@ -176,6 +176,13 @@ TEST_FUNC(zig_display_serialize,
     TEST_CHECK(serialize_display_parity(did, DISPLAY_PROPERTY_LABEL, uuid_str, NULL, frame, false), 1);
     TEST_CHECK(serialize_display_parity(did, DISPLAY_PROPERTY_FRAME, uuid_str, NULL, frame, false), 1);
 
+    /* A display id with no UUID: C falls back to "<unknown>". */
+    uint32_t bogus_did = 0x7fffff00;
+    CFStringRef bogus_uuid = display_uuid(bogus_did);
+    TEST_CHECK(bogus_uuid == NULL, true);
+    if (bogus_uuid) CFRelease(bogus_uuid);
+    TEST_CHECK(serialize_display_parity(bogus_did, DISPLAY_PROPERTY_ID | DISPLAY_PROPERTY_UUID, NULL, NULL, CGDisplayBounds(bogus_did), false), 1);
+
     /* has-focus both polarities via current_display_id. */
     g_display_manager.current_display_id = did;
     TEST_CHECK(serialize_display_parity(did, DISPLAY_PROPERTY_HAS_FOCUS, uuid_str, NULL, frame, true), 1);
