@@ -5,37 +5,8 @@
 // (four doubles, 32 bytes). All arithmetic stays in f64 exactly as
 // the C promotion rules dictate, narrowing to f32 only on output.
 
-pub const CgRect = extern struct {
-    x: f64,
-    y: f64,
-    w: f64,
-    h: f64,
-};
-
-comptime {
-    if (@sizeOf(CgRect) != 32) @compileError("CgRect size drift");
-    if (WINDOW_MOVABLE != 0x40) @compileError("WINDOW_MOVABLE drift");
-    if (WINDOW_RESIZABLE != 0x80) @compileError("WINDOW_RESIZABLE drift");
-}
-
-pub const HANDLE_TOP: c_int = 0x01;
-pub const HANDLE_BOTTOM: c_int = 0x02;
-pub const HANDLE_LEFT: c_int = 0x04;
-pub const HANDLE_RIGHT: c_int = 0x08;
-
-pub const TYPE_REL: c_int = 0x2;
-
-// Flag byte mirror of `enum window_flag` in src/window.h. Only the two
-// capability bits are read by the ported helpers below; the rest are
-// pinned here so layout drift fails the build, not the suite.
-pub const WINDOW_SHADOW: u8 = 0x01;
-pub const WINDOW_FULLSCREEN: u8 = 0x02;
-pub const WINDOW_MINIMIZE: u8 = 0x04;
-pub const WINDOW_FLOAT: u8 = 0x08;
-pub const WINDOW_STICKY: u8 = 0x10;
-pub const WINDOW_WINDOWED: u8 = 0x20;
-pub const WINDOW_MOVABLE: u8 = 0x40;
-pub const WINDOW_RESIZABLE: u8 = 0x80;
+const abi = @import("abi.zig");
+const CgRect = abi.CgRect;
 
 export fn yabai_move_frame_math(
     frame: *const CgRect,
@@ -52,7 +23,7 @@ export fn yabai_move_frame_math(
     // narrows back to float on assignment.
     var ax: f32 = dx;
     var ay: f32 = dy;
-    if (move_type == TYPE_REL) {
+    if (move_type == abi.TYPE_REL) {
         ax = @floatCast(@as(f64, dx) + frame.x);
         ay = @floatCast(@as(f64, dy) + frame.y);
     }
@@ -73,15 +44,15 @@ export fn yabai_resize_frame_math(
     fh: *f32,
 ) void {
     @setRuntimeSafety(false);
-    const x_mod: c_int = if (direction & HANDLE_LEFT != 0)
+    const x_mod: c_int = if (direction & abi.HANDLE_LEFT != 0)
         -1
-    else if (direction & HANDLE_RIGHT != 0)
+    else if (direction & abi.HANDLE_RIGHT != 0)
         1
     else
         0;
-    const y_mod: c_int = if (direction & HANDLE_TOP != 0)
+    const y_mod: c_int = if (direction & abi.HANDLE_TOP != 0)
         -1
-    else if (direction & HANDLE_BOTTOM != 0)
+    else if (direction & abi.HANDLE_BOTTOM != 0)
         1
     else
         0;
@@ -95,11 +66,11 @@ export fn yabai_resize_frame_math(
     const fh_narrow: f32 = @floatCast(if (1.0 > fh_full) 1.0 else fh_full);
     fw.* = fw_narrow;
     fh.* = fh_narrow;
-    fx.* = @floatCast(if (direction & HANDLE_LEFT != 0)
+    fx.* = @floatCast(if (direction & abi.HANDLE_LEFT != 0)
         frame.x + frame.w - @as(f64, fw_narrow)
     else
         frame.x);
-    fy.* = @floatCast(if (direction & HANDLE_TOP != 0)
+    fy.* = @floatCast(if (direction & abi.HANDLE_TOP != 0)
         frame.y + frame.h - @as(f64, fh_narrow)
     else
         frame.y);
@@ -118,28 +89,13 @@ export fn yabai_window_is_undersized(w: f64, h: f64) bool {
 // Mirrors window_can_move() in src/window.c (flags & WINDOW_MOVABLE).
 export fn yabai_window_can_move(flags: u8) bool {
     @setRuntimeSafety(false);
-    return (flags & WINDOW_MOVABLE) != 0;
+    return (flags & abi.WINDOW_MOVABLE) != 0;
 }
 
 // Mirrors window_can_resize() in src/window.c (flags & WINDOW_RESIZABLE).
 export fn yabai_window_can_resize(flags: u8) bool {
     @setRuntimeSafety(false);
-    return (flags & WINDOW_RESIZABLE) != 0;
-}
-
-// Layer-index mirror of src/misc/macros.h (CGWindowLevelKey values).
-// Pinned here so table drift fails the build, not the suite; the C side
-// pins the same values with _Static_assert in tests/src/zig_window.c.
-pub const LAYER_AUTO: c_int = 0;
-pub const LAYER_BELOW: c_int = 3;
-pub const LAYER_NORMAL: c_int = 4;
-pub const LAYER_ABOVE: c_int = 5;
-
-comptime {
-    if (LAYER_AUTO != 0) @compileError("LAYER_AUTO drift");
-    if (LAYER_BELOW != 3) @compileError("LAYER_BELOW drift");
-    if (LAYER_NORMAL != 4) @compileError("LAYER_NORMAL drift");
-    if (LAYER_ABOVE != 5) @compileError("LAYER_ABOVE drift");
+    return (flags & abi.WINDOW_RESIZABLE) != 0;
 }
 
 // Mirrors window_layer() in src/window.c. The three

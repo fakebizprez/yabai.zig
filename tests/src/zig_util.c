@@ -6,53 +6,6 @@
  * both variants are ported for the actually used combinations.
  */
 
-struct yabai_balance_node
-{
-    int y_count;
-    int x_count;
-};
-
-struct yabai_rgba_color
-{
-    uint32_t p;
-    float r;
-    float g;
-    float b;
-    float a;
-};
-
-void yabai_balance_node_add(const struct yabai_balance_node *a, const struct yabai_balance_node *b, struct yabai_balance_node *out);
-float yabai_clampf_range(float value, float min, float max);
-const char *yabai_json_bool(bool value);
-const char *yabai_json_optional_bool(int value);
-bool yabai_in_range_ii_f(float a, float b, float c);
-bool yabai_in_range_ii_i(int a, int b, int c);
-bool yabai_in_range_ei_f(float a, float b, float c);
-bool yabai_in_range_ie_i(int a, int b, int c);
-void yabai_rgba_color_from_hex(uint32_t color, struct yabai_rgba_color *out);
-int yabai_find_rank_in_list(uint32_t wid, const uint32_t *window_list, int window_count);
-float yabai_ease_in_sine(float t);
-float yabai_ease_out_sine(float t);
-float yabai_ease_in_out_sine(float t);
-float yabai_ease_in_quad(float t);
-float yabai_ease_out_quad(float t);
-float yabai_ease_in_out_quad(float t);
-float yabai_ease_in_cubic(float t);
-float yabai_ease_out_cubic(float t);
-float yabai_ease_in_out_cubic(float t);
-float yabai_ease_in_quart(float t);
-float yabai_ease_out_quart(float t);
-float yabai_ease_in_out_quart(float t);
-float yabai_ease_in_quint(float t);
-float yabai_ease_out_quint(float t);
-float yabai_ease_in_out_quint(float t);
-float yabai_ease_in_expo(float t);
-float yabai_ease_out_expo(float t);
-float yabai_ease_in_out_expo(float t);
-float yabai_ease_in_circ(float t);
-float yabai_ease_out_circ(float t);
-float yabai_ease_in_out_circ(float t);
-
 static float (*ease_c_fns[])(float) =
 {
     ease_in_sine, ease_out_sine, ease_in_out_sine,
@@ -98,17 +51,12 @@ TEST_FUNC(zig_util_easing,
     TEST_CHECK(yabai_ease_in_expo(0.0f) == 0.0f, 1);
 })
 
-_Static_assert(sizeof(struct balance_node) == 8, "C balance_node size drift");
-_Static_assert(sizeof(struct yabai_balance_node) == 8, "balance_node size drift");
-_Static_assert(sizeof(struct rgba_color) == 20, "C rgba_color size drift");
-_Static_assert(sizeof(struct yabai_rgba_color) == 20, "rgba_color size drift");
-
 TEST_FUNC(zig_util_balance_clamp,
 {
     struct balance_node c_add = balance_node_add((struct balance_node) { 1, 2 }, (struct balance_node) { 3, 4 });
-    struct yabai_balance_node za;
-    struct yabai_balance_node zb;
-    struct yabai_balance_node zout;
+    struct balance_node za;
+    struct balance_node zb;
+    struct balance_node zout;
     za.y_count = 1;
     za.x_count = 2;
     zb.y_count = 3;
@@ -218,7 +166,7 @@ TEST_FUNC(zig_util_in_range,
 TEST_FUNC(zig_util_rgba,
 {
     struct rgba_color c_red = rgba_color_from_hex(0xFF0000);
-    struct yabai_rgba_color z_red;
+    struct rgba_color z_red;
     yabai_rgba_color_from_hex(0xFF0000, &z_red);
     TEST_CHECK(memcmp(&c_red, &z_red, sizeof(struct rgba_color)), 0);
     TEST_CHECK(z_red.p, 0xFF0000);
@@ -229,7 +177,7 @@ TEST_FUNC(zig_util_rgba,
     TEST_CHECK(z_red.a == 0.0f, 1);
 
     struct rgba_color c_mix = rgba_color_from_hex(0x80402010);
-    struct yabai_rgba_color z_mix;
+    struct rgba_color z_mix;
     yabai_rgba_color_from_hex(0x80402010, &z_mix);
     TEST_CHECK(memcmp(&c_mix, &z_mix, sizeof(struct rgba_color)), 0);
 })

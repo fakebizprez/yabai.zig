@@ -13,25 +13,8 @@
 // and every byte goes out via libc fwrite/snprintf. The trailing
 // has-focus branch omits did_output=true, exactly like C.
 
-pub const DISPLAY_PROPERTY_ID: u64 = 0x01;
-pub const DISPLAY_PROPERTY_UUID: u64 = 0x02;
-pub const DISPLAY_PROPERTY_INDEX: u64 = 0x04;
-pub const DISPLAY_PROPERTY_LABEL: u64 = 0x08;
-pub const DISPLAY_PROPERTY_FRAME: u64 = 0x10;
-pub const DISPLAY_PROPERTY_SPACES: u64 = 0x20;
-pub const DISPLAY_PROPERTY_HAS_FOCUS: u64 = 0x40;
+const abi = @import("abi.zig");
 
-comptime {
-    if (DISPLAY_PROPERTY_ID != 0x01) @compileError("DISPLAY_PROPERTY_ID drift");
-    if (DISPLAY_PROPERTY_UUID != 0x02) @compileError("DISPLAY_PROPERTY_UUID drift");
-    if (DISPLAY_PROPERTY_INDEX != 0x04) @compileError("DISPLAY_PROPERTY_INDEX drift");
-    if (DISPLAY_PROPERTY_LABEL != 0x08) @compileError("DISPLAY_PROPERTY_LABEL drift");
-    if (DISPLAY_PROPERTY_FRAME != 0x10) @compileError("DISPLAY_PROPERTY_FRAME drift");
-    if (DISPLAY_PROPERTY_SPACES != 0x20) @compileError("DISPLAY_PROPERTY_SPACES drift");
-    if (DISPLAY_PROPERTY_HAS_FOCUS != 0x40) @compileError("DISPLAY_PROPERTY_HAS_FOCUS drift");
-}
-
-extern fn yabai_json_bool(value: bool) [*:0]const u8;
 extern "c" fn snprintf(buf: [*]u8, n: usize, fmt: [*:0]const u8, ...) c_int;
 extern "c" fn fwrite(buf: *const anyopaque, size: usize, nmemb: usize, stream: ?*anyopaque) usize;
 
@@ -88,13 +71,13 @@ export fn yabai_display_serialize(rsp: ?*anyopaque, did: u32, flags: u64, uuid_s
     var did_output = false;
     displayWriteBytes(stream, "{\n");
 
-    if ((f & DISPLAY_PROPERTY_ID) != 0) {
+    if ((f & abi.DISPLAY_PROPERTY_ID) != 0) {
         displayWriteBytes(stream, "\t\"id\":");
         displayWriteInt(stream, @bitCast(did));
         did_output = true;
     }
 
-    if ((f & DISPLAY_PROPERTY_UUID) != 0) {
+    if ((f & abi.DISPLAY_PROPERTY_UUID) != 0) {
         if (did_output) displayWriteBytes(stream, ",\n");
         displayWriteBytes(stream, "\t\"uuid\":\"");
         displayWriteZ(stream, if (uuid_str) |s| s else "<unknown>");
@@ -102,14 +85,14 @@ export fn yabai_display_serialize(rsp: ?*anyopaque, did: u32, flags: u64, uuid_s
         did_output = true;
     }
 
-    if ((f & DISPLAY_PROPERTY_INDEX) != 0) {
+    if ((f & abi.DISPLAY_PROPERTY_INDEX) != 0) {
         if (did_output) displayWriteBytes(stream, ",\n");
         displayWriteBytes(stream, "\t\"index\":");
         displayWriteInt(stream, arrange_index);
         did_output = true;
     }
 
-    if ((f & DISPLAY_PROPERTY_LABEL) != 0) {
+    if ((f & abi.DISPLAY_PROPERTY_LABEL) != 0) {
         if (did_output) displayWriteBytes(stream, ",\n");
         displayWriteBytes(stream, "\t\"label\":\"");
         displayWriteZ(stream, if (label_str) |s| s else "");
@@ -117,7 +100,7 @@ export fn yabai_display_serialize(rsp: ?*anyopaque, did: u32, flags: u64, uuid_s
         did_output = true;
     }
 
-    if ((f & DISPLAY_PROPERTY_FRAME) != 0) {
+    if ((f & abi.DISPLAY_PROPERTY_FRAME) != 0) {
         if (did_output) displayWriteBytes(stream, ",\n");
         displayWriteBytes(stream, "\t\"frame\":{\n\t\t\"x\":");
         displayWriteFloat(stream, frame_x);
@@ -131,7 +114,7 @@ export fn yabai_display_serialize(rsp: ?*anyopaque, did: u32, flags: u64, uuid_s
         did_output = true;
     }
 
-    if ((f & DISPLAY_PROPERTY_SPACES) != 0) {
+    if ((f & abi.DISPLAY_PROPERTY_SPACES) != 0) {
         if (did_output) displayWriteBytes(stream, ",\n");
         displayWriteBytes(stream, "\t\"spaces\":[");
         if (space_count > 0) {
@@ -150,10 +133,10 @@ export fn yabai_display_serialize(rsp: ?*anyopaque, did: u32, flags: u64, uuid_s
         did_output = true;
     }
 
-    if ((f & DISPLAY_PROPERTY_HAS_FOCUS) != 0) {
+    if ((f & abi.DISPLAY_PROPERTY_HAS_FOCUS) != 0) {
         if (did_output) displayWriteBytes(stream, ",\n");
         displayWriteBytes(stream, "\t\"has-focus\":");
-        displayWriteZ(stream, yabai_json_bool(has_focus));
+        displayWriteZ(stream, abi.yabai_json_bool(has_focus));
     }
 
     displayWriteBytes(stream, "\n}");

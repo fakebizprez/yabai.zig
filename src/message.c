@@ -2588,7 +2588,6 @@ static void handle_domain_query(FILE *rsp, struct token domain, char *message)
  * eagerly. struct rule passes as the Rule pointer, the message cursor
  * passes directly, and token passes by address. rule_add()/
  * rule_destroy() stay C. */
-bool yabai_parse_rule(FILE *rsp, char **message, struct rule *rule, const struct token *token, uint32_t acting_did, uint64_t acting_sid);
 
 static void handle_domain_rule(FILE *rsp, struct token domain, char *message)
 {

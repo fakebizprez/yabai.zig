@@ -16,43 +16,8 @@ extern struct window_manager g_window_manager;
  * returns caller-frees malloc memory (where C returned temp-pool
  * memory), and the sole daemon caller
  * (window_manager_validate_windows_on_space in src/window_manager.c)
- * frees it after its last use. */
-bool yabai_window_node_contains_window(struct window_node *node, uint32_t window_id);
-int yabai_window_node_index_of_window(struct window_node *node, uint32_t window_id);
-struct window_node *yabai_window_node_fence(struct window_node *node, int dir);
-void yabai_window_node_swap_window_list(struct window_node *a_node, struct window_node *b_node);
-void yabai_window_node_rotate(struct window_node *node, int degrees);
-struct window_node *yabai_window_node_mirror(struct window_node *node, int axis);
-struct window_node *yabai_window_node_find_first_leaf(struct window_node *root);
-struct window_node *yabai_window_node_find_last_leaf(struct window_node *root);
-struct window_node *yabai_window_node_find_prev_leaf(struct window_node *node);
-struct window_node *yabai_window_node_find_next_leaf(struct window_node *node);
-struct yabai_view;
-struct window_node *yabai_view_find_window_node(const struct yabai_view *view, uint32_t window_id);
-struct window_node *yabai_view_find_window_node_in_direction(const struct yabai_view *view, struct window_node *source, int direction, const uint32_t *window_list, int window_count);
-uint32_t *yabai_view_find_window_list(const struct yabai_view *view, int *window_count);
-bool yabai_view_is_invalid(const struct yabai_view *view);
-bool yabai_view_is_dirty(const struct yabai_view *view);
-void yabai_view_stack_window(struct window_node *node, uint32_t window_id);
-
-/* Caller-lifted inputs for yabai_view_create (zig/view.zig
- * ViewDefaults): field order mirrors the C user-branch assignment
- * order (layout, paddings, gap, auto_balance, split_type). */
-struct yabai_view_defaults
-{
-    int layout;
-    int top_padding;
-    int bottom_padding;
-    int left_padding;
-    int right_padding;
-    int window_gap;
-    uint32_t auto_balance;
-    int split_type;
-};
-struct yabai_view *yabai_view_create(uint64_t sid, CFStringRef uuid, bool is_user, const struct yabai_view_defaults *defaults);
-void yabai_view_clear(struct yabai_view *view);
-void yabai_view_destroy(struct yabai_view *view);
-_Static_assert(sizeof(struct yabai_view_defaults) == 32, "view defaults size drift");
+ * frees it after its last use. Prototypes and the defaults block live
+ * in src/zig_abi.h. */
 
 #define INSERT_FEEDBACK_WIDTH 2
 #define INSERT_FEEDBACK_RADIUS 9
@@ -536,12 +501,12 @@ struct window_node *view_find_window_node_in_direction(struct view *view, struct
     uint32_t *window_list = space_window_list(view->sid, &window_count, false);
     if (!window_list) return NULL;
 
-    return yabai_view_find_window_node_in_direction((const struct yabai_view *) view, source, direction, window_list, window_count);
+    return yabai_view_find_window_node_in_direction(view, source, direction, window_list, window_count);
 }
 
 struct window_node *view_find_window_node(struct view *view, uint32_t window_id)
 {
-    return yabai_view_find_window_node((const struct yabai_view *) view, window_id);
+    return yabai_view_find_window_node(view, window_id);
 }
 
 struct window_node *view_remove_window_node(struct view *view, struct window *window)
@@ -728,17 +693,17 @@ struct window_node *view_add_window_node(struct view *view, struct window *windo
 
 uint32_t *view_find_window_list(struct view *view, int *window_count)
 {
-    return yabai_view_find_window_list((const struct yabai_view *) view, window_count);
+    return yabai_view_find_window_list(view, window_count);
 }
 
 bool view_is_invalid(struct view *view)
 {
-    return yabai_view_is_invalid((const struct yabai_view *) view);
+    return yabai_view_is_invalid(view);
 }
 
 bool view_is_dirty(struct view *view)
 {
-    return yabai_view_is_dirty((const struct yabai_view *) view);
+    return yabai_view_is_dirty(view);
 }
 
 void view_flush(struct view *view)
@@ -753,9 +718,6 @@ void view_flush(struct view *view)
 
 /* Zig delegate (zig/view.zig): parity-proven equivalent of the JSON
  * emission below. Signature in src/view.h is unchanged. */
-struct yabai_view;
-void yabai_view_serialize(FILE *rsp, const struct yabai_view *view, uint64_t flags, const char *uuid_str, int mission_index, const char *space_label_str, int display_index, const uint32_t *window_list, int window_count, bool has_focus, bool is_visible, bool is_fullscreen);
-
 void view_serialize(FILE *rsp, struct view *view, uint64_t flags)
 {
     TIME_FUNCTION;
@@ -780,7 +742,7 @@ void view_serialize(FILE *rsp, struct view *view, uint64_t flags)
     bool is_visible = (eff & SPACE_PROPERTY_IS_VISIBLE) ? space_is_visible(view->sid) : false;
     bool is_fullscreen = (eff & SPACE_PROPERTY_IS_FULLSCREEN) ? space_is_fullscreen(view->sid) : false;
 
-    yabai_view_serialize(rsp, (const struct yabai_view *) view, flags,
+    yabai_view_serialize(rsp, view, flags,
                          uuid,
                          mission_index,
                          space_label ? space_label->label : NULL,
@@ -828,7 +790,7 @@ struct view *view_create(uint64_t sid)
         .split_type     = g_space_manager.split_type,
     };
 
-    struct view *view = (struct view *) yabai_view_create(sid, uuid, is_user, &defaults);
+    struct view *view = yabai_view_create(sid, uuid, is_user, &defaults);
 
     if (is_user) view_update(view);
 
@@ -838,12 +800,12 @@ struct view *view_create(uint64_t sid)
 void view_clear(struct view *view)
 {
     if (view->root) {
-        yabai_view_clear((struct yabai_view *) view);
+        yabai_view_clear(view);
         view_update(view);
     }
 }
 
 void view_destroy(struct view *view)
 {
-    yabai_view_destroy((struct yabai_view *) view);
+    yabai_view_destroy(view);
 }

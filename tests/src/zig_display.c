@@ -23,17 +23,6 @@
  * on the real port (green).
  */
 
-void yabai_display_serialize(FILE *rsp, uint32_t did, uint64_t flags, const char *uuid_str, int arrange_index, const char *label_str, double frame_x, double frame_y, double frame_w, double frame_h, const int *space_list, int space_count, bool has_focus);
-
-/* Pin the mirrored DISPLAY_PROPERTY_* bits (src/display.h). */
-_Static_assert(DISPLAY_PROPERTY_ID == 0x01, "DISPLAY_PROPERTY_ID drift");
-_Static_assert(DISPLAY_PROPERTY_UUID == 0x02, "DISPLAY_PROPERTY_UUID drift");
-_Static_assert(DISPLAY_PROPERTY_INDEX == 0x04, "DISPLAY_PROPERTY_INDEX drift");
-_Static_assert(DISPLAY_PROPERTY_LABEL == 0x08, "DISPLAY_PROPERTY_LABEL drift");
-_Static_assert(DISPLAY_PROPERTY_FRAME == 0x10, "DISPLAY_PROPERTY_FRAME drift");
-_Static_assert(DISPLAY_PROPERTY_SPACES == 0x20, "DISPLAY_PROPERTY_SPACES drift");
-_Static_assert(DISPLAY_PROPERTY_HAS_FOCUS == 0x40, "DISPLAY_PROPERTY_HAS_FOCUS drift");
-
 /* Temp-pool init for the C uuid oracle (mirrors zig_view.c). */
 static void ensure_ts_for_display_serialize(void)
 {
