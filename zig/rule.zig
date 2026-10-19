@@ -49,8 +49,9 @@ comptime {
     if (@offsetOf(RuleEffects, "flags") != 72) @compileError("RuleEffects.flags drift");
 }
 
-// Opaque regex_t mirror: 32 bytes on 64-bit macOS. Never touched;
-// rule_destroy() intentionally skips regfree() exactly as specified.
+// Opaque regex_t mirror: 32 bytes on 64-bit macOS. Filled by libc
+// regcomp in yabai_parse_rule and released by libc regfree in
+// yabai_rule_destroy under the same VALID-flag guards as C.
 pub const RegexT = [32]u8;
 
 pub const Rule = extern struct {
@@ -96,13 +97,15 @@ comptime {
 extern "c" fn malloc(size: usize) ?[*]u8;
 extern "c" fn free(ptr: ?[*]u8) void;
 extern "c" fn regfree(regex: *anyopaque) void;
+// Out-of-memory crashes here the way C did; @panic would need a Zig runtime.
+extern "c" fn abort() noreturn;
 extern fn yabai_in_range_ii_f(a: f32, b: f32, c: f32) bool;
 
-fn stringCopy(s: [*:0]const u8) ?[*:0]u8 {
+fn stringCopy(s: [*:0]const u8) [*:0]u8 {
     @setRuntimeSafety(false);
     var len: usize = 0;
     while (s[len] != 0) : (len += 1) {}
-    const mem = malloc(len + 1) orelse return null;
+    const mem = malloc(len + 1) orelse abort();
     const out: [*:0]u8 = @ptrCast(mem);
     var i: usize = 0;
     while (i < len) : (i += 1) {
@@ -156,11 +159,12 @@ export fn yabai_rule_combine_effects(effects: *const RuleEffects, result: *RuleE
     }
 
     if (effects.scratchpad) |pad| {
+        // Scratchpad strings are always NUL-terminated in C.
+        const copy = stringCopy(@ptrCast(pad));
         if (result.scratchpad) |old| {
             free(old);
         }
-        // Scratchpad strings are always NUL-terminated in C.
-        result.scratchpad = stringCopy(@ptrCast(pad));
+        result.scratchpad = copy;
     }
 
     if (effects.manage != RULE_PROP_UD) result.manage = effects.manage;
@@ -266,12 +270,14 @@ fn writeGrid(rsp: ?*anyopaque, grid: [6]c_uint) void {
     @setRuntimeSafety(false);
     const stream = rsp orelse return;
     var tmp: [256]u8 = undefined;
-    const g0: c_int = @intCast(grid[0]);
-    const g1: c_int = @intCast(grid[1]);
-    const g2: c_int = @intCast(grid[2]);
-    const g3: c_int = @intCast(grid[3]);
-    const g4: c_int = @intCast(grid[4]);
-    const g5: c_int = @intCast(grid[5]);
+    // sscanf("%d") can store negatives into these unsigned slots; C prints
+    // them back with %d, so reinterpret the bits rather than range-cast.
+    const g0: c_int = @bitCast(grid[0]);
+    const g1: c_int = @bitCast(grid[1]);
+    const g2: c_int = @bitCast(grid[2]);
+    const g3: c_int = @bitCast(grid[3]);
+    const g4: c_int = @bitCast(grid[4]);
+    const g5: c_int = @bitCast(grid[5]);
     const n = snprintf(@ptrCast(&tmp), tmp.len, "%d:%d:%d:%d:%d:%d", g0, g1, g2, g3, g4, g5);
     if (n <= 0) return;
     _ = fwrite(@ptrCast(&tmp), 1, @intCast(n), stream);
@@ -290,7 +296,8 @@ fn layerStr(layer: c_int) [*:0]const u8 {
 // ts_alloc_unaligned() is a temp-storage bump allocator, not plain
 // malloc; the Zig port uses libc malloc for equivalent ownership here
 // (the serialize port frees these buffers, keeping the suite leak-clean)
-// and returns NULL when no replacements are needed, exactly like C.
+// and returns NULL when no replacements are needed, exactly like C. NULL
+// therefore always means "already clean"; allocation failure aborts.
 fn tsEscape(s: [*:0]const u8) ?[*:0]u8 {
     @setRuntimeSafety(false);
     var len: usize = 0;
@@ -306,7 +313,7 @@ fn tsEscape(s: [*:0]const u8) ?[*:0]u8 {
     }
     if (num_replacements == 0) return null;
     const total = len + num_replacements;
-    const mem = malloc(total + 1) orelse return null;
+    const mem = malloc(total + 1) orelse abort();
     const out: [*]u8 = @ptrCast(mem);
     var dst: usize = 0;
     var i: usize = 0;
