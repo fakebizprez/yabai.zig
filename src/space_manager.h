@@ -98,9 +98,6 @@ enum space_op_error space_manager_move_space_to_space(uint64_t acting_sid, uint6
 enum space_op_error space_manager_move_space_to_display(struct space_manager *sm, uint64_t sid, uint32_t did);
 enum space_op_error space_manager_destroy_space(uint64_t sid);
 enum space_op_error space_manager_add_space(uint64_t sid);
-void space_manager_assign_process_to_space(pid_t pid, uint64_t sid);
-void space_manager_assign_process_to_all_spaces(pid_t pid);
-bool space_manager_is_window_on_active_space(struct window *window);
 bool space_manager_is_window_on_space(uint64_t sid, struct window *window);
 void space_manager_mark_spaces_invalid_for_display(struct space_manager *sm, uint32_t did);
 void space_manager_mark_spaces_invalid(struct space_manager *sm);

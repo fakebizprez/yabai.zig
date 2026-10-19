@@ -1071,23 +1071,6 @@ enum space_op_error space_manager_add_space(uint64_t sid)
     return scripting_addition_create_space(sid) ? SPACE_OP_ERROR_SUCCESS : SPACE_OP_ERROR_SCRIPTING_ADDITION;
 }
 
-void space_manager_assign_process_to_space(pid_t pid, uint64_t sid)
-{
-    SLSProcessAssignToSpace(g_connection, pid, sid);
-}
-
-void space_manager_assign_process_to_all_spaces(pid_t pid)
-{
-    SLSProcessAssignToAllSpaces(g_connection, pid);
-}
-
-bool space_manager_is_window_on_active_space(struct window *window)
-{
-    uint64_t sid = space_manager_active_space();
-    bool result = space_manager_is_window_on_space(sid, window);
-    return result;
-}
-
 bool space_manager_is_window_on_space(uint64_t sid, struct window *window)
 {
     int space_count;

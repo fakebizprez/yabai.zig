@@ -155,12 +155,6 @@ static inline bool configure_settings_and_acquire_lock(void)
     mouse_state_init(&g_mouse_state);
     task_get_special_port(mach_task_self(), TASK_BOOTSTRAP_PORT, &g_bs_port);
 
-#if 0
-    hook_nsobject_autorelease();
-    hook_autoreleasepool_drain();
-    hook_autoreleasepool_release();
-#endif
-
     int handle = open(g_lock_file, O_CREAT | O_WRONLY | O_CLOEXEC, 0600);
     if (handle == -1) {
         error("yabai: could not create lock-file! abort..\n");
