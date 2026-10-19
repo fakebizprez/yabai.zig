@@ -104,7 +104,7 @@ typedef TEST_SIG(function);
     TEST_ENTRY(zig_window_flag_parity)                             \
     TEST_ENTRY(zig_window_layer_parity)                          \
     TEST_ENTRY(zig_regress_window_list_single_leaf_31)           \
-    TEST_ENTRY(zig_regress_window_list_two_leaves_12_15)         \
+    TEST_ENTRY(zig_regress_window_list_two_leaves_12_31)         \
     TEST_ENTRY(zig_regress_rule_negative_grid)
 
 static struct {

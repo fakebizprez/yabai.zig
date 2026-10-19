@@ -58,17 +58,17 @@ TEST_FUNC(zig_regress_window_list_single_leaf_31,
     free(root);
 })
 
-TEST_FUNC(zig_regress_window_list_two_leaves_12_15,
+TEST_FUNC(zig_regress_window_list_two_leaves_12_31,
 {
-    /* bsp shape: leaves of 12 then 15 windows (27 total, past 26). */
+    /* bsp shape: leaves of 12 then 31 windows: the second leaf alone outgrows one doubling (43 > 26). */
     struct window_node *root = calloc(1, sizeof(struct window_node));
     struct window_node *left = regress_leaf(2000, 12);
-    struct window_node *right = regress_leaf(2012, 15);
+    struct window_node *right = regress_leaf(2012, 31);
     left->parent = root;
     right->parent = root;
     root->left = left;
     root->right = right;
-    int ok = regress_window_list_case(root, 2000, 27);
+    int ok = regress_window_list_case(root, 2000, 43);
     TEST_CHECK(ok, 1);
     free(left);
     free(right);
