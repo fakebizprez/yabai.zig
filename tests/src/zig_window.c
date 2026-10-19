@@ -9,25 +9,6 @@
  * behavior.
  */
 
-void yabai_resize_frame_math(const CGRect *frame, int direction, float dx, float dy, float *fx, float *fy, float *fw, float *fh);
-void yabai_move_frame_math(const CGRect *frame, int type, float dx, float dy, float *x, float *y, float *w, float *h);
-bool yabai_window_is_undersized(double w, double h);
-bool yabai_window_can_move(uint8_t flags);
-bool yabai_window_can_resize(uint8_t flags);
-const char *yabai_window_layer(int level, int below, int normal, int above);
-
-_Static_assert(WINDOW_MOVABLE == 0x40, "WINDOW_MOVABLE drift");
-_Static_assert(WINDOW_RESIZABLE == 0x80, "WINDOW_RESIZABLE drift");
-
-/* layer_str indices in src/misc/macros.h mirror the CGWindowLevelKey enum
- * (Base 0, Minimum 1, Desktop 2, BackstopMenu 3, Normal 4, Floating 5). */
-_Static_assert(LAYER_AUTO == 0, "LAYER_AUTO drift");
-_Static_assert(LAYER_BELOW == 3, "LAYER_BELOW drift");
-_Static_assert(LAYER_NORMAL == 4, "LAYER_NORMAL drift");
-_Static_assert(LAYER_ABOVE == 5, "LAYER_ABOVE drift");
-
-_Static_assert(sizeof(CGRect) == 32, "CGRect size drift");
-
 struct resize_case
 {
     double x;

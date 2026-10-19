@@ -3,22 +3,16 @@
 // Pinned toolchain: Zig 0.17.0. Mirrors the helpers in
 // src/misc/helpers.h, src/misc/macros.h and src/view.c.
 
-pub const BalanceNode = extern struct {
-    y_count: c_int,
-    x_count: c_int,
-};
-
-pub const RgbaColor = extern struct {
-    p: u32,
-    r: f32,
-    g: f32,
-    b: f32,
-    a: f32,
-};
+const abi = @import("abi.zig");
+const BalanceNode = abi.BalanceNode;
+const RgbaColor = abi.RgbaColor;
 
 comptime {
-    if (@sizeOf(BalanceNode) != 8) @compileError("BalanceNode size drift");
-    if (@sizeOf(RgbaColor) != 20) @compileError("RgbaColor size drift");
+    abi.matches(yabai_balance_node_add, abi.yabai_balance_node_add);
+    abi.matches(yabai_find_rank_in_list, abi.yabai_find_rank_in_list);
+    abi.matches(yabai_json_bool, abi.yabai_json_bool);
+    abi.matches(yabai_json_optional_bool, abi.yabai_json_optional_bool);
+    abi.matches(yabai_in_range_ii_f, abi.yabai_in_range_ii_f);
 }
 
 export fn yabai_balance_node_add(a: *const BalanceNode, b: *const BalanceNode, out: *BalanceNode) void {

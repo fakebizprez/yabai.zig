@@ -19,7 +19,6 @@ static DISPLAY_EVENT_HANDLER(display_handler)
 
 /* Zig delegate (zig/display.zig): parity-proven equivalent of the JSON
  * emission below. Signature in src/display.h is unchanged. */
-void yabai_display_serialize(FILE *rsp, uint32_t did, uint64_t flags, const char *uuid_str, int arrange_index, const char *label_str, double frame_x, double frame_y, double frame_w, double frame_h, const int *space_list, int space_count, bool has_focus);
 
 void display_serialize(FILE *rsp, uint32_t did, uint64_t flags)
 {

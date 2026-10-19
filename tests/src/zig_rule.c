@@ -5,48 +5,6 @@
  * new copy allocated) and the untouched-field paths.
  */
 
-void yabai_rule_combine_effects(struct rule_effects *effects, struct rule_effects *result);
-bool yabai_rule_check_flag(const struct rule *r, uint16_t flag);
-void yabai_rule_set_flag(struct rule *r, uint16_t flag);
-void yabai_rule_clear_flag(struct rule *r, uint16_t flag);
-void yabai_rule_destroy(struct rule *rule);
-char *yabai_ts_string_escape(const char *s);
-void yabai_rule_serialize(FILE *rsp, struct rule *rule, int index, int did_index, int sid_index);
-
-_Static_assert(sizeof(struct rule_effects) == 80, "rule_effects size drift");
-_Static_assert(offsetof(struct rule_effects, sid) == 8, "rule_effects.sid drift");
-_Static_assert(offsetof(struct rule_effects, grid) == 40, "rule_effects.grid drift");
-_Static_assert(offsetof(struct rule_effects, scratchpad) == 64, "rule_effects.scratchpad drift");
-_Static_assert(offsetof(struct rule_effects, flags) == 72, "rule_effects.flags drift");
-
-/* struct rule layout pins (src/rule.h). regex_t is 32 bytes on 64-bit
- * macOS; the Zig Rule mirror treats the four regex fields as opaque
- * byte arrays and never calls regcomp/regfree. */
-_Static_assert(sizeof(regex_t) == 32, "regex_t size drift");
-_Static_assert(sizeof(struct rule) == 256, "rule size drift");
-_Static_assert(offsetof(struct rule, label) == 0, "rule.label drift");
-_Static_assert(offsetof(struct rule, app) == 8, "rule.app drift");
-_Static_assert(offsetof(struct rule, title) == 16, "rule.title drift");
-_Static_assert(offsetof(struct rule, role) == 24, "rule.role drift");
-_Static_assert(offsetof(struct rule, subrole) == 32, "rule.subrole drift");
-_Static_assert(offsetof(struct rule, app_regex) == 40, "rule.app_regex drift");
-_Static_assert(offsetof(struct rule, title_regex) == 72, "rule.title_regex drift");
-_Static_assert(offsetof(struct rule, role_regex) == 104, "rule.role_regex drift");
-_Static_assert(offsetof(struct rule, subrole_regex) == 136, "rule.subrole_regex drift");
-_Static_assert(offsetof(struct rule, effects) == 168, "rule.effects drift");
-_Static_assert(offsetof(struct rule, flags) == 248, "rule.flags drift");
-
-_Static_assert(RULE_APP_VALID == 0x001, "RULE_APP_VALID drift");
-_Static_assert(RULE_TITLE_VALID == 0x002, "RULE_TITLE_VALID drift");
-_Static_assert(RULE_ROLE_VALID == 0x004, "RULE_ROLE_VALID drift");
-_Static_assert(RULE_SUBROLE_VALID == 0x008, "RULE_SUBROLE_VALID drift");
-_Static_assert(RULE_APP_EXCLUDE == 0x010, "RULE_APP_EXCLUDE drift");
-_Static_assert(RULE_TITLE_EXCLUDE == 0x020, "RULE_TITLE_EXCLUDE drift");
-_Static_assert(RULE_ROLE_EXCLUDE == 0x040, "RULE_ROLE_EXCLUDE drift");
-_Static_assert(RULE_SUBROLE_EXCLUDE == 0x080, "RULE_SUBROLE_EXCLUDE drift");
-_Static_assert(RULE_ONE_SHOT == 0x100, "RULE_ONE_SHOT drift");
-_Static_assert(RULE_ONE_SHOT_REMOVE == 0x200, "RULE_ONE_SHOT_REMOVE drift");
-
 static struct rule_effects *make_effects(void)
 {
     struct rule_effects *e = malloc(sizeof(struct rule_effects));
@@ -553,11 +511,6 @@ TEST_FUNC(zig_rule_destroy_parity,
  * match the C oracle byte for
  * byte via open_memstream. Must FAIL against stubs (TDD red) and pass on
  * the real port (green). */
-
-_Static_assert(LAYER_AUTO == 0, "LAYER_AUTO drift");
-_Static_assert(LAYER_BELOW == 3, "LAYER_BELOW drift");
-_Static_assert(LAYER_NORMAL == 4, "LAYER_NORMAL drift");
-_Static_assert(LAYER_ABOVE == 5, "LAYER_ABOVE drift");
 
 static void ensure_ts_for_serialize(void)
 {
@@ -1136,20 +1089,6 @@ TEST_FUNC(zig_rule_serialize_parity,
  * Zig-only with the acting ids lifted in (same seam as
  * yabai_rule_serialize's did_index/sid_index) against hand-pinned bytes. */
 
-bool yabai_parse_rule(FILE *rsp, char **message, struct rule *rule, const struct token *token, uint32_t acting_did, uint64_t acting_sid);
-
-_Static_assert(offsetof(struct display_manager, last_display_id) == 4, "display_manager.last_display_id drift");
-_Static_assert(offsetof(struct space_manager, last_space_id) == 48, "space_manager.last_space_id drift");
-_Static_assert(offsetof(struct display_label, did) == 0, "display_label.did drift");
-_Static_assert(offsetof(struct space_label, sid) == 0, "space_label.sid drift");
-_Static_assert(RULE_PROP_UD == 0, "RULE_PROP_UD drift");
-_Static_assert(RULE_PROP_ON == 1, "RULE_PROP_ON drift");
-_Static_assert(RULE_PROP_OFF == 2, "RULE_PROP_OFF drift");
-_Static_assert(TOKEN_TYPE_INVALID == 0, "TOKEN_TYPE_INVALID drift");
-_Static_assert(TOKEN_TYPE_INT == 2, "TOKEN_TYPE_INT drift");
-_Static_assert(TOKEN_TYPE_STRING == 5, "TOKEN_TYPE_STRING drift");
-_Static_assert(REG_EXTENDED == 1, "REG_EXTENDED drift");
-
 static const char *rsv_words[] = {
     ARGUMENT_WINDOW_TOGGLE_FLOAT, ARGUMENT_WINDOW_TOGGLE_STICKY,
     ARGUMENT_WINDOW_TOGGLE_SHADOW, ARGUMENT_WINDOW_TOGGLE_SPLIT,
@@ -1477,13 +1416,6 @@ TEST_FUNC(zig_rule_parse_pinned,
  * dd84572 copies in tests/src/ref_upstream_rule.c) parity: the Zig exports in zig/rule.zig must match
  * the C oracles exactly. Must FAIL against stubs (TDD red) and pass on the
  * real port (green). */
-
-int yabai_regex_match(bool valid, regex_t *regex, const char *match);
-bool yabai_rule_matches_window(const struct rule *rule, const char *app_name, const char *window_title, const char *window_role, const char *window_subrole);
-
-_Static_assert(REGEX_MATCH_UD == 0, "REGEX_MATCH_UD drift");
-_Static_assert(REGEX_MATCH_YES == 1, "REGEX_MATCH_YES drift");
-_Static_assert(REGEX_MATCH_NO == 2, "REGEX_MATCH_NO drift");
 
 /* File scope: braced initializers cannot live inside TEST_FUNC macro
  * arguments (commas split the macro invocation). */

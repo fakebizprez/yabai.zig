@@ -75,6 +75,7 @@
 #include "space_manager.h"
 #include "window_manager.h"
 #include "mouse_handler.h"
+#include "zig_abi.h"
 
 #include "sa.m"
 #include "mission_control.c"
@@ -94,3 +95,6 @@
 #include "window_manager.c"
 #include "mouse_handler.c"
 #include "yabai.c"
+
+#define ZIG_ABI_PRIVATE_PINS
+#include "zig_abi.h"
