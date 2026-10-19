@@ -1,6 +1,6 @@
 // First Zig/C boundary for the yabai migration (doc/zig-refactor-plan.md step 2).
 //
-// Pinned toolchain: Zig 0.16.0. This object mirrors area_make_pair() in
+// Pinned toolchain: Zig 0.17.0. This object mirrors area_make_pair() in
 // src/view.c exactly: same inputs, same outputs, same C float-to-int
 // rounding (truncation toward zero via (int) casts, round-half-up via
 // +0.5f before the cast on the offset). The split codes match

@@ -12,6 +12,8 @@ OSAX_SRC       = ./src/osax/payload_bin.c ./src/osax/loader_bin.c
 ZIG_SRC        = ./zig/geometry.zig ./zig/message.zig ./zig/view.zig ./zig/util.zig ./zig/rule.zig ./zig/window.zig ./zig/display.zig ./zig/mouse.zig
 ZIG_OBJ        = ./zig/zig-geometry.o ./zig/zig-message.o ./zig/zig-view.o ./zig/zig-util.o ./zig/zig-rule.o ./zig/zig-window.o ./zig/zig-display.o ./zig/zig-mouse.o
 YABAI_SRC      = ./src/manifest.m $(OSAX_SRC) $(ZIG_OBJ)
+# manifest.m textually includes every other source, so all of them are prerequisites
+YABAI_DEPS     = $(shell find ./src -name '*.[chm]' -not -path './src/osax/*')
 OSAX_PATH      = ./src/osax
 INFO_PLIST     = $(ASSET_PATH)/Info.plist
 BINS           = $(BUILD_PATH)/yabai
@@ -69,6 +71,6 @@ clean: clean-build
 $(ZIG_OBJ): $(ZIG_SRC) ./zig/build.sh ./zig/ZIG_VERSION
 	./zig/build.sh
 
-$(BUILD_PATH)/yabai: $(YABAI_SRC)
+$(BUILD_PATH)/yabai: $(YABAI_SRC) $(YABAI_DEPS) $(INFO_PLIST)
 	mkdir -p $(BUILD_PATH)
-	xcrun clang $^ $(BUILD_FLAGS) $(CLI_FLAGS) $(FRAMEWORK_PATH) $(FRAMEWORK) -o $@
+	xcrun clang $(YABAI_SRC) $(BUILD_FLAGS) $(CLI_FLAGS) $(FRAMEWORK_PATH) $(FRAMEWORK) -o $@

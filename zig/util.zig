@@ -1,6 +1,6 @@
 // Pure-helper boundary for the yabai migration (step 3).
 //
-// Pinned toolchain: Zig 0.16.0. Mirrors the helpers in
+// Pinned toolchain: Zig 0.17.0. Mirrors the helpers in
 // src/misc/helpers.h, src/misc/macros.h and src/view.c.
 
 pub const BalanceNode = extern struct {
