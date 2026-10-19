@@ -9,70 +9,8 @@
 // src_count, frame x/y/w/h, point x/y). No Zig runtime is required at link
 // time; float operations stay strict IEEE, matching clang codegen.
 
-pub const MousePoint = extern struct {
-    x: f64,
-    y: f64,
-};
-
-// Bit codes match enum mouse_mod in src/mouse_handler.h.
-pub const MOUSE_MOD_NONE: u8 = 0x01;
-pub const MOUSE_MOD_ALT: u8 = 0x02;
-pub const MOUSE_MOD_SHIFT: u8 = 0x04;
-pub const MOUSE_MOD_CMD: u8 = 0x08;
-pub const MOUSE_MOD_CTRL: u8 = 0x10;
-pub const MOUSE_MOD_FN: u8 = 0x20;
-
-// Action codes match enum mouse_drop_action in src/mouse_handler.h.
-pub const MOUSE_DROP_ACTION_NONE: c_int = 0;
-pub const MOUSE_DROP_ACTION_STACK: c_int = 1;
-pub const MOUSE_DROP_ACTION_SWAP: c_int = 2;
-pub const MOUSE_DROP_ACTION_WARP_TOP: c_int = 3;
-pub const MOUSE_DROP_ACTION_WARP_RIGHT: c_int = 4;
-pub const MOUSE_DROP_ACTION_WARP_BOTTOM: c_int = 5;
-pub const MOUSE_DROP_ACTION_WARP_LEFT: c_int = 6;
-
-// Mode codes match enum mouse_mode in src/mouse_handler.h.
-pub const MOUSE_MODE_NONE: c_int = 0;
-pub const MOUSE_MODE_MOVE: c_int = 1;
-pub const MOUSE_MODE_RESIZE: c_int = 2;
-pub const MOUSE_MODE_SWAP: c_int = 3;
-pub const MOUSE_MODE_STACK: c_int = 4;
-
-// CG flag masks mirror the kCGEventFlagMask* values from the system
-// CoreGraphics headers (CGEventTypes.h via NX_*MASK in IOLLEvent.h).
-// Pinned here so drift fails the build; the C side pins the same values
-// with _Static_assert in tests/src/zig_mouse.c.
-pub const CG_FLAG_MASK_SHIFT: u32 = 0x00020000;
-pub const CG_FLAG_MASK_CONTROL: u32 = 0x00040000;
-pub const CG_FLAG_MASK_ALTERNATE: u32 = 0x00080000;
-pub const CG_FLAG_MASK_COMMAND: u32 = 0x00100000;
-pub const CG_FLAG_MASK_SECONDARY_FN: u32 = 0x00800000;
-
-comptime {
-    if (MOUSE_MOD_NONE != 0x01) @compileError("MOUSE_MOD_NONE drift");
-    if (MOUSE_MOD_ALT != 0x02) @compileError("MOUSE_MOD_ALT drift");
-    if (MOUSE_MOD_SHIFT != 0x04) @compileError("MOUSE_MOD_SHIFT drift");
-    if (MOUSE_MOD_CMD != 0x08) @compileError("MOUSE_MOD_CMD drift");
-    if (MOUSE_MOD_CTRL != 0x10) @compileError("MOUSE_MOD_CTRL drift");
-    if (MOUSE_MOD_FN != 0x20) @compileError("MOUSE_MOD_FN drift");
-    if (MOUSE_DROP_ACTION_NONE != 0) @compileError("MOUSE_DROP_ACTION_NONE drift");
-    if (MOUSE_DROP_ACTION_STACK != 1) @compileError("MOUSE_DROP_ACTION_STACK drift");
-    if (MOUSE_DROP_ACTION_SWAP != 2) @compileError("MOUSE_DROP_ACTION_SWAP drift");
-    if (MOUSE_DROP_ACTION_WARP_TOP != 3) @compileError("MOUSE_DROP_ACTION_WARP_TOP drift");
-    if (MOUSE_DROP_ACTION_WARP_RIGHT != 4) @compileError("MOUSE_DROP_ACTION_WARP_RIGHT drift");
-    if (MOUSE_DROP_ACTION_WARP_BOTTOM != 5) @compileError("MOUSE_DROP_ACTION_WARP_BOTTOM drift");
-    if (MOUSE_DROP_ACTION_WARP_LEFT != 6) @compileError("MOUSE_DROP_ACTION_WARP_LEFT drift");
-    if (MOUSE_MODE_NONE != 0) @compileError("MOUSE_MODE_NONE drift");
-    if (MOUSE_MODE_MOVE != 1) @compileError("MOUSE_MODE_MOVE drift");
-    if (MOUSE_MODE_RESIZE != 2) @compileError("MOUSE_MODE_RESIZE drift");
-    if (MOUSE_MODE_SWAP != 3) @compileError("MOUSE_MODE_SWAP drift");
-    if (MOUSE_MODE_STACK != 4) @compileError("MOUSE_MODE_STACK drift");
-    if (CG_FLAG_MASK_SHIFT != 0x00020000) @compileError("CG_FLAG_MASK_SHIFT drift");
-    if (CG_FLAG_MASK_CONTROL != 0x00040000) @compileError("CG_FLAG_MASK_CONTROL drift");
-    if (CG_FLAG_MASK_ALTERNATE != 0x00080000) @compileError("CG_FLAG_MASK_ALTERNATE drift");
-    if (CG_FLAG_MASK_COMMAND != 0x00100000) @compileError("CG_FLAG_MASK_COMMAND drift");
-    if (CG_FLAG_MASK_SECONDARY_FN != 0x00800000) @compileError("CG_FLAG_MASK_SECONDARY_FN drift");
-}
+const abi = @import("abi.zig");
+const MousePoint = abi.CgPoint;
 
 // Mirrors triangle_contains_point() in src/misc/helpers.h. The C inputs are
 // CGFloat (f64 on 64-bit macOS); the RHS evaluates in f64 and narrows to
@@ -97,11 +35,11 @@ export fn yabai_triangle_contains_point(t: [*]const MousePoint, p: *const MouseP
 export fn yabai_mouse_mod_from_cgflags(cgflags: u32) u8 {
     @setRuntimeSafety(false);
     var flags: u8 = 0;
-    if ((cgflags & CG_FLAG_MASK_ALTERNATE) == CG_FLAG_MASK_ALTERNATE) flags |= MOUSE_MOD_ALT;
-    if ((cgflags & CG_FLAG_MASK_SHIFT) == CG_FLAG_MASK_SHIFT) flags |= MOUSE_MOD_SHIFT;
-    if ((cgflags & CG_FLAG_MASK_COMMAND) == CG_FLAG_MASK_COMMAND) flags |= MOUSE_MOD_CMD;
-    if ((cgflags & CG_FLAG_MASK_CONTROL) == CG_FLAG_MASK_CONTROL) flags |= MOUSE_MOD_CTRL;
-    if ((cgflags & CG_FLAG_MASK_SECONDARY_FN) == CG_FLAG_MASK_SECONDARY_FN) flags |= MOUSE_MOD_FN;
+    if ((cgflags & abi.CG_FLAG_MASK_ALTERNATE) == abi.CG_FLAG_MASK_ALTERNATE) flags |= abi.MOUSE_MOD_ALT;
+    if ((cgflags & abi.CG_FLAG_MASK_SHIFT) == abi.CG_FLAG_MASK_SHIFT) flags |= abi.MOUSE_MOD_SHIFT;
+    if ((cgflags & abi.CG_FLAG_MASK_COMMAND) == abi.CG_FLAG_MASK_COMMAND) flags |= abi.MOUSE_MOD_CMD;
+    if ((cgflags & abi.CG_FLAG_MASK_CONTROL) == abi.CG_FLAG_MASK_CONTROL) flags |= abi.MOUSE_MOD_CTRL;
+    if ((cgflags & abi.CG_FLAG_MASK_SECONDARY_FN) == abi.CG_FLAG_MASK_SECONDARY_FN) flags |= abi.MOUSE_MOD_FN;
     return flags;
 }
 
@@ -130,7 +68,7 @@ export fn yabai_mouse_determine_drop_action(drop_mode: c_int, src_count: c_int, 
         wpx >= cx0 and wpx < cx0 + cw and
         wpy >= cy0 and wpy < cy0 + ch;
     if (in_center and src_count == 1) {
-        return if (drop_mode == MOUSE_MODE_STACK) MOUSE_DROP_ACTION_STACK else MOUSE_DROP_ACTION_SWAP;
+        return if (drop_mode == abi.MOUSE_MODE_STACK) abi.MOUSE_DROP_ACTION_STACK else abi.MOUSE_DROP_ACTION_SWAP;
     }
 
     const hx = 0.5 * fw;
@@ -157,10 +95,10 @@ export fn yabai_mouse_determine_drop_action(drop_mode: c_int, src_count: c_int, 
     };
     var wp = MousePoint{ .x = wpx, .y = wpy };
 
-    if (mouseTriangleContainsPoint(&top, &wp)) return MOUSE_DROP_ACTION_WARP_TOP;
-    if (mouseTriangleContainsPoint(&right, &wp)) return MOUSE_DROP_ACTION_WARP_RIGHT;
-    if (mouseTriangleContainsPoint(&bottom, &wp)) return MOUSE_DROP_ACTION_WARP_BOTTOM;
-    if (mouseTriangleContainsPoint(&left, &wp)) return MOUSE_DROP_ACTION_WARP_LEFT;
+    if (mouseTriangleContainsPoint(&top, &wp)) return abi.MOUSE_DROP_ACTION_WARP_TOP;
+    if (mouseTriangleContainsPoint(&right, &wp)) return abi.MOUSE_DROP_ACTION_WARP_RIGHT;
+    if (mouseTriangleContainsPoint(&bottom, &wp)) return abi.MOUSE_DROP_ACTION_WARP_BOTTOM;
+    if (mouseTriangleContainsPoint(&left, &wp)) return abi.MOUSE_DROP_ACTION_WARP_LEFT;
 
-    return MOUSE_DROP_ACTION_NONE;
+    return abi.MOUSE_DROP_ACTION_NONE;
 }

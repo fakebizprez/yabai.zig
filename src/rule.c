@@ -5,8 +5,6 @@ extern struct window_manager g_window_manager;
  * emission and rule_combine_effects below. Signatures in src/rule.h are
  * unchanged. The combine export reuses the shared yabai_in_range_ii_f
  * across objects (defined in zig/util.zig). */
-void yabai_rule_serialize(FILE *rsp, struct rule *rule, int index, int did_index, int sid_index);
-void yabai_rule_combine_effects(struct rule_effects *effects, struct rule_effects *result);
 
 void rule_serialize(FILE *rsp, struct rule *rule, int index)
 {

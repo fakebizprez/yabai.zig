@@ -16,42 +16,6 @@
  * Must FAIL against the stub (TDD red) and pass on the real port (green).
  */
 
-bool yabai_triangle_contains_point(const CGPoint *t, const CGPoint *p);
-uint8_t yabai_mouse_mod_from_cgflags(uint32_t cgflags);
-int yabai_mouse_determine_drop_action(int drop_mode, int src_count, double fx, double fy, double fw, double fh, double px, double py);
-
-/* Pin the mirrored MOUSE_MOD_* bits (src/mouse_handler.h). */
-_Static_assert(MOUSE_MOD_NONE == 0x01, "MOUSE_MOD_NONE drift");
-_Static_assert(MOUSE_MOD_ALT == 0x02, "MOUSE_MOD_ALT drift");
-_Static_assert(MOUSE_MOD_SHIFT == 0x04, "MOUSE_MOD_SHIFT drift");
-_Static_assert(MOUSE_MOD_CMD == 0x08, "MOUSE_MOD_CMD drift");
-_Static_assert(MOUSE_MOD_CTRL == 0x10, "MOUSE_MOD_CTRL drift");
-_Static_assert(MOUSE_MOD_FN == 0x20, "MOUSE_MOD_FN drift");
-
-/* Pin the mirrored MOUSE_DROP_ACTION_* codes (src/mouse_handler.h). */
-_Static_assert(MOUSE_DROP_ACTION_NONE == 0, "MOUSE_DROP_ACTION_NONE drift");
-_Static_assert(MOUSE_DROP_ACTION_STACK == 1, "MOUSE_DROP_ACTION_STACK drift");
-_Static_assert(MOUSE_DROP_ACTION_SWAP == 2, "MOUSE_DROP_ACTION_SWAP drift");
-_Static_assert(MOUSE_DROP_ACTION_WARP_TOP == 3, "MOUSE_DROP_ACTION_WARP_TOP drift");
-_Static_assert(MOUSE_DROP_ACTION_WARP_RIGHT == 4, "MOUSE_DROP_ACTION_WARP_RIGHT drift");
-_Static_assert(MOUSE_DROP_ACTION_WARP_BOTTOM == 5, "MOUSE_DROP_ACTION_WARP_BOTTOM drift");
-_Static_assert(MOUSE_DROP_ACTION_WARP_LEFT == 6, "MOUSE_DROP_ACTION_WARP_LEFT drift");
-
-/* Pin the mirrored MOUSE_MODE_* codes (src/mouse_handler.h). */
-_Static_assert(MOUSE_MODE_NONE == 0, "MOUSE_MODE_NONE drift");
-_Static_assert(MOUSE_MODE_MOVE == 1, "MOUSE_MODE_MOVE drift");
-_Static_assert(MOUSE_MODE_RESIZE == 2, "MOUSE_MODE_RESIZE drift");
-_Static_assert(MOUSE_MODE_SWAP == 3, "MOUSE_MODE_SWAP drift");
-_Static_assert(MOUSE_MODE_STACK == 4, "MOUSE_MODE_STACK drift");
-
-/* Pin the CG flag constants the Zig mod map hardcodes (CGEventTypes.h via
- * NX_*MASK in IOLLEvent.h). A system-header change fails the build here. */
-_Static_assert(kCGEventFlagMaskShift == 0x00020000, "kCGEventFlagMaskShift drift");
-_Static_assert(kCGEventFlagMaskControl == 0x00040000, "kCGEventFlagMaskControl drift");
-_Static_assert(kCGEventFlagMaskAlternate == 0x00080000, "kCGEventFlagMaskAlternate drift");
-_Static_assert(kCGEventFlagMaskCommand == 0x00100000, "kCGEventFlagMaskCommand drift");
-_Static_assert(kCGEventFlagMaskSecondaryFn == 0x00800000, "kCGEventFlagMaskSecondaryFn drift");
-
 struct mod_case
 {
     uint32_t cgflags;
