@@ -299,8 +299,8 @@ parallels or Zig-to-Zig shared helpers.
 
 Routed (daemon runs Zig): area_make_pair (warp site);
 in_range_ii_f; rule_combine_effects, rule_matches_window,
-rule_serialize; parse_rule (both handle_domain_rule sites, C kept as
-oracle); window_can_move/can_resize/is_undersized;
+rule_serialize; parse_rule (both handle_domain_rule sites, C body moved
+to tests/src/ref_upstream_rule.c); window_can_move/can_resize/is_undersized;
 move/resize_frame_math and get_split/get_gap/get_ratio (warp site);
 view_create/clear/destroy, view_serialize, view_find_window_list
 (caller frees), view_find_window_node (+in_direction),
