@@ -13,6 +13,7 @@ typedef TEST_SIG(function);
 
 #include "area.c"
 #include "socket_frame.c"
+#include "ref_upstream_view.c"
 #include "zig_geometry.c"
 #include "zig_message.c"
 #include "zig_view.c"
@@ -39,6 +40,7 @@ typedef TEST_SIG(function);
     TEST_ENTRY(zig_area_make_pair_parity)                        \
     TEST_ENTRY(zig_area_direction_parity)                      \
     TEST_ENTRY(zig_area_make_pair_rounding)                      \
+    TEST_ENTRY(zig_area_extreme_values)                          \
     TEST_ENTRY(zig_message_token_stream)                         \
     TEST_ENTRY(zig_message_token_compare)                        \
     TEST_ENTRY(zig_message_token_numbers)                        \
@@ -73,6 +75,7 @@ typedef TEST_SIG(function);
     TEST_ENTRY(zig_view_lifecycle_destroy)                       \
     TEST_ENTRY(zig_view_serialize)                               \
     TEST_ENTRY(zig_view_find_in_direction)                       \
+    TEST_ENTRY(zig_view_deep_spine)                              \
     TEST_ENTRY(zig_display_serialize)                            \
     TEST_ENTRY(zig_regex_match_parity)                           \
     TEST_ENTRY(zig_rule_matches_window_parity)                   \

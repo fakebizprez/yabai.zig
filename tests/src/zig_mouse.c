@@ -2,8 +2,9 @@
  *
  * The Zig exports in zig/mouse.zig must match triangle_contains_point() in
  * src/misc/helpers.h, mouse_mod_from_cgflags() and mouse_determine_drop_action()
- * in src/mouse_handler.c exactly. The C functions are the oracles (both are
- * linked into this TU via manifest.m; no SLS access needed).
+ * in src/mouse_handler.c exactly. The oracles are the unrouted C helpers
+ * and the frozen dd84572 drop-action body (ref_mouse_determine_drop_action
+ * in tests/src/ref_upstream_view.c); no SLS access needed.
  *
  * Seam: structs arrive lifted in. The triangle export takes a pointer to
  * three MousePoints (layout-identical to CGPoint: { f64, f64 } on 64-bit
@@ -146,7 +147,7 @@ static int c_drop_action(int drop_mode, int src_count, CGRect frame, CGPoint pt)
     ms.drop_action = drop_mode;
     src.window_count = src_count;
     dst.frame = frame;
-    return (int) mouse_determine_drop_action(&ms, &src, &dst, pt);
+    return (int) ref_mouse_determine_drop_action(&ms, &src, &dst, pt);
 }
 
 static int z_drop_action(int drop_mode, int src_count, CGRect frame, CGPoint pt)
