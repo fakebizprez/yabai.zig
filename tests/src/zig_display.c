@@ -1,5 +1,5 @@
-/* display_serialize() (src/display.c:20) vs yabai_display_serialize
- * (zig/display.zig).
+/* ref_display_serialize() (frozen dd84572 src/display.c, in
+ * tests/src/ref_upstream_rule.c) vs yabai_display_serialize (zig/display.zig).
  *
  * Seam: the six manager-derived inputs arrive lifted in so the export
  * stays pure and headless-testable: uuid_str (NULL when the
@@ -63,7 +63,7 @@ static int serialize_display_parity(uint32_t did, uint64_t flags, const char *uu
         free(z_msg);
         return 0;
     }
-    display_serialize(c_rsp, did, flags);
+    ref_display_serialize(c_rsp, did, flags);
     yabai_display_serialize(z_rsp, did, flags, uuid_str, 0, label_str, frame.origin.x, frame.origin.y, frame.size.width, frame.size.height, NULL, 0, has_focus);
     fflush(c_rsp);
     fflush(z_rsp);
@@ -131,7 +131,7 @@ static int serialize_display_golden_both(uint32_t did, uint64_t flags, const cha
         free(z_msg);
         return 0;
     }
-    display_serialize(c_rsp, did, flags);
+    ref_display_serialize(c_rsp, did, flags);
     yabai_display_serialize(z_rsp, did, flags, uuid_str, arrange_index, label_str, fx, fy, fw, fh, space_list, space_count, has_focus);
     fflush(c_rsp);
     fflush(z_rsp);

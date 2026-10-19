@@ -1,7 +1,7 @@
 /* Rule-effects parity tests (doc/zig-refactor-plan.md step 3).
  *
- * The Zig export in zig/rule.zig must match rule_combine_effects() in
- * src/rule.c exactly, including scratchpad ownership (old copy freed,
+ * The Zig export in zig/rule.zig must match ref_rule_combine_effects() in
+ * tests/src/ref_upstream_rule.c (frozen dd84572 src/rule.c) exactly, including scratchpad ownership (old copy freed,
  * new copy allocated) and the untouched-field paths.
  */
 
@@ -93,7 +93,7 @@ TEST_FUNC(zig_rule_combine_display_space,
     fx->opacity = 0.5f;
     rule_effects_set_flag(fx, RULE_OPACITY);
 
-    rule_combine_effects(fx, c_res);
+    ref_rule_combine_effects(fx, c_res);
     yabai_rule_combine_effects(fx, z_res);
 
     TEST_CHECK(effects_match(c_res, z_res), 1);
@@ -152,7 +152,7 @@ TEST_FUNC(zig_rule_combine_flags_cleared,
     fx->layer = 3;
     rule_effects_set_flag(fx, RULE_LAYER);
 
-    rule_combine_effects(fx, c_res);
+    ref_rule_combine_effects(fx, c_res);
     yabai_rule_combine_effects(fx, z_res);
 
     TEST_CHECK(effects_match(c_res, z_res), 1);
@@ -213,7 +213,7 @@ TEST_FUNC(zig_rule_combine_scratchpad_props_grid,
     fx->grid[4] = 5;
     fx->grid[5] = 6;
 
-    rule_combine_effects(fx, c_res);
+    ref_rule_combine_effects(fx, c_res);
     yabai_rule_combine_effects(fx, z_res);
 
     TEST_CHECK(effects_match(c_res, z_res), 1);
@@ -269,7 +269,7 @@ TEST_FUNC(zig_rule_combine_scratchpad_props_grid,
     z_res->grid[0] = 7;
     char *c_pad_before = c_res->scratchpad;
     char *z_pad_before = z_res->scratchpad;
-    rule_combine_effects(fx2, c_res);
+    ref_rule_combine_effects(fx2, c_res);
     yabai_rule_combine_effects(fx2, z_res);
     TEST_CHECK(effects_match(c_res, z_res), 1);
     TEST_CHECK(c_res->grid[0], 7);
@@ -548,8 +548,9 @@ TEST_FUNC(zig_rule_destroy_parity,
     }
 })
 
-/* rule_serialize() (src/rule.c) + ts_string_escape() (src/misc/helpers.h)
- * parity: Zig exports in zig/rule.zig must match the C oracle byte for
+/* ref_rule_serialize() + ref_ts_string_escape() (frozen dd84572 copies in
+ * tests/src/ref_upstream_rule.c) parity: Zig exports in zig/rule.zig must
+ * match the C oracle byte for
  * byte via open_memstream. Must FAIL against stubs (TDD red) and pass on
  * the real port (green). */
 
@@ -571,7 +572,7 @@ static void ensure_ts_for_serialize(void)
 static int escape_case_parity(char *input)
 {
     ensure_ts_for_serialize();
-    char *c = ts_string_escape(input);
+    char *c = ref_ts_string_escape(input);
     char *z = yabai_ts_string_escape(input);
     int ok = 1;
     if ((c == NULL) != (z == NULL)) ok = 0;
@@ -599,7 +600,7 @@ TEST_FUNC(zig_ts_string_escape_parity,
     {
         char utf8[] = "\303\251";
         TEST_CHECK(escape_case_parity(utf8), 1);
-        TEST_CHECK(ts_string_escape(utf8) == NULL, true);
+        TEST_CHECK(ref_ts_string_escape(utf8) == NULL, true);
         char *z = yabai_ts_string_escape(utf8);
         TEST_CHECK(z == NULL, true);
         if (z) free(z);
@@ -740,7 +741,7 @@ static int serialize_parity(struct rule *r, int index)
         free(z_msg);
         return 0;
     }
-    rule_serialize(c_rsp, r, index);
+    ref_rule_serialize(c_rsp, r, index);
     yabai_rule_serialize(z_rsp, r, index, did_idx, sid_idx);
     fflush(c_rsp);
     fflush(z_rsp);
@@ -1082,7 +1083,7 @@ TEST_FUNC(zig_rule_serialize_parity,
         char *c_msg = NULL;
         size_t c_len = 0;
         FILE *c_rsp = open_memstream(&c_msg, &c_len);
-        rule_serialize(c_rsp, &r, 3);
+        ref_rule_serialize(c_rsp, &r, 3);
         fflush(c_rsp);
         fclose(c_rsp);
         TEST_CHECK(c_msg != NULL, true);
@@ -1118,10 +1119,10 @@ TEST_FUNC(zig_rule_serialize_parity,
     }
 })
 
-/* parse_rule() (src/message.c) + yabai_parse_rule (zig/rule.zig) parity.
+/* ref_parse_rule() (frozen dd84572 copy) + yabai_parse_rule (zig/rule.zig) parity.
  *
- * The C static is the oracle: this file is #included into tests.m after
- * src/message.c, so parse_rule/get_token are directly callable. Message
+ * The frozen C copy is the oracle: tests/src/ref_upstream_rule.c is #included
+ * into tests.m after src/message.c, so ref_parse_rule/get_token are directly callable. Message
  * buffers are NUL-joined token arrays plus a final NUL, matching the
  * daemon wire frame; each side gets its own copy because parsing writes
  * NULs in place. Rules start zeroed like handle_domain_rule's stack rule
@@ -1129,7 +1130,7 @@ TEST_FUNC(zig_rule_serialize_parity,
  * use parenthesized compound literals: TEST_FUNC/TEST_CHECK macro arguments
  * split on commas inside braces but not inside parens.
  *
- * display=/space= keys never reach the C oracle here: parse_rule evaluates
+ * display=/space= keys never reach the C oracle here: ref_parse_rule evaluates
  * display_manager_active_display_id()/space_manager_active_space() eagerly
  * and the former asserts on a NULL SLS uuid in-process. Those branches run
  * Zig-only with the acting ids lifted in (same seam as
@@ -1232,7 +1233,7 @@ static int rule_case_oracle(const char **toks, int n)
     size_t z_len = 0;
     FILE *c_rsp = open_memstream(&c_msg, &c_len);
     FILE *z_rsp = open_memstream(&z_msg, &z_len);
-    bool c_ret = parse_rule(c_rsp, &c_cur, &c_rule, c_first);
+    bool c_ret = ref_parse_rule(c_rsp, &c_cur, &c_rule, c_first);
     bool z_ret = yabai_parse_rule(z_rsp, &z_cur, &z_rule, &z_first, 0, 0);
     fflush(c_rsp);
     fflush(z_rsp);
@@ -1472,8 +1473,8 @@ TEST_FUNC(zig_rule_parse_pinned,
     }
 })
 
-/* regex_match() (src/misc/helpers.h) + window_manager_rule_matches_window()
- * (src/window_manager.c) parity: the Zig exports in zig/rule.zig must match
+/* ref_regex_match() + ref_window_manager_rule_matches_window() (frozen
+ * dd84572 copies in tests/src/ref_upstream_rule.c) parity: the Zig exports in zig/rule.zig must match
  * the C oracles exactly. Must FAIL against stubs (TDD red) and pass on the
  * real port (green). */
 
@@ -1502,19 +1503,19 @@ TEST_FUNC(zig_regex_match_parity,
     TEST_CHECK(regcomp(&re, "foo.*", REG_EXTENDED), 0);
 
     /* Hit / miss / empty via the C oracle and the Zig export. */
-    TEST_CHECK(regex_match(true, &re, "foobar"), REGEX_MATCH_YES);
+    TEST_CHECK(ref_regex_match(true, &re, "foobar"), REGEX_MATCH_YES);
     TEST_CHECK(yabai_regex_match(true, &re, "foobar"), REGEX_MATCH_YES);
-    TEST_CHECK(regex_match(true, &re, "baz"), REGEX_MATCH_NO);
+    TEST_CHECK(ref_regex_match(true, &re, "baz"), REGEX_MATCH_NO);
     TEST_CHECK(yabai_regex_match(true, &re, "baz"), REGEX_MATCH_NO);
-    TEST_CHECK(regex_match(true, &re, ""), REGEX_MATCH_NO);
+    TEST_CHECK(ref_regex_match(true, &re, ""), REGEX_MATCH_NO);
     TEST_CHECK(yabai_regex_match(true, &re, ""), REGEX_MATCH_NO);
 
     /* VALID-clear: UD on both sides, match string never touched. */
-    TEST_CHECK(regex_match(false, &re, "foobar"), REGEX_MATCH_UD);
+    TEST_CHECK(ref_regex_match(false, &re, "foobar"), REGEX_MATCH_UD);
     TEST_CHECK(yabai_regex_match(false, &re, "foobar"), REGEX_MATCH_UD);
-    TEST_CHECK(regex_match(false, &re, NULL), REGEX_MATCH_UD);
+    TEST_CHECK(ref_regex_match(false, &re, NULL), REGEX_MATCH_UD);
     TEST_CHECK(yabai_regex_match(false, &re, NULL), REGEX_MATCH_UD);
-    TEST_CHECK(regex_match(false, &re, ""), REGEX_MATCH_UD);
+    TEST_CHECK(ref_regex_match(false, &re, ""), REGEX_MATCH_UD);
     TEST_CHECK(yabai_regex_match(false, &re, ""), REGEX_MATCH_UD);
 
     /* NULL with VALID set segfaults the C oracle (regexec dereferences
@@ -1529,9 +1530,9 @@ TEST_FUNC(zig_regex_match_parity,
             regex_t t;
             memset(&t, 0, sizeof(t));
             TEST_CHECK(regcomp(&t, regex_parity_patterns[i], REG_EXTENDED), 0);
-            TEST_CHECK(regex_match(true, &t, regex_parity_hits[i]), REGEX_MATCH_YES);
+            TEST_CHECK(ref_regex_match(true, &t, regex_parity_hits[i]), REGEX_MATCH_YES);
             TEST_CHECK(yabai_regex_match(true, &t, regex_parity_hits[i]), REGEX_MATCH_YES);
-            TEST_CHECK(regex_match(true, &t, regex_parity_misses[i]), REGEX_MATCH_NO);
+            TEST_CHECK(ref_regex_match(true, &t, regex_parity_misses[i]), REGEX_MATCH_NO);
             TEST_CHECK(yabai_regex_match(true, &t, regex_parity_misses[i]), REGEX_MATCH_NO);
             regfree(&t);
         }
@@ -1542,7 +1543,7 @@ TEST_FUNC(zig_regex_match_parity,
         regex_t t;
         memset(&t, 0, sizeof(t));
         TEST_CHECK(regcomp(&t, ".*", REG_EXTENDED), 0);
-        TEST_CHECK(regex_match(true, &t, ""), REGEX_MATCH_YES);
+        TEST_CHECK(ref_regex_match(true, &t, ""), REGEX_MATCH_YES);
         TEST_CHECK(yabai_regex_match(true, &t, ""), REGEX_MATCH_YES);
         regfree(&t);
     }
@@ -1573,7 +1574,7 @@ static int match_parity(struct rule *r, const char *app, const char *title, cons
     memset(&win, 0, sizeof(win));
     appl.name = (char *) app;
     win.application = &appl;
-    bool c = window_manager_rule_matches_window(r, &win, (char *) title, (char *) role, (char *) subrole);
+    bool c = ref_window_manager_rule_matches_window(r, &win, (char *) title, (char *) role, (char *) subrole);
     bool z = yabai_rule_matches_window(r, app, title, role, subrole);
     if (c != z) {
         printf("matches_window mismatch app=%s title=%s role=%s subrole=%s c=%d z=%d\n",
@@ -1595,7 +1596,7 @@ static bool c_matches_window(struct rule *r, const char *app, const char *title,
     memset(&win, 0, sizeof(win));
     appl.name = (char *) app;
     win.application = &appl;
-    return window_manager_rule_matches_window(r, &win, (char *) title, (char *) role, (char *) subrole);
+    return ref_window_manager_rule_matches_window(r, &win, (char *) title, (char *) role, (char *) subrole);
 }
 
 TEST_FUNC(zig_rule_matches_window_parity,
