@@ -241,18 +241,18 @@ TEST_FUNC(zig_util_find_rank,
     int count = array_count(rank_list);
     int i = 0;
     for (i = 0; i < count; ++i) {
-        int c = window_manager_find_rank_of_window_in_list(rank_list[i], rank_list, count);
+        int c = ref_window_manager_find_rank_of_window_in_list(rank_list[i], rank_list, count);
         int z = yabai_find_rank_in_list(rank_list[i], rank_list, count);
         TEST_CHECK(c != z, 0);
         TEST_CHECK(c, i == 3 ? 1 : i);
     }
 
-    int c_miss = window_manager_find_rank_of_window_in_list(99, rank_list, count);
+    int c_miss = ref_window_manager_find_rank_of_window_in_list(99, rank_list, count);
     int z_miss = yabai_find_rank_in_list(99, rank_list, count);
     TEST_CHECK(c_miss != z_miss, 0);
     TEST_CHECK(c_miss, INT_MAX);
 
-    int c_empty = window_manager_find_rank_of_window_in_list(11, rank_list, 0);
+    int c_empty = ref_window_manager_find_rank_of_window_in_list(11, rank_list, 0);
     int z_empty = yabai_find_rank_in_list(11, rank_list, 0);
     TEST_CHECK(c_empty != z_empty, 0);
     TEST_CHECK(c_empty, INT_MAX);
