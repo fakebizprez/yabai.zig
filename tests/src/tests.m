@@ -21,6 +21,7 @@ typedef TEST_SIG(function);
 #include "zig_window.c"
 #include "zig_display.c"
 #include "zig_mouse.c"
+#include "zig_regress.c"
 #include "zig_cli.c"
 
 #define TEST_ENTRY(name) { #name, test_##name },
@@ -101,7 +102,10 @@ typedef TEST_SIG(function);
     TEST_ENTRY(zig_window_move_math)                             \
     TEST_ENTRY(zig_window_undersized_parity)                     \
     TEST_ENTRY(zig_window_flag_parity)                             \
-    TEST_ENTRY(zig_window_layer_parity)
+    TEST_ENTRY(zig_window_layer_parity)                          \
+    TEST_ENTRY(zig_regress_window_list_single_leaf_31)           \
+    TEST_ENTRY(zig_regress_window_list_two_leaves_12_15)         \
+    TEST_ENTRY(zig_regress_rule_negative_grid)
 
 static struct {
     char *name;
