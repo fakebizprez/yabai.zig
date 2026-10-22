@@ -133,7 +133,7 @@ uint64_t get_set_front_window_offset(NSOperatingSystemVersion os_version) {
 const char *get_dock_spaces_pattern(NSOperatingSystemVersion os_version) {
     if (os_version.majorVersion == 26 || os_version.majorVersion == 27) {
         // Pulling out of doBindingCommand:display (search decompiled text in ghidra) function.
-        return "?8 ?? ?? ?? 08 ?? ?? 91 00 01 40 F9 E2 03 13 AA ?? ?? ?? 94 ?? ?? ?? ?? 08";
+        return "?? ?? ?? ?? 08 ?? ?? 91 00 01 40 F9 E2 03 13 AA ?? ?? ?? 94 ?? ?? ?? ?? 08";
     } else if (os_version.majorVersion == 15) {
         return "?? 12 00 ?? ?? ?? ?? 91 ?? 02 40 F9 ?? ?? 00 B4 ?? ?? ?? ??";
     } else if (os_version.majorVersion == 14) {
@@ -152,7 +152,7 @@ const char *get_dock_spaces_pattern(NSOperatingSystemVersion os_version) {
 
 const char *get_dppm_pattern(NSOperatingSystemVersion os_version) {
     if (os_version.majorVersion == 27) {
-        // NOTE: DPDesktopPictureManager no longer exists as of macOS 27.2.
+        // NOTE: DPDesktopPictureManager no longer exists as of macOS 27.
         return NULL;
     } else if (os_version.majorVersion == 26) {
         return "?? ?? 00 ?? 08 ?? ?? 91 00 01 40 F9 E2 03 16 AA E3 03 19 AA ?? ?? ?? 94";
