@@ -1,5 +1,35 @@
 # Release verification record (Zig migration step 5)
 
+## macOS 27 compatibility audit (2026-10-21)
+
+- Verified on Apple Silicon, macOS 27.0.1 (26A434), Zig 0.17.0:
+  rebuilt all Zig objects and the universal `x86_64 arm64` daemon;
+  `--version` prints `yabai-v7.1.25`. All 82 tests pass, including CLI
+  fixtures; the test sources also pass the x86_64 syntax check.
+- Runtime support is incomplete. `src/workspace.h` lists versions only
+  through 26, and `workspace_event_handler_begin` matches exact versions,
+  so 27 selects legacy notification and window-management paths.
+  `src/osax/payload.m:verify_os_version` rejects 27 before resolving any
+  Dock functions; the scripting addition has no macOS 27 support here.
+- Upstream [#2800](https://github.com/asmvik/yabai/issues/2800) reports
+  that version aliases alone do not restore scripting-addition Space
+  operations. [#2832](https://github.com/asmvik/yabai/issues/2832) reports
+  further Dock changes in 27.2, with Space moves still unavailable in
+  that contributor's patch. Those patches are not included in this fork.
+- Newer compatibility reference:
+  [Christian-SC26/yabai](https://github.com/Christian-SC26/yabai), inspected
+  at `ce962949253f741518bde442ebfd54096d5f0984` (v7.1.30, 2026-09-29).
+  It has 26 commits absent from this branch, including explicit macOS 27
+  version gates, SIP-enabled gesture Space switching, revised Dock
+  patterns, arm64e.x1 handling and selector/NULL-guard fixes. These changes
+  have not been integrated or tested here. Despite its README's full
+  compatibility claim, its ARM payload still returns NULL for macOS 27
+  DPPM and move-space patterns, and `do_space_move` returns without those
+  targets. Moving Spaces remains unsupported in that snapshot.
+- Live window management, Dock injection, service lifecycle and Intel
+  execution were not tested. Build and headless test success do not
+  establish full macOS 27 compatibility.
+
 ## Verified on this machine (arm64, macOS 26)
 
 - Daemon: fat `x86_64 arm64`, macOS 11.0 min, `__TEXT,__info_plist`

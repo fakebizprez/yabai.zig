@@ -207,13 +207,13 @@ static const struct area extreme_areas[] =
     { 0, 0, 1e10f, 1e10f },
 };
 
+#if defined(__arm64__)
 /* Hand pins for the UB arms, derived from arm64 fcvtzs semantics (what
  * clang emits for the C (int) casts and what Zig's @intFromFloat lowers
  * to here): out-of-range saturates to INT_MIN/INT_MAX, NaN becomes 0.
- * (float)INT_MAX rounds to 2147483648.0f. Verified on arm64 only:
- * x86_64 (cvttss2si returns INT_MIN for every NaN/out-of-range input)
- * cannot be run on this host (no Rosetta), so these pins and the parity
- * above say nothing about an x86_64 build. */
+ * (float)INT_MAX rounds to 2147483648.0f. These pins apply only to arm64;
+ * x86_64 returns INT_MIN for NaN/out-of-range inputs and still runs the
+ * frozen-C parity comparisons below. */
 #define SAT_HI 2147483648.0f
 #define SAT_LO -2147483648.0f
 
@@ -245,6 +245,7 @@ static const struct extreme_pin extreme_pins[] =
     /* ratio inf: left saturates high, right (1 - inf) saturates low. */
     { 11, { 0, 0, SAT_HI, 1080 },  { SAT_HI, 0, SAT_LO, 1080 } },
 };
+#endif
 
 static void print_area(const char *tag, const struct area *a)
 {
@@ -274,6 +275,7 @@ TEST_FUNC(zig_area_extreme_values,
         TEST_CHECK(ok, 1);
     }
 
+#if defined(__arm64__)
     int pin_count = array_count(extreme_pins);
     for (int i = 0; i < pin_count; ++i) {
         const struct extreme_pin *p = &extreme_pins[i];
@@ -298,6 +300,7 @@ TEST_FUNC(zig_area_extreme_values,
         }
         TEST_CHECK(ok, 1);
     }
+#endif
 
     int area_count = array_count(extreme_areas);
     for (int i = 0; i < area_count; ++i) {
@@ -330,6 +333,7 @@ TEST_FUNC(zig_area_extreme_values,
         }
     }
 
+#if defined(__arm64__)
     /* Distance pins (extreme_areas indices): 1e10 - 99 saturates to
      * INT_MAX, a NaN difference becomes 0, -inf - -inf is NaN so 0. */
     struct area a0 = extreme_areas[0];
@@ -355,4 +359,5 @@ TEST_FUNC(zig_area_extreme_values,
     TEST_CHECK(ref_area_distance_in_direction(&a0, m0, &a1, m1, DIR_EAST), 0);
     TEST_CHECK(yabai_area_distance_in_direction(&a6, &m6, &a6, &m6, DIR_EAST), 0);
     TEST_CHECK(ref_area_distance_in_direction(&a6, m6, &a6, m6, DIR_EAST), 0);
+#endif
 })
