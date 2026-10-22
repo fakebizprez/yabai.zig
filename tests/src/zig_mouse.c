@@ -100,6 +100,33 @@ TEST_FUNC(zig_mouse_triangle_parity,
     }
 })
 
+/* Non-representable vertices with points on edge t0-t2: the products in
+ * a*b - c*d are inexact, so the edge term's sign depends on whether clang
+ * fuses it into fma(a, b, -(c*d)). It does on arm64 (even at -O0); the
+ * x86_64 default CPU has no FMA. The oracle is compiled for the running
+ * arch, so the Zig object must follow the same per-arch rule. */
+static CGPoint tri_inexact[3] = { { 0.1, 0.2 }, { 0.9, 0.05 }, { 0.7, 0.9 } };
+
+TEST_FUNC(zig_mouse_triangle_inexact_parity,
+{
+    int c_inside = 0;
+    for (int k = 1; k < 1000; ++k) {
+        double s = k / 1000.0;
+        CGPoint p;
+        p.x = tri_inexact[0].x + s * (tri_inexact[2].x - tri_inexact[0].x);
+        p.y = tri_inexact[0].y + s * (tri_inexact[2].y - tri_inexact[0].y);
+        bool c = triangle_contains_point(tri_inexact, p);
+        bool z = yabai_triangle_contains_point(tri_inexact, &p);
+        if (c != z) printf("triangle edge k=%d c=%d z=%d\n", k, c, z);
+        TEST_CHECK(z, c);
+        c_inside += c;
+    }
+#if defined(__aarch64__)
+    /* Guard against a vacuous sweep: fused rounding puts some edge points inside. */
+    TEST_CHECK(c_inside > 0, 1);
+#endif
+})
+
 static int c_drop_action(int drop_mode, int src_count, CGRect frame, CGPoint pt)
 {
     struct mouse_state ms;
@@ -208,4 +235,20 @@ TEST_FUNC(zig_mouse_drop_action_parity,
     dpt.y = 400;
     TEST_CHECK(z_drop_action(MOUSE_MODE_STACK, 1, drop_degenerate, dpt),
                c_drop_action(MOUSE_MODE_STACK, 1, drop_degenerate, dpt));
+
+    /* Odd-sized frame, points on the top/left diagonal toward the center
+     * (0.5 * 801 = 400.5): the triangle products are inexact here, so this
+     * covers the arm64 contraction through the routed drop-action path. */
+    CGRect odd_frame = CGRectMake(0, 0, 801, 601);
+    int mismatches = 0;
+    for (int k = 1; k < 10000; ++k) {
+        double s = k / 10000.0;
+        CGPoint pt;
+        pt.x = s * 400.5;
+        pt.y = s * 300.5;
+        int c = c_drop_action(MOUSE_MODE_STACK, 2, odd_frame, pt);
+        int z = z_drop_action(MOUSE_MODE_STACK, 2, odd_frame, pt);
+        mismatches += c != z;
+    }
+    TEST_CHECK(mismatches, 0);
 })
