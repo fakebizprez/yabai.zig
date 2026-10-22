@@ -51,6 +51,30 @@ int g_connection;
 bool g_verbose;
 pid_t g_pid;
 
+// Wire frame: native int payload length, argv[1..] each followed by NUL,
+// then one final NUL. Returns the frame size; writes the frame only when
+// it fits in out_size, so (NULL, 0) just measures.
+static int socket_frame_encode(int argc, char **argv, char *out, int out_size)
+{
+    int message_length = argc;
+    for (int i = 1; i < argc; ++i) message_length += strlen(argv[i]);
+
+    int frame_length = sizeof(int) + message_length;
+    if (frame_length > out_size) return frame_length;
+
+    char *temp = sizeof(int)+out;
+    memcpy(out, &message_length, sizeof(int));
+    for (int i = 1; i < argc; ++i) {
+        size_t length = strlen(argv[i]);
+        memcpy(temp, argv[i], length);
+        temp += length;
+        *temp++ = '\0';
+    }
+    *temp++ = '\0';
+
+    return frame_length;
+}
+
 static int client_send_message(int argc, char **argv)
 {
     if (argc <= 1) {
@@ -62,24 +86,9 @@ static int client_send_message(int argc, char **argv)
         error("yabai-msg: 'env USER' not set! abort..\n");
     }
 
-    int message_length = argc;
-    int argl[argc];
-
-    for (int i = 1; i < argc; ++i) {
-        argl[i] = strlen(argv[i]);
-        message_length += argl[i];
-    }
-
-    char *message = malloc(sizeof(int)+message_length);
-    char *temp = sizeof(int)+message;
-
-    memcpy(message, &message_length, sizeof(int));
-    for (int i = 1; i < argc; ++i) {
-        memcpy(temp, argv[i], argl[i]);
-        temp += argl[i];
-        *temp++ = '\0';
-    }
-    *temp++ = '\0';
+    int frame_length = socket_frame_encode(argc, argv, NULL, 0);
+    char *message = malloc(frame_length);
+    socket_frame_encode(argc, argv, message, frame_length);
 
     int sockfd;
     char socket_file[MAXLEN];
@@ -93,7 +102,7 @@ static int client_send_message(int argc, char **argv)
         error("yabai-msg: failed to connect to socket..\n");
     }
 
-    if (send(sockfd, message, sizeof(int)+message_length, 0) == -1) {
+    if (send(sockfd, message, frame_length, 0) == -1) {
         error("yabai-msg: failed to send data..\n");
     }
 
