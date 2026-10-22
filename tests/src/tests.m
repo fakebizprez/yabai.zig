@@ -51,12 +51,18 @@ typedef TEST_SIG(function);
     TEST_ENTRY(closest_display_in_direction)                   \
     TEST_ENTRY(socket_frame_valid_args)                        \
     TEST_ENTRY(socket_frame_byte_exact)                        \
-    TEST_ENTRY(socket_frame_malformed)                         \
+    TEST_ENTRY(socket_frame_many_args)                         \
+    TEST_ENTRY(socket_frame_max_boundary)                      \
     TEST_ENTRY(socket_frame_unknown_domain_fails)                \
     TEST_ENTRY(socket_frame_unknown_command_fails)               \
     TEST_ENTRY(socket_frame_rule_list_ok)                        \
     TEST_ENTRY(socket_frame_signal_list_ok)                      \
-    TEST_ENTRY(socket_frame_failure_marker)                      \
+    TEST_ENTRY(socket_frame_empty_arg)                           \
+    TEST_ENTRY(socket_frame_daemon_rejects_zero)                 \
+    TEST_ENTRY(socket_frame_daemon_rejects_negative)             \
+    TEST_ENTRY(socket_frame_daemon_rejects_short_read)           \
+    TEST_ENTRY(socket_frame_daemon_rejects_missing_nul)          \
+    TEST_ENTRY(socket_frame_daemon_rejects_oversized)            \
     TEST_ENTRY(zig_area_make_pair_parity)                        \
     TEST_ENTRY(zig_area_direction_parity)                      \
     TEST_ENTRY(zig_area_make_pair_rounding)                      \

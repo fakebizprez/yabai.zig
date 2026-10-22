@@ -201,10 +201,12 @@ pub const SOCKET_FRAME_MAX: c_int = 1024 * 1024;
 // framing before exposing any field, so no allocation or parsing ever
 // runs on unvalidated sizes. Accepts exactly the CLI-produced language
 // (NUL-separated args plus final NUL); field pointers borrow the frame.
+// A null `fields` validates only, with no limit on the field count (the
+// DAEMON_MESSAGE read path in src/event_loop.c).
 export fn yabai_socket_frame_decode(
     frame: [*]const u8,
     frame_size: usize,
-    fields: [*]FrameField,
+    fields: ?[*]FrameField,
     max_fields: usize,
     out_count: *usize,
 ) c_int {
@@ -220,18 +222,22 @@ export fn yabai_socket_frame_decode(
 
     var count: usize = 0;
     var off: usize = 0;
+    var last_len: usize = 0;
     while (off < payload_len) {
-        if (count >= max_fields) return -1;
         var end = off;
         while (end < payload_len and frame[4 + end] != 0) : (end += 1) {}
         if (end >= payload_len) return -1;
-        fields[count].ptr = @constCast(frame + 4 + off);
-        fields[count].len = @intCast(end - off);
+        last_len = end - off;
+        if (fields) |out| {
+            if (count >= max_fields) return -1;
+            out[count].ptr = @constCast(frame + 4 + off);
+            out[count].len = @intCast(last_len);
+        }
         count += 1;
         off = end + 1;
     }
     if (count == 0) return -1;
-    if (fields[count - 1].len != 0) return -1;
+    if (last_len != 0) return -1;
     out_count.* = count;
     return 0;
 }
