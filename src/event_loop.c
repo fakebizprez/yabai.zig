@@ -1615,33 +1615,53 @@ static EVENT_HANDLER(SYSTEM_WOKE)
     event_signal_push(SIGNAL_SYSTEM_WOKE, NULL);
 }
 
+// Must equal SOCKET_FRAME_MAX in zig/message.zig (pinned by the
+// socket_frame_max_matches_zig test). Above macOS ARG_MAX, so every
+// frame the CLI can build fits.
+#define SOCKET_FRAME_MAX (1024 * 1024)
+
+// Reads one client frame. Returns the payload for handle_message, or NULL
+// for a malformed frame; a bad length is rejected before allocating.
+static char *daemon_read_message(int sockfd)
+{
+    int bytes_read    = 0;
+    int bytes_to_read = 0;
+
+    if (read(sockfd, &bytes_to_read, sizeof(int)) != sizeof(int)) return NULL;
+    if (bytes_to_read <= 0 || bytes_to_read > SOCKET_FRAME_MAX) return NULL;
+
+    char *frame = ts_alloc_unaligned(sizeof(int) + bytes_to_read);
+    char *message = frame + sizeof(int);
+    memcpy(frame, &bytes_to_read, sizeof(int));
+
+    do {
+        int cur_read = read(sockfd, message+bytes_read, bytes_to_read-bytes_read);
+        if (cur_read <= 0) return NULL;
+
+        bytes_read += cur_read;
+    } while (bytes_read < bytes_to_read);
+
+    size_t field_count;
+    if (yabai_socket_frame_decode(frame, sizeof(int) + bytes_to_read, NULL, 0, &field_count) != 0) return NULL;
+
+    return message;
+}
+
 static EVENT_HANDLER(DAEMON_MESSAGE)
 {
     TIME_FUNCTION;
 
-    FILE *rsp         = NULL;
-    int bytes_read    = 0;
-    int bytes_to_read = 0;
+    FILE *rsp = NULL;
+    char *message = daemon_read_message(param1);
 
-    if (read(param1, &bytes_to_read, sizeof(int)) == sizeof(int)) {
-        char *message = ts_alloc_unaligned(bytes_to_read);
+    if (message && (rsp = fdopen(param1, "w"))) {
+        debug_message(__FUNCTION__, message);
+        handle_message(rsp, message);
 
-        do {
-            int cur_read = read(param1, message+bytes_read, bytes_to_read-bytes_read);
-            if (cur_read <= 0) break;
+        fflush(rsp);
+        fclose(rsp);
 
-            bytes_read += cur_read;
-        } while (bytes_read < bytes_to_read);
-
-        if ((bytes_read == bytes_to_read) && (rsp = fdopen(param1, "w"))) {
-            debug_message(__FUNCTION__, message);
-            handle_message(rsp, message);
-
-            fflush(rsp);
-            fclose(rsp);
-
-            return;
-        }
+        return;
     }
 
     socket_close(param1);

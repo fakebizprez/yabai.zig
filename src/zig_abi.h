@@ -142,6 +142,7 @@ void yabai_token_to_value(const struct token *token, struct token_value *out);
 void yabai_parse_key_value_pair(char *token, char **key, char **value, bool *exclusion);
 uint8_t yabai_parse_value_type(const char *type);
 uint8_t yabai_parse_resize_handle(const char *handle);
+/* fields may be NULL to validate the frame without collecting fields. */
 int yabai_socket_frame_decode(const char *frame, size_t frame_size, struct frame_field *fields, size_t max_fields, size_t *out_count);
 bool yabai_parse_property(struct properties *properties, const char *property, const uint64_t *property_val, char **property_str, int property_count);
 void yabai_parse_properties(FILE *rsp, const struct token *token, const uint64_t *property_val, char **property_str, int property_count, struct properties *out);
