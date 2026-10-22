@@ -3,7 +3,7 @@
 # suite proves the shipped objects, not a separate Debug build.
 ZIG_OBJ = ../zig/zig-geometry.o ../zig/zig-message.o ../zig/zig-view.o ../zig/zig-util.o ../zig/zig-rule.o ../zig/zig-window.o ../zig/zig-display.o ../zig/zig-mouse.o
 
-.PHONY: clean build run all daemon
+.PHONY: clean build run all daemon osax27
 
 all: clean build run
 
@@ -18,7 +18,7 @@ TEST_FLAGS = -DTESTS -DPROFILE=1 -F/System/Library/PrivateFrameworks
 
 # The suite runs on the host arch only, so the sources (and the
 # src/zig_abi.h pins they include) are also type-checked for x86_64.
-build: $(ZIG_OBJ) daemon
+build: $(ZIG_OBJ) daemon ./bin/osax27
 	mkdir -p ./bin
 	clang ./src/tests.m $(ZIG_OBJ) -o ./bin/tests $(TEST_FLAGS) -framework Carbon -framework Cocoa -framework CoreServices -framework CoreVideo -framework SkyLight
 	clang -fsyntax-only -arch x86_64 ./src/tests.m $(TEST_FLAGS)
@@ -28,3 +28,12 @@ $(ZIG_OBJ): ../zig/abi.zig ../src/zig_abi.h ../zig/geometry.zig ../zig/message.z
 
 run:
 	./bin/tests
+	./bin/osax27
+
+./bin/osax27: ./src/osax27.m ../src/osax/payload.m ../src/osax/arm64_payload.m ../src/osax/x64_payload.m ../src/osax/common.h
+	mkdir -p ./bin
+	clang ./src/osax27.m -o $@ $(TEST_FLAGS) -framework Foundation -framework Carbon -framework SkyLight
+	clang -fsyntax-only -arch x86_64 ./src/osax27.m $(TEST_FLAGS)
+
+osax27: ./bin/osax27
+	./bin/osax27

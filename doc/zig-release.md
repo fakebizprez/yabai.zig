@@ -1,34 +1,48 @@
 # Release verification record (Zig migration step 5)
 
-## macOS 27 compatibility audit (2026-10-21)
+## macOS 27 compatibility backport (2026-10-21)
 
+Source: [Christian-SC26/yabai](https://github.com/Christian-SC26/yabai) at
+`ce962949253f741518bde442ebfd54096d5f0984` (v7.1.30). This backport keeps
+this repository's Zig delegates and ABI definitions; unrelated session,
+layout, rule and service features are not imported.
+
+- Added explicit macOS 27 detection, modern window notifications and the
+  Tahoe-compatible SkyLight request ID. Fullscreen transition waits are
+  bounded, and notification storage scales with the tracked window count.
+- Added SIP-enabled Space-switching gestures with the source fork's raw
+  IOHID payload, direction, velocity and calibrated phase/step delays.
+  Gesture preparation and payload failures propagate to command callers.
+- Updated Dock signatures for arm64e/arm64e.x1 and the newer display-ID
+  selector; added NULL guards. The payload is version 2.1.36 so installed
+  older payloads are refreshed through the existing installation path.
+  On Apple Silicon macOS 27, validation requires the available capability
+  mask (0x4D), and unavailable move/front-window operations report failure.
+- Entire-Space moving/reordering remains unsupported on macOS 27, as in
+  the source snapshot. Window-to-Space moves use a separate path.
 - Verified on Apple Silicon, macOS 27.0.1 (26A434), Zig 0.17.0:
-  rebuilt all Zig objects and the universal `x86_64 arm64` daemon;
-  `--version` prints `yabai-v7.1.25`. All 82 tests pass, including CLI
-  fixtures; the test sources also pass the x86_64 syntax check.
-- Runtime support is incomplete. `src/workspace.h` lists versions only
-  through 26, and `workspace_event_handler_begin` matches exact versions,
-  so 27 selects legacy notification and window-management paths.
-  `src/osax/payload.m:verify_os_version` rejects 27 before resolving any
-  Dock functions; the scripting addition has no macOS 27 support here.
-- Upstream [#2800](https://github.com/asmvik/yabai/issues/2800) reports
-  that version aliases alone do not restore scripting-addition Space
-  operations. [#2832](https://github.com/asmvik/yabai/issues/2832) reports
-  further Dock changes in 27.2, with Space moves still unavailable in
-  that contributor's patch. Those patches are not included in this fork.
-- Newer compatibility reference:
-  [Christian-SC26/yabai](https://github.com/Christian-SC26/yabai), inspected
-  at `ce962949253f741518bde442ebfd54096d5f0984` (v7.1.30, 2026-09-29).
-  It has 26 commits absent from this branch, including explicit macOS 27
-  version gates, SIP-enabled gesture Space switching, revised Dock
-  patterns, arm64e.x1 handling and selector/NULL-guard fixes. These changes
-  have not been integrated or tested here. Despite its README's full
-  compatibility claim, its ARM payload still returns NULL for macOS 27
-  DPPM and move-space patterns, and `do_space_move` returns without those
-  targets. Moving Spaces remains unsupported in that snapshot.
-- Live window management, Dock injection, service lifecycle and Intel
-  execution were not tested. Build and headless test success do not
-  establish full macOS 27 compatibility.
+  universal daemon and payload builds, all 91 main tests, standalone OSAX
+  helper tests, and x86_64 syntax checks. The new serializer's three tests
+  also pass standalone AddressSanitizer/UndefinedBehaviorSanitizer checks.
+- An offline scan using the actual payload scanner matched all four
+  required signatures in both installed Dock slices (arm64e and
+  arm64e.x1). No Dock injection was performed.
+- Live trial on this host starts successfully and tracks displays, Spaces
+  and application windows. A reported Space-switching flash exposed a
+  backport timing error: preparing all phases up front compressed their
+  raw HID timestamps. Phases now follow the source create/augment/post/
+  delay sequence; regression tests reproduce the old failure and cover
+  cancellation on allocation failure. The user reports that long jumps
+  still flash after this correction, including with the installed C
+  v7.1.29 daemon under the same trial config. Adjacent switches are smooth.
+- The trial config skips Dock-helper loading, unlike the normal config;
+  no helper socket is present. A live trace of a three-Space jump with
+  the installed C daemon confirms intermediate Spaces and foreground
+  applications are activated by the gesture fallback. Comparing direct
+  switching with the existing Dock helper remains pending.
+- Fullscreen, sleep/wake, service lifecycle, scripting-addition injection,
+  Intel execution and other macOS 27 builds remain unverified. Build and
+  headless test success do not establish full runtime compatibility.
 
 ## Verified on this machine (arm64, macOS 26)
 
