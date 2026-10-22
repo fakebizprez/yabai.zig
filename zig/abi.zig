@@ -2,12 +2,16 @@
 //
 // Types, constants and extern fn declarations only: no exports, so
 // importing this file from each separately built object adds no
-// symbols. Every mirrored struct is pinned below with literal sizes and
-// per-field offsets; src/zig_abi.h pins the C structs with the same
-// literals, so layout drift on either side fails that side's build on
-// both architectures. Every integer constant here is pinned in
-// src/zig_abi.h against the C value, and zig/build.sh cross-checks that
-// each pin's literal equals the value defined here.
+// symbols. What is enforced, on both architectures:
+//  - Layout: pin() below fixes each mirror's size, field count, and per
+//    field offset, size and float-ness. src/zig_abi.h pins the C structs
+//    with the same literals; nothing compares the two lists, so a change
+//    to one must be made to the other by hand.
+//  - Values: every `pub const` here that is not a type must read exactly
+//    `pub const NAME[: T] = literal;`, and zig/build.sh requires a C value
+//    pin with the same name and literal in src/zig_abi.h (and the reverse).
+//  - Exports: zig/build.sh checks every `export fn yabai_*` in zig/
+//    against its src/zig_abi.h prototype (see that file's header).
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -380,72 +384,85 @@ pub const Rule = extern struct {
 // Layout pins. Same literals as src/zig_abi.h.
 // ---------------------------------------------------------------------
 
-fn pin(comptime T: type, comptime size: usize, comptime offsets: anytype) void {
+/// Each entry is .{ name, offset, size } or .{ name, offset, size, .float };
+/// a field is floating point exactly when its entry says .float, and the
+/// entries must cover every field (a union's offsets are all 0).
+fn pin(comptime T: type, comptime size: usize, comptime fields: anytype) void {
     if (@sizeOf(T) != size)
         @compileError(std.fmt.comptimePrint("{s}: size {d}, pinned {d}", .{ @typeName(T), @sizeOf(T), size }));
-    if (@typeInfo(T).@"struct".field_names.len != offsets.len)
+    const names = switch (@typeInfo(T)) {
+        .@"struct" => |s| s.field_names,
+        .@"union" => |u| u.field_names,
+        else => @compileError(@typeName(T) ++ ": not a struct or union"),
+    };
+    if (names.len != fields.len)
         @compileError(@typeName(T) ++ ": field count changed; pin every field");
-    inline for (offsets) |o| {
-        if (@offsetOf(T, o[0]) != o[1])
-            @compileError(std.fmt.comptimePrint("{s}.{s}: offset {d}, pinned {d}", .{ @typeName(T), o[0], @offsetOf(T, o[0]), o[1] }));
+    inline for (fields) |f| {
+        const F = @FieldType(T, f[0]);
+        const off = if (@typeInfo(T) == .@"union") 0 else @offsetOf(T, f[0]);
+        if (off != f[1])
+            @compileError(std.fmt.comptimePrint("{s}.{s}: offset {d}, pinned {d}", .{ @typeName(T), f[0], off, f[1] }));
+        if (@sizeOf(F) != f[2])
+            @compileError(std.fmt.comptimePrint("{s}.{s}: size {d}, pinned {d}", .{ @typeName(T), f[0], @sizeOf(F), f[2] }));
+        if ((@typeInfo(F) == .float) != (f.len > 3))
+            @compileError(@typeName(T) ++ "." ++ f[0] ++ ": float-ness differs from its pin");
     }
 }
 
 comptime {
-    pin(Area, 16, .{ .{ "x", 0 }, .{ "y", 4 }, .{ "w", 8 }, .{ "h", 12 } });
-    pin(CgPoint, 16, .{ .{ "x", 0 }, .{ "y", 8 } });
-    pin(CgRect, 32, .{ .{ "x", 0 }, .{ "y", 8 }, .{ "w", 16 }, .{ "h", 24 } });
-    pin(FeedbackWindow, 16, .{ .{ "id", 0 }, .{ "context", 8 } });
+    pin(Area, 16, .{ .{ "x", 0, 4, .float }, .{ "y", 4, 4, .float }, .{ "w", 8, 4, .float }, .{ "h", 12, 4, .float } });
+    pin(CgPoint, 16, .{ .{ "x", 0, 8, .float }, .{ "y", 8, 8, .float } });
+    pin(CgRect, 32, .{ .{ "x", 0, 8, .float }, .{ "y", 8, 8, .float }, .{ "w", 16, 8, .float }, .{ "h", 24, 8, .float } });
+    pin(FeedbackWindow, 16, .{ .{ "id", 0, 4 }, .{ "context", 8, 8 } });
     pin(WindowNode, 344, .{
-        .{ "area", 0 },              .{ "parent", 16 },        .{ "left", 24 },
-        .{ "right", 32 },            .{ "zoom", 40 },          .{ "window_list", 48 },
-        .{ "window_order", 176 },    .{ "window_count", 304 }, .{ "ratio", 308 },
-        .{ "split", 312 },           .{ "child", 316 },        .{ "insert_dir", 320 },
-        .{ "feedback_window", 328 },
+        .{ "area", 0, 16 },              .{ "parent", 16, 8 },        .{ "left", 24, 8 },
+        .{ "right", 32, 8 },             .{ "zoom", 40, 8 },          .{ "window_list", 48, 128 },
+        .{ "window_order", 176, 128 },   .{ "window_count", 304, 4 }, .{ "ratio", 308, 4, .float },
+        .{ "split", 312, 4 },            .{ "child", 316, 4 },        .{ "insert_dir", 320, 4 },
+        .{ "feedback_window", 328, 16 },
     });
     pin(View, 72, .{
-        .{ "uuid", 0 },             .{ "sid", 8 },             .{ "root", 16 },
-        .{ "insertion_point", 24 }, .{ "layout", 28 },         .{ "split_type", 32 },
-        .{ "top_padding", 36 },     .{ "bottom_padding", 40 }, .{ "left_padding", 44 },
-        .{ "right_padding", 48 },   .{ "window_gap", 52 },     .{ "auto_balance", 56 },
-        .{ "flags", 64 },
+        .{ "uuid", 0, 8 },             .{ "sid", 8, 8 },             .{ "root", 16, 8 },
+        .{ "insertion_point", 24, 4 }, .{ "layout", 28, 4 },         .{ "split_type", 32, 4 },
+        .{ "top_padding", 36, 4 },     .{ "bottom_padding", 40, 4 }, .{ "left_padding", 44, 4 },
+        .{ "right_padding", 48, 4 },   .{ "window_gap", 52, 4 },     .{ "auto_balance", 56, 4 },
+        .{ "flags", 64, 8 },
     });
     pin(ViewDefaults, 32, .{
-        .{ "layout", 0 },        .{ "top_padding", 4 },    .{ "bottom_padding", 8 },
-        .{ "left_padding", 12 }, .{ "right_padding", 16 }, .{ "window_gap", 20 },
-        .{ "auto_balance", 24 }, .{ "split_type", 28 },
+        .{ "layout", 0, 4 },        .{ "top_padding", 4, 4 },    .{ "bottom_padding", 8, 4 },
+        .{ "left_padding", 12, 4 }, .{ "right_padding", 16, 4 }, .{ "window_gap", 20, 4 },
+        .{ "auto_balance", 24, 4 }, .{ "split_type", 28, 4 },
     });
     pin(RuleLookup, 56, .{
-        .{ "active_display_id", 0 }, .{ "active_space", 8 },     .{ "display_in_direction", 16 },
-        .{ "prev_display_id", 24 },  .{ "next_display_id", 32 }, .{ "prev_space", 40 },
-        .{ "next_space", 48 },
+        .{ "active_display_id", 0, 8 }, .{ "active_space", 8, 8 },     .{ "display_in_direction", 16, 8 },
+        .{ "prev_display_id", 24, 8 },  .{ "next_display_id", 32, 8 }, .{ "prev_space", 40, 8 },
+        .{ "next_space", 48, 8 },
     });
-    pin(BalanceNode, 8, .{ .{ "y_count", 0 }, .{ "x_count", 4 } });
-    pin(RgbaColor, 20, .{ .{ "p", 0 }, .{ "r", 4 }, .{ "g", 8 }, .{ "b", 12 }, .{ "a", 16 } });
-    pin(DisplayManagerState, 8, .{ .{ "current_display_id", 0 }, .{ "last_display_id", 4 } });
-    pin(SpaceManagerState, 56, .{ .{ "table", 0 }, .{ "current_space_id", 40 }, .{ "last_space_id", 48 } });
-    pin(DisplayLabel, 16, .{ .{ "did", 0 }, .{ "label", 8 } });
-    pin(SpaceLabel, 16, .{ .{ "sid", 0 }, .{ "label", 8 } });
-    pin(MsgToken, 16, .{ .{ "text", 0 }, .{ "length", 8 } });
-    pin(TokenValue, 32, .{ .{ "token", 0 }, .{ "type", 16 }, .{ "u", 24 } });
-    pin(Properties, 32, .{ .{ "token", 0 }, .{ "did_parse", 16 }, .{ "did_error", 17 }, .{ "flags", 24 } });
-    pin(Selector, 32, .{ .{ "token", 0 }, .{ "did_parse", 16 }, .{ "payload", 24 } });
-    pin(FrameField, 16, .{ .{ "ptr", 0 }, .{ "len", 8 } });
+    pin(BalanceNode, 8, .{ .{ "y_count", 0, 4 }, .{ "x_count", 4, 4 } });
+    pin(RgbaColor, 20, .{ .{ "p", 0, 4 }, .{ "r", 4, 4, .float }, .{ "g", 8, 4, .float }, .{ "b", 12, 4, .float }, .{ "a", 16, 4, .float } });
+    pin(DisplayManagerState, 8, .{ .{ "current_display_id", 0, 4 }, .{ "last_display_id", 4, 4 } });
+    pin(SpaceManagerState, 56, .{ .{ "table", 0, 40 }, .{ "current_space_id", 40, 8 }, .{ "last_space_id", 48, 8 } });
+    pin(DisplayLabel, 16, .{ .{ "did", 0, 4 }, .{ "label", 8, 8 } });
+    pin(SpaceLabel, 16, .{ .{ "sid", 0, 8 }, .{ "label", 8, 8 } });
+    pin(MsgToken, 16, .{ .{ "text", 0, 8 }, .{ "length", 8, 4 } });
+    pin(TokenValueUnion, 8, .{ .{ "int_value", 0, 4 }, .{ "float_value", 0, 4, .float }, .{ "u32_value", 0, 4 }, .{ "string_value", 0, 8 } });
+    pin(TokenValue, 32, .{ .{ "token", 0, 16 }, .{ "type", 16, 4 }, .{ "u", 24, 8 } });
+    pin(Properties, 32, .{ .{ "token", 0, 16 }, .{ "did_parse", 16, 1 }, .{ "did_error", 17, 1 }, .{ "flags", 24, 8 } });
+    pin(Selector, 32, .{ .{ "token", 0, 16 }, .{ "did_parse", 16, 1 }, .{ "payload", 24, 8 } });
+    pin(FrameField, 16, .{ .{ "ptr", 0, 8 }, .{ "len", 8, 4 } });
     pin(RuleEffects, 80, .{
-        .{ "did", 0 },         .{ "sid", 8 },         .{ "opacity", 16 },
-        .{ "manage", 20 },     .{ "sticky", 24 },     .{ "mff", 28 },
-        .{ "layer", 32 },      .{ "fullscreen", 36 }, .{ "grid", 40 },
-        .{ "scratchpad", 64 }, .{ "flags", 72 },
+        .{ "did", 0, 4 },         .{ "sid", 8, 8 },         .{ "opacity", 16, 4, .float },
+        .{ "manage", 20, 4 },     .{ "sticky", 24, 4 },     .{ "mff", 28, 4 },
+        .{ "layer", 32, 4 },      .{ "fullscreen", 36, 4 }, .{ "grid", 40, 24 },
+        .{ "scratchpad", 64, 8 }, .{ "flags", 72, 2 },
     });
-    pin(RegexT, 32, .{.{ "_", 0 }});
+    pin(RegexT, 32, .{.{ "_", 0, 32 }});
     pin(Rule, 256, .{
-        .{ "label", 0 },        .{ "app", 8 },          .{ "title", 16 },
-        .{ "role", 24 },        .{ "subrole", 32 },     .{ "app_regex", 40 },
-        .{ "title_regex", 72 }, .{ "role_regex", 104 }, .{ "subrole_regex", 136 },
-        .{ "effects", 168 },    .{ "flags", 248 },
+        .{ "label", 0, 8 },         .{ "app", 8, 8 },           .{ "title", 16, 8 },
+        .{ "role", 24, 8 },         .{ "subrole", 32, 8 },      .{ "app_regex", 40, 32 },
+        .{ "title_regex", 72, 32 }, .{ "role_regex", 104, 32 }, .{ "subrole_regex", 136, 32 },
+        .{ "effects", 168, 80 },    .{ "flags", 248, 2 },
     });
-    // Unions and alignment have no offset table.
-    if (@sizeOf(TokenValueUnion) != 8) @compileError("TokenValueUnion: size drift");
     if (@alignOf(RegexT) != 8) @compileError("RegexT: alignment drift (regex_t is 8-aligned)");
 }
 

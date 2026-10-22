@@ -7,19 +7,60 @@
  *  2. with ZIG_ABI_PRIVATE_PINS defined, after every .c file: the types
  *     and pins that need the structs and enums private to src/message.c.
  *
- * Every number below is a literal, and zig/abi.zig pins the same literals
- * on the Zig side, so drift on either side fails that side's build. The
- * daemon builds universal, so these run for both x86_64 and arm64.
- * Value pins are written one per line as
- *     _Static_assert(C_NAME == literal, "ZIG_NAME");
- * and zig/build.sh checks each literal against the zig/abi.zig constant
- * named in the message, so the two files cannot disagree either. */
+ * What is enforced, on both x86_64 and arm64 (the daemon builds universal):
+ *  - Layout: ZIG_ABI_STRUCT pins a struct's size and its exact number of
+ *    members (a member added anywhere, padding holes included, fails);
+ *    ZIG_ABI_FIELD / ZIG_ABI_FIELD_FP pin each member's offset, size and
+ *    whether it is floating point. Structs Zig mirrors only in part, and
+ *    opaque types, get ZIG_ABI_SIZE and field pins without a count.
+ *    zig/abi.zig pin() repeats the same literals for its mirrors; nothing
+ *    compares the two lists of literals, so a change to one must be made
+ *    to the other by hand.
+ *  - Values: one per line, exactly
+ *        _Static_assert(C_NAME == literal, "ZIG_NAME");
+ *    zig/build.sh requires each ZIG_NAME to appear once here and once as a
+ *    `pub const` in zig/abi.zig with the same literal, and the reverse.
+ *  - Enums shared with Zig: an exhaustive switch (-Wswitch as an error), so
+ *    a new C enumerator fails until it gets a case; zig/build.sh requires
+ *    every case label to have a value pin.
+ *  - Prototypes: zig/build.sh requires each yabai_* prototype below to
+ *    match a Zig export by name, parameter count, and the width class of
+ *    each parameter and the return type (pointer, bool, f32, f64, or an
+ *    8/16/32/64-bit integer). Signedness and pointee types are not
+ *    checked. */
 
 #ifndef ZIG_ABI_H
 #define ZIG_ABI_H
 
 #define ZIG_ABI_SIZE(type, size) _Static_assert(sizeof(type) == (size), "sizeof(" #type ")")
-#define ZIG_ABI_OFFSET(type, field, off) _Static_assert(offsetof(type, field) == (off), "offsetof(" #type ", " #field ")")
+#define ZIG_ABI_IS_FP(type, field) _Generic(((type *)0)->field, float: 1, double: 1, long double: 1, default: 0)
+#define ZIG_ABI_FIELD(type, field, off, size) \
+    _Static_assert(offsetof(type, field) == (off) && sizeof(((type *)0)->field) == (size) && !ZIG_ABI_IS_FP(type, field), "field(" #type ", " #field ")")
+#define ZIG_ABI_FIELD_FP(type, field, off, size) \
+    _Static_assert(offsetof(type, field) == (off) && sizeof(((type *)0)->field) == (size) && ZIG_ABI_IS_FP(type, field), "field(" #type ", " #field ")")
+
+/* A positional initializer with exactly `count` elements: one fewer or
+ * one more than the struct has members is an error. */
+#define ZIG_ABI_INIT_1 {0}
+#define ZIG_ABI_INIT_2 ZIG_ABI_INIT_1, {0}
+#define ZIG_ABI_INIT_3 ZIG_ABI_INIT_2, {0}
+#define ZIG_ABI_INIT_4 ZIG_ABI_INIT_3, {0}
+#define ZIG_ABI_INIT_5 ZIG_ABI_INIT_4, {0}
+#define ZIG_ABI_INIT_6 ZIG_ABI_INIT_5, {0}
+#define ZIG_ABI_INIT_7 ZIG_ABI_INIT_6, {0}
+#define ZIG_ABI_INIT_8 ZIG_ABI_INIT_7, {0}
+#define ZIG_ABI_INIT_9 ZIG_ABI_INIT_8, {0}
+#define ZIG_ABI_INIT_10 ZIG_ABI_INIT_9, {0}
+#define ZIG_ABI_INIT_11 ZIG_ABI_INIT_10, {0}
+#define ZIG_ABI_INIT_12 ZIG_ABI_INIT_11, {0}
+#define ZIG_ABI_INIT_13 ZIG_ABI_INIT_12, {0}
+#define ZIG_ABI_STRUCT(type, size, count) \
+    _Pragma("clang diagnostic push") \
+    _Pragma("clang diagnostic error \"-Wmissing-field-initializers\"") \
+    _Pragma("clang diagnostic error \"-Wexcess-initializers\"") \
+    _Pragma("clang diagnostic ignored \"-Wbraced-scalar-init\"") \
+    _Static_assert(sizeof((type){ ZIG_ABI_INIT_##count }) == (size), "sizeof(" #type "), " #count " members"); \
+    _Pragma("clang diagnostic pop")
 
 /* Types private to src/message.c, complete only in the second phase. */
 struct token;
@@ -196,135 +237,135 @@ int yabai_mouse_determine_drop_action(int drop_mode, int src_count, double fx, d
 /* Layout pins (zig/abi.zig pins the same numbers)                    */
 /* ------------------------------------------------------------------ */
 
-ZIG_ABI_SIZE(struct area, 16);
-ZIG_ABI_OFFSET(struct area, x, 0);
-ZIG_ABI_OFFSET(struct area, y, 4);
-ZIG_ABI_OFFSET(struct area, w, 8);
-ZIG_ABI_OFFSET(struct area, h, 12);
+ZIG_ABI_STRUCT(struct area, 16, 4);
+ZIG_ABI_FIELD_FP(struct area, x, 0, 4);
+ZIG_ABI_FIELD_FP(struct area, y, 4, 4);
+ZIG_ABI_FIELD_FP(struct area, w, 8, 4);
+ZIG_ABI_FIELD_FP(struct area, h, 12, 4);
 
-ZIG_ABI_SIZE(CGPoint, 16);
-ZIG_ABI_OFFSET(CGPoint, x, 0);
-ZIG_ABI_OFFSET(CGPoint, y, 8);
+ZIG_ABI_STRUCT(CGPoint, 16, 2);
+ZIG_ABI_FIELD_FP(CGPoint, x, 0, 8);
+ZIG_ABI_FIELD_FP(CGPoint, y, 8, 8);
 
-ZIG_ABI_SIZE(CGRect, 32);
-ZIG_ABI_OFFSET(CGRect, origin.x, 0);
-ZIG_ABI_OFFSET(CGRect, origin.y, 8);
-ZIG_ABI_OFFSET(CGRect, size.width, 16);
-ZIG_ABI_OFFSET(CGRect, size.height, 24);
+ZIG_ABI_STRUCT(CGRect, 32, 2);
+ZIG_ABI_FIELD_FP(CGRect, origin.x, 0, 8);
+ZIG_ABI_FIELD_FP(CGRect, origin.y, 8, 8);
+ZIG_ABI_FIELD_FP(CGRect, size.width, 16, 8);
+ZIG_ABI_FIELD_FP(CGRect, size.height, 24, 8);
 
-ZIG_ABI_SIZE(struct feedback_window, 16);
-ZIG_ABI_OFFSET(struct feedback_window, id, 0);
-ZIG_ABI_OFFSET(struct feedback_window, context, 8);
+ZIG_ABI_STRUCT(struct feedback_window, 16, 2);
+ZIG_ABI_FIELD(struct feedback_window, id, 0, 4);
+ZIG_ABI_FIELD(struct feedback_window, context, 8, 8);
 
-ZIG_ABI_SIZE(struct window_node, 344);
-ZIG_ABI_OFFSET(struct window_node, area, 0);
-ZIG_ABI_OFFSET(struct window_node, parent, 16);
-ZIG_ABI_OFFSET(struct window_node, left, 24);
-ZIG_ABI_OFFSET(struct window_node, right, 32);
-ZIG_ABI_OFFSET(struct window_node, zoom, 40);
-ZIG_ABI_OFFSET(struct window_node, window_list, 48);
-ZIG_ABI_OFFSET(struct window_node, window_order, 176);
-ZIG_ABI_OFFSET(struct window_node, window_count, 304);
-ZIG_ABI_OFFSET(struct window_node, ratio, 308);
-ZIG_ABI_OFFSET(struct window_node, split, 312);
-ZIG_ABI_OFFSET(struct window_node, child, 316);
-ZIG_ABI_OFFSET(struct window_node, insert_dir, 320);
-ZIG_ABI_OFFSET(struct window_node, feedback_window, 328);
+ZIG_ABI_STRUCT(struct window_node, 344, 13);
+ZIG_ABI_FIELD(struct window_node, area, 0, 16);
+ZIG_ABI_FIELD(struct window_node, parent, 16, 8);
+ZIG_ABI_FIELD(struct window_node, left, 24, 8);
+ZIG_ABI_FIELD(struct window_node, right, 32, 8);
+ZIG_ABI_FIELD(struct window_node, zoom, 40, 8);
+ZIG_ABI_FIELD(struct window_node, window_list, 48, 128);
+ZIG_ABI_FIELD(struct window_node, window_order, 176, 128);
+ZIG_ABI_FIELD(struct window_node, window_count, 304, 4);
+ZIG_ABI_FIELD_FP(struct window_node, ratio, 308, 4);
+ZIG_ABI_FIELD(struct window_node, split, 312, 4);
+ZIG_ABI_FIELD(struct window_node, child, 316, 4);
+ZIG_ABI_FIELD(struct window_node, insert_dir, 320, 4);
+ZIG_ABI_FIELD(struct window_node, feedback_window, 328, 16);
 
-ZIG_ABI_SIZE(struct view, 72);
-ZIG_ABI_OFFSET(struct view, uuid, 0);
-ZIG_ABI_OFFSET(struct view, sid, 8);
-ZIG_ABI_OFFSET(struct view, root, 16);
-ZIG_ABI_OFFSET(struct view, insertion_point, 24);
-ZIG_ABI_OFFSET(struct view, layout, 28);
-ZIG_ABI_OFFSET(struct view, split_type, 32);
-ZIG_ABI_OFFSET(struct view, top_padding, 36);
-ZIG_ABI_OFFSET(struct view, bottom_padding, 40);
-ZIG_ABI_OFFSET(struct view, left_padding, 44);
-ZIG_ABI_OFFSET(struct view, right_padding, 48);
-ZIG_ABI_OFFSET(struct view, window_gap, 52);
-ZIG_ABI_OFFSET(struct view, auto_balance, 56);
-ZIG_ABI_OFFSET(struct view, flags, 64);
+ZIG_ABI_STRUCT(struct view, 72, 13);
+ZIG_ABI_FIELD(struct view, uuid, 0, 8);
+ZIG_ABI_FIELD(struct view, sid, 8, 8);
+ZIG_ABI_FIELD(struct view, root, 16, 8);
+ZIG_ABI_FIELD(struct view, insertion_point, 24, 4);
+ZIG_ABI_FIELD(struct view, layout, 28, 4);
+ZIG_ABI_FIELD(struct view, split_type, 32, 4);
+ZIG_ABI_FIELD(struct view, top_padding, 36, 4);
+ZIG_ABI_FIELD(struct view, bottom_padding, 40, 4);
+ZIG_ABI_FIELD(struct view, left_padding, 44, 4);
+ZIG_ABI_FIELD(struct view, right_padding, 48, 4);
+ZIG_ABI_FIELD(struct view, window_gap, 52, 4);
+ZIG_ABI_FIELD(struct view, auto_balance, 56, 4);
+ZIG_ABI_FIELD(struct view, flags, 64, 8);
 
-ZIG_ABI_SIZE(struct yabai_view_defaults, 32);
-ZIG_ABI_OFFSET(struct yabai_view_defaults, layout, 0);
-ZIG_ABI_OFFSET(struct yabai_view_defaults, top_padding, 4);
-ZIG_ABI_OFFSET(struct yabai_view_defaults, bottom_padding, 8);
-ZIG_ABI_OFFSET(struct yabai_view_defaults, left_padding, 12);
-ZIG_ABI_OFFSET(struct yabai_view_defaults, right_padding, 16);
-ZIG_ABI_OFFSET(struct yabai_view_defaults, window_gap, 20);
-ZIG_ABI_OFFSET(struct yabai_view_defaults, auto_balance, 24);
-ZIG_ABI_OFFSET(struct yabai_view_defaults, split_type, 28);
+ZIG_ABI_STRUCT(struct yabai_view_defaults, 32, 8);
+ZIG_ABI_FIELD(struct yabai_view_defaults, layout, 0, 4);
+ZIG_ABI_FIELD(struct yabai_view_defaults, top_padding, 4, 4);
+ZIG_ABI_FIELD(struct yabai_view_defaults, bottom_padding, 8, 4);
+ZIG_ABI_FIELD(struct yabai_view_defaults, left_padding, 12, 4);
+ZIG_ABI_FIELD(struct yabai_view_defaults, right_padding, 16, 4);
+ZIG_ABI_FIELD(struct yabai_view_defaults, window_gap, 20, 4);
+ZIG_ABI_FIELD(struct yabai_view_defaults, auto_balance, 24, 4);
+ZIG_ABI_FIELD(struct yabai_view_defaults, split_type, 28, 4);
 
-ZIG_ABI_SIZE(struct yabai_rule_lookup, 56);
-ZIG_ABI_OFFSET(struct yabai_rule_lookup, active_display_id, 0);
-ZIG_ABI_OFFSET(struct yabai_rule_lookup, active_space, 8);
-ZIG_ABI_OFFSET(struct yabai_rule_lookup, display_in_direction, 16);
-ZIG_ABI_OFFSET(struct yabai_rule_lookup, prev_display_id, 24);
-ZIG_ABI_OFFSET(struct yabai_rule_lookup, next_display_id, 32);
-ZIG_ABI_OFFSET(struct yabai_rule_lookup, prev_space, 40);
-ZIG_ABI_OFFSET(struct yabai_rule_lookup, next_space, 48);
+ZIG_ABI_STRUCT(struct yabai_rule_lookup, 56, 7);
+ZIG_ABI_FIELD(struct yabai_rule_lookup, active_display_id, 0, 8);
+ZIG_ABI_FIELD(struct yabai_rule_lookup, active_space, 8, 8);
+ZIG_ABI_FIELD(struct yabai_rule_lookup, display_in_direction, 16, 8);
+ZIG_ABI_FIELD(struct yabai_rule_lookup, prev_display_id, 24, 8);
+ZIG_ABI_FIELD(struct yabai_rule_lookup, next_display_id, 32, 8);
+ZIG_ABI_FIELD(struct yabai_rule_lookup, prev_space, 40, 8);
+ZIG_ABI_FIELD(struct yabai_rule_lookup, next_space, 48, 8);
 
-ZIG_ABI_SIZE(struct balance_node, 8);
-ZIG_ABI_OFFSET(struct balance_node, y_count, 0);
-ZIG_ABI_OFFSET(struct balance_node, x_count, 4);
+ZIG_ABI_STRUCT(struct balance_node, 8, 2);
+ZIG_ABI_FIELD(struct balance_node, y_count, 0, 4);
+ZIG_ABI_FIELD(struct balance_node, x_count, 4, 4);
 
-ZIG_ABI_SIZE(struct rgba_color, 20);
-ZIG_ABI_OFFSET(struct rgba_color, p, 0);
-ZIG_ABI_OFFSET(struct rgba_color, r, 4);
-ZIG_ABI_OFFSET(struct rgba_color, g, 8);
-ZIG_ABI_OFFSET(struct rgba_color, b, 12);
-ZIG_ABI_OFFSET(struct rgba_color, a, 16);
+ZIG_ABI_STRUCT(struct rgba_color, 20, 5);
+ZIG_ABI_FIELD(struct rgba_color, p, 0, 4);
+ZIG_ABI_FIELD_FP(struct rgba_color, r, 4, 4);
+ZIG_ABI_FIELD_FP(struct rgba_color, g, 8, 4);
+ZIG_ABI_FIELD_FP(struct rgba_color, b, 12, 4);
+ZIG_ABI_FIELD_FP(struct rgba_color, a, 16, 4);
 
 /* zig/abi.zig DisplayManagerState / SpaceManagerState mirror only these
  * leading fields; the rest of each manager stays opaque to Zig. */
-ZIG_ABI_OFFSET(struct display_manager, current_display_id, 0);
-ZIG_ABI_OFFSET(struct display_manager, last_display_id, 4);
+ZIG_ABI_FIELD(struct display_manager, current_display_id, 0, 4);
+ZIG_ABI_FIELD(struct display_manager, last_display_id, 4, 4);
 ZIG_ABI_SIZE(struct table, 40);
-ZIG_ABI_OFFSET(struct space_manager, view, 0);
-ZIG_ABI_OFFSET(struct space_manager, current_space_id, 40);
-ZIG_ABI_OFFSET(struct space_manager, last_space_id, 48);
+ZIG_ABI_FIELD(struct space_manager, view, 0, 40);
+ZIG_ABI_FIELD(struct space_manager, current_space_id, 40, 8);
+ZIG_ABI_FIELD(struct space_manager, last_space_id, 48, 8);
 
-ZIG_ABI_SIZE(struct display_label, 16);
-ZIG_ABI_OFFSET(struct display_label, did, 0);
-ZIG_ABI_OFFSET(struct display_label, label, 8);
+ZIG_ABI_STRUCT(struct display_label, 16, 2);
+ZIG_ABI_FIELD(struct display_label, did, 0, 4);
+ZIG_ABI_FIELD(struct display_label, label, 8, 8);
 
-ZIG_ABI_SIZE(struct space_label, 16);
-ZIG_ABI_OFFSET(struct space_label, sid, 0);
-ZIG_ABI_OFFSET(struct space_label, label, 8);
+ZIG_ABI_STRUCT(struct space_label, 16, 2);
+ZIG_ABI_FIELD(struct space_label, sid, 0, 8);
+ZIG_ABI_FIELD(struct space_label, label, 8, 8);
 
-ZIG_ABI_SIZE(struct frame_field, 16);
-ZIG_ABI_OFFSET(struct frame_field, ptr, 0);
-ZIG_ABI_OFFSET(struct frame_field, len, 8);
+ZIG_ABI_STRUCT(struct frame_field, 16, 2);
+ZIG_ABI_FIELD(struct frame_field, ptr, 0, 8);
+ZIG_ABI_FIELD(struct frame_field, len, 8, 4);
 
-ZIG_ABI_SIZE(struct rule_effects, 80);
-ZIG_ABI_OFFSET(struct rule_effects, did, 0);
-ZIG_ABI_OFFSET(struct rule_effects, sid, 8);
-ZIG_ABI_OFFSET(struct rule_effects, opacity, 16);
-ZIG_ABI_OFFSET(struct rule_effects, manage, 20);
-ZIG_ABI_OFFSET(struct rule_effects, sticky, 24);
-ZIG_ABI_OFFSET(struct rule_effects, mff, 28);
-ZIG_ABI_OFFSET(struct rule_effects, layer, 32);
-ZIG_ABI_OFFSET(struct rule_effects, fullscreen, 36);
-ZIG_ABI_OFFSET(struct rule_effects, grid, 40);
-ZIG_ABI_OFFSET(struct rule_effects, scratchpad, 64);
-ZIG_ABI_OFFSET(struct rule_effects, flags, 72);
+ZIG_ABI_STRUCT(struct rule_effects, 80, 11);
+ZIG_ABI_FIELD(struct rule_effects, did, 0, 4);
+ZIG_ABI_FIELD(struct rule_effects, sid, 8, 8);
+ZIG_ABI_FIELD_FP(struct rule_effects, opacity, 16, 4);
+ZIG_ABI_FIELD(struct rule_effects, manage, 20, 4);
+ZIG_ABI_FIELD(struct rule_effects, sticky, 24, 4);
+ZIG_ABI_FIELD(struct rule_effects, mff, 28, 4);
+ZIG_ABI_FIELD(struct rule_effects, layer, 32, 4);
+ZIG_ABI_FIELD(struct rule_effects, fullscreen, 36, 4);
+ZIG_ABI_FIELD(struct rule_effects, grid, 40, 24);
+ZIG_ABI_FIELD(struct rule_effects, scratchpad, 64, 8);
+ZIG_ABI_FIELD(struct rule_effects, flags, 72, 2);
 
 ZIG_ABI_SIZE(regex_t, 32);
 _Static_assert(_Alignof(regex_t) == 8, "_Alignof(regex_t)");
 
-ZIG_ABI_SIZE(struct rule, 256);
-ZIG_ABI_OFFSET(struct rule, label, 0);
-ZIG_ABI_OFFSET(struct rule, app, 8);
-ZIG_ABI_OFFSET(struct rule, title, 16);
-ZIG_ABI_OFFSET(struct rule, role, 24);
-ZIG_ABI_OFFSET(struct rule, subrole, 32);
-ZIG_ABI_OFFSET(struct rule, app_regex, 40);
-ZIG_ABI_OFFSET(struct rule, title_regex, 72);
-ZIG_ABI_OFFSET(struct rule, role_regex, 104);
-ZIG_ABI_OFFSET(struct rule, subrole_regex, 136);
-ZIG_ABI_OFFSET(struct rule, effects, 168);
-ZIG_ABI_OFFSET(struct rule, flags, 248);
+ZIG_ABI_STRUCT(struct rule, 256, 11);
+ZIG_ABI_FIELD(struct rule, label, 0, 8);
+ZIG_ABI_FIELD(struct rule, app, 8, 8);
+ZIG_ABI_FIELD(struct rule, title, 16, 8);
+ZIG_ABI_FIELD(struct rule, role, 24, 8);
+ZIG_ABI_FIELD(struct rule, subrole, 32, 8);
+ZIG_ABI_FIELD(struct rule, app_regex, 40, 32);
+ZIG_ABI_FIELD(struct rule, title_regex, 72, 32);
+ZIG_ABI_FIELD(struct rule, role_regex, 104, 32);
+ZIG_ABI_FIELD(struct rule, subrole_regex, 136, 32);
+ZIG_ABI_FIELD(struct rule, effects, 168, 80);
+ZIG_ABI_FIELD(struct rule, flags, 248, 2);
 
 /* ------------------------------------------------------------------ */
 /* Value pins (checked against zig/abi.zig by zig/build.sh)           */
@@ -446,6 +487,34 @@ _Static_assert(RULE_ONE_SHOT == 0x100, "RULE_ONE_SHOT");
 _Static_assert(RULE_ONE_SHOT_REMOVE == 0x200, "RULE_ONE_SHOT_REMOVE");
 _Static_assert(REG_EXTENDED == 1, "REG_EXTENDED");
 
+/* Enum completeness (see the header comment); one case per line. */
+#pragma clang diagnostic push
+#pragma clang diagnostic error "-Wswitch"
+static inline void zig_abi_enum_window_node_split(enum window_node_split v)
+{
+    switch (v) {
+    case SPLIT_NONE:
+    case SPLIT_Y:
+    case SPLIT_X:
+    case SPLIT_AUTO:
+        break;
+    }
+}
+static inline void zig_abi_enum_mouse_drop_action(enum mouse_drop_action v)
+{
+    switch (v) {
+    case MOUSE_DROP_ACTION_NONE:
+    case MOUSE_DROP_ACTION_STACK:
+    case MOUSE_DROP_ACTION_SWAP:
+    case MOUSE_DROP_ACTION_WARP_TOP:
+    case MOUSE_DROP_ACTION_WARP_RIGHT:
+    case MOUSE_DROP_ACTION_WARP_BOTTOM:
+    case MOUSE_DROP_ACTION_WARP_LEFT:
+        break;
+    }
+}
+#pragma clang diagnostic pop
+
 #endif
 
 /* ------------------------------------------------------------------ */
@@ -464,36 +533,38 @@ struct yabai_selector
     uint64_t payload;
 };
 
-ZIG_ABI_SIZE(struct token, 16);
-ZIG_ABI_OFFSET(struct token, text, 0);
-ZIG_ABI_OFFSET(struct token, length, 8);
+ZIG_ABI_STRUCT(struct token, 16, 2);
+ZIG_ABI_FIELD(struct token, text, 0, 8);
+ZIG_ABI_FIELD(struct token, length, 8, 4);
 
-ZIG_ABI_SIZE(struct token_value, 32);
-ZIG_ABI_OFFSET(struct token_value, token, 0);
-ZIG_ABI_OFFSET(struct token_value, type, 16);
-ZIG_ABI_OFFSET(struct token_value, int_value, 24);
-ZIG_ABI_OFFSET(struct token_value, float_value, 24);
-ZIG_ABI_OFFSET(struct token_value, u32_value, 24);
-ZIG_ABI_OFFSET(struct token_value, string_value, 24);
+/* Three members: token, type, and the anonymous union. */
+ZIG_ABI_STRUCT(struct token_value, 32, 3);
+ZIG_ABI_FIELD(struct token_value, token, 0, 16);
+ZIG_ABI_FIELD(struct token_value, type, 16, 4);
+ZIG_ABI_FIELD(struct token_value, int_value, 24, 4);
+ZIG_ABI_FIELD_FP(struct token_value, float_value, 24, 4);
+ZIG_ABI_FIELD(struct token_value, u32_value, 24, 4);
+ZIG_ABI_FIELD(struct token_value, string_value, 24, 8);
 
-ZIG_ABI_SIZE(struct properties, 32);
-ZIG_ABI_OFFSET(struct properties, token, 0);
-ZIG_ABI_OFFSET(struct properties, did_parse, 16);
-ZIG_ABI_OFFSET(struct properties, did_error, 17);
-ZIG_ABI_OFFSET(struct properties, flags, 24);
+ZIG_ABI_STRUCT(struct properties, 32, 4);
+ZIG_ABI_FIELD(struct properties, token, 0, 16);
+ZIG_ABI_FIELD(struct properties, did_parse, 16, 1);
+ZIG_ABI_FIELD(struct properties, did_error, 17, 1);
+ZIG_ABI_FIELD(struct properties, flags, 24, 8);
 
-ZIG_ABI_SIZE(struct selector, 32);
-ZIG_ABI_OFFSET(struct selector, token, 0);
-ZIG_ABI_OFFSET(struct selector, did_parse, 16);
-ZIG_ABI_OFFSET(struct selector, dir, 24);
-ZIG_ABI_OFFSET(struct selector, did, 24);
-ZIG_ABI_OFFSET(struct selector, sid, 24);
-ZIG_ABI_OFFSET(struct selector, window, 24);
+/* Three members: token, did_parse, and the anonymous union. */
+ZIG_ABI_STRUCT(struct selector, 32, 3);
+ZIG_ABI_FIELD(struct selector, token, 0, 16);
+ZIG_ABI_FIELD(struct selector, did_parse, 16, 1);
+ZIG_ABI_FIELD(struct selector, dir, 24, 4);
+ZIG_ABI_FIELD(struct selector, did, 24, 4);
+ZIG_ABI_FIELD(struct selector, sid, 24, 8);
+ZIG_ABI_FIELD(struct selector, window, 24, 8);
 
-ZIG_ABI_SIZE(struct yabai_selector, 32);
-ZIG_ABI_OFFSET(struct yabai_selector, token, 0);
-ZIG_ABI_OFFSET(struct yabai_selector, did_parse, 16);
-ZIG_ABI_OFFSET(struct yabai_selector, payload, 24);
+ZIG_ABI_STRUCT(struct yabai_selector, 32, 3);
+ZIG_ABI_FIELD(struct yabai_selector, token, 0, 16);
+ZIG_ABI_FIELD(struct yabai_selector, did_parse, 16, 1);
+ZIG_ABI_FIELD(struct yabai_selector, payload, 24, 8);
 
 _Static_assert(TOKEN_TYPE_INVALID == 0, "TOKEN_TYPE_INVALID");
 _Static_assert(TOKEN_TYPE_UNKNOWN == 1, "TOKEN_TYPE_UNKNOWN");
@@ -504,5 +575,22 @@ _Static_assert(TOKEN_TYPE_STRING == 5, "TOKEN_TYPE_STRING");
 _Static_assert(LABEL_DISPLAY == 0, "LABEL_DISPLAY");
 _Static_assert(LABEL_SPACE == 1, "LABEL_SPACE");
 _Static_assert(LABEL_WINDOW == 2, "LABEL_WINDOW");
+
+/* Enum completeness (see the header comment); one case per line. */
+#pragma clang diagnostic push
+#pragma clang diagnostic error "-Wswitch"
+static inline void zig_abi_enum_token_type(enum token_type v)
+{
+    switch (v) {
+    case TOKEN_TYPE_INVALID:
+    case TOKEN_TYPE_UNKNOWN:
+    case TOKEN_TYPE_INT:
+    case TOKEN_TYPE_FLOAT:
+    case TOKEN_TYPE_U32:
+    case TOKEN_TYPE_STRING:
+        break;
+    }
+}
+#pragma clang diagnostic pop
 
 #endif
