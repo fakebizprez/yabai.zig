@@ -7,21 +7,31 @@
 // layout-identical MousePoints (CGPoint is { f64, f64 } on 64-bit macOS),
 // the drop-action ms/src/window structs arrive as scalars (drop_mode,
 // src_count, frame x/y/w/h, point x/y). No Zig runtime is required at link
-// time; float operations stay strict IEEE, matching clang codegen.
+// time. Zig never contracts float ops on its own; the one site clang
+// contracts is reproduced explicitly (see crossDiff).
 
+const builtin = @import("builtin");
 const abi = @import("abi.zig");
 const MousePoint = abi.CgPoint;
 
+// a*b - c*d as clang emits it: with its default -ffp-contract=on (even at
+// -O0) it fuses the left product into fma(a, b, -(c*d)) on arm64 (fnmsub),
+// while the x86_64 default CPU has no FMA, so there it stays unfused.
+inline fn crossDiff(a: f64, b: f64, c: f64, d: f64) f64 {
+    if (comptime builtin.cpu.arch == .aarch64) return @mulAdd(f64, a, b, -(c * d));
+    return a * b - c * d;
+}
+
 // Mirrors triangle_contains_point() in src/misc/helpers.h. The C inputs are
-// CGFloat (f64 on 64-bit macOS); the RHS evaluates in f64 and narrows to
-// float temporaries, so the port computes in f64 and rounds once to f32 via
-// @floatCast (same round-to-nearest as the C assignment) before the strict
-// sign tests. Edge and vertex points (any l == 0) return false, like C.
+// CGFloat (f64 on 64-bit macOS); the RHS evaluates in f64 (fused per
+// crossDiff) and narrows to float temporaries, so the port rounds once to
+// f32 via @floatCast (same round-to-nearest as the C assignment) before the
+// strict sign tests. Edge and vertex points (any l == 0) return false, like C.
 fn mouseTriangleContainsPoint(t: [*]const MousePoint, p: *const MousePoint) bool {
     @setRuntimeSafety(false);
-    const l1: f32 = @floatCast((p.x - t[0].x) * (t[2].y - t[0].y) - (t[2].x - t[0].x) * (p.y - t[0].y));
-    const l2: f32 = @floatCast((p.x - t[1].x) * (t[0].y - t[1].y) - (t[0].x - t[1].x) * (p.y - t[1].y));
-    const l3: f32 = @floatCast((p.x - t[2].x) * (t[1].y - t[2].y) - (t[1].x - t[2].x) * (p.y - t[2].y));
+    const l1: f32 = @floatCast(crossDiff(p.x - t[0].x, t[2].y - t[0].y, t[2].x - t[0].x, p.y - t[0].y));
+    const l2: f32 = @floatCast(crossDiff(p.x - t[1].x, t[0].y - t[1].y, t[0].x - t[1].x, p.y - t[1].y));
+    const l3: f32 = @floatCast(crossDiff(p.x - t[2].x, t[1].y - t[2].y, t[1].x - t[2].x, p.y - t[2].y));
     return (l1 > 0.0 and l2 > 0.0 and l3 > 0.0) or (l1 < 0.0 and l2 < 0.0 and l3 < 0.0);
 }
 
