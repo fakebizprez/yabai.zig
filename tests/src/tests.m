@@ -6,11 +6,14 @@ unsigned int __src_osax_loader_len;
 #include <CoreGraphics/CoreGraphics.h>
 static void test_capture_event_post(CGEventTapLocation tap, CGEventRef event);
 static CGEventRef test_create_event(CGEventSourceRef source);
+static CGError test_capture_warp(CGPoint point);
 #define CGEventPost test_capture_event_post
 #define CGEventCreate test_create_event
+#define CGWarpMouseCursorPosition test_capture_warp
 #include "../../src/manifest.m"
 #undef CGEventPost
 #undef CGEventCreate
+#undef CGWarpMouseCursorPosition
 
 #define TEST_SIG(name) bool test_##name(void)
 typedef TEST_SIG(function);
@@ -40,12 +43,17 @@ typedef TEST_SIG(function);
 #define TEST_LIST                                              \
     TEST_ENTRY(macos_swipe_failure)                            \
     TEST_ENTRY(macos_swipe_timing)                             \
+    TEST_ENTRY(macos_swipe_sequence)                           \
+    TEST_ENTRY(macos_swipe_sequence_failure)                   \
+    TEST_ENTRY(macos_gesture_fallback_gate)                    \
     TEST_ENTRY(sa_response_status)                             \
     TEST_ENTRY(macos_space_dictionary)                         \
     TEST_ENTRY(macos_swipe_events)                             \
     TEST_ENTRY(event_serialize_roundtrip)                      \
     TEST_ENTRY(event_serialize_payload_replacement)             \
     TEST_ENTRY(event_serialize_malformed)                      \
+    TEST_ENTRY(event_serialize_version_rejected)               \
+    TEST_ENTRY(event_serialize_fixed1616_clamp)                \
     TEST_ENTRY(macos_version_detection)                        \
     TEST_ENTRY(display_area_is_in_direction)                   \
     TEST_ENTRY(closest_display_in_direction)                   \

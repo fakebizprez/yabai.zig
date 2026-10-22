@@ -213,3 +213,40 @@ TEST_FUNC(event_serialize_malformed,
     TEST_CHECK(iss_parse_event_data(many_fields, sizeof(many_fields) - 1, &parsed), false);
     TEST_CHECK(parsed.fields == NULL, true);
 })
+
+static const uint8_t version_one[] = { 0, 0, 0, 1, 0, 1, 0, 10, 1, 2, 3, 4, 5, 6, 7, 8 };
+static const uint8_t version_three[] = { 0, 0, 0, 3 };
+static const uint8_t version_negative[] = { 0xFF, 0xFF, 0xFF, 0xFE };
+static const uint8_t version_two[] = { 0, 0, 0, 2 };
+
+TEST_FUNC(event_serialize_version_rejected,
+{
+    ISSCGEventParsedData parsed = {0};
+    TEST_CHECK(iss_parse_event_data(version_one, sizeof(version_one), &parsed), false);
+    TEST_CHECK(parsed.fields == NULL, true);
+    TEST_CHECK(iss_parse_event_data(version_three, sizeof(version_three), &parsed), false);
+    TEST_CHECK(parsed.fields == NULL, true);
+    TEST_CHECK(iss_parse_event_data(version_negative, sizeof(version_negative), &parsed), false);
+    TEST_CHECK(parsed.fields == NULL, true);
+    bool ok = iss_parse_event_data(version_two, sizeof(version_two), &parsed);
+    TEST_CHECK(ok, true);
+    TEST_CHECK(parsed.version, 2);
+    iss_parsed_event_data_free(&parsed);
+})
+
+TEST_FUNC(event_serialize_fixed1616_clamp,
+{
+    TEST_CHECK(iss_double_to_fixed1616(NAN), 0);
+    TEST_CHECK(iss_double_to_fixed1616(-NAN), 0);
+    TEST_CHECK(iss_double_to_fixed1616(INFINITY), INT32_MAX);
+    TEST_CHECK(iss_double_to_fixed1616(-INFINITY), INT32_MIN);
+    TEST_CHECK(iss_double_to_fixed1616(32768.0), INT32_MAX);
+    TEST_CHECK(iss_double_to_fixed1616(-32768.0), INT32_MIN);
+    TEST_CHECK(iss_double_to_fixed1616(1e300), INT32_MAX);
+    TEST_CHECK(iss_double_to_fixed1616(-1e300), INT32_MIN);
+    TEST_CHECK(iss_double_to_fixed1616(0.5), 32768);
+    TEST_CHECK(iss_double_to_fixed1616(-0.5), -32768);
+    TEST_CHECK(iss_double_to_fixed1616(1e-9), 1);
+    TEST_CHECK(iss_double_to_fixed1616(-1e-9), -1);
+    TEST_CHECK(iss_double_to_fixed1616(0.0), 0);
+})
