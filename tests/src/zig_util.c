@@ -51,6 +51,43 @@ TEST_FUNC(zig_util_easing,
     TEST_CHECK(yabai_ease_in_expo(0.0f) == 0.0f, 1);
 })
 
+/* Inputs an exhaustive [0,1] sweep found to differ:
+ * - powf(x, 2) rewritten to x * x by LLVM (in_out_quad, circ family; the
+ *   -O0 C build calls powf, which is not always x * x),
+ * - fused vs unfused a*b + c (out_quad, in_expo, in_out_expo): clang
+ *   contracts on arm64 only, so these fail on x86_64 if Zig fuses there. */
+static float ease_edge_inputs[] =
+{
+    0x1.00139ap-1f, 0x1.5d4318p-8f, 0x1.6a1002p-13f, 0x1.5d4318p-9f,
+    0x1.8p-24f, 0x1.99999ap-25f, 0x1.99999ap-26f,
+};
+
+/* Bit-pattern stride over [0,1] (about 1M floats per function), weighted
+ * like the exhaustive sweep, plus the edge inputs above. */
+TEST_FUNC(zig_util_easing_dense,
+{
+    int fn_count = array_count(ease_c_fns);
+    int edge_count = array_count(ease_edge_inputs);
+    for (int i = 0; i < fn_count; ++i) {
+        int mismatches = 0;
+        float first = 0.0f;
+        for (uint32_t u = 0; u <= 0x3f800000; u += 1013) {
+            float t;
+            memcpy(&t, &u, sizeof(t));
+            float c = ease_c_fns[i](t);
+            float z = ease_z_fns[i](t);
+            if (memcmp(&c, &z, sizeof(float)) != 0 && mismatches++ == 0) first = t;
+        }
+        for (int j = 0; j < edge_count; ++j) {
+            float c = ease_c_fns[i](ease_edge_inputs[j]);
+            float z = ease_z_fns[i](ease_edge_inputs[j]);
+            if (memcmp(&c, &z, sizeof(float)) != 0 && mismatches++ == 0) first = ease_edge_inputs[j];
+        }
+        if (mismatches) printf("ease %d: %d mismatches, first t=%a\n", i, mismatches, first);
+        TEST_CHECK(mismatches, 0);
+    }
+})
+
 TEST_FUNC(zig_util_balance_clamp,
 {
     struct balance_node c_add = balance_node_add((struct balance_node) { 1, 2 }, (struct balance_node) { 3, 4 });
