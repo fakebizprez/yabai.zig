@@ -1083,11 +1083,15 @@ TEST_FUNC(zig_rule_serialize_parity,
  * use parenthesized compound literals: TEST_FUNC/TEST_CHECK macro arguments
  * split on commas inside braces but not inside parens.
  *
- * display=/space= keys never reach the C oracle here: ref_parse_rule evaluates
- * display_manager_active_display_id()/space_manager_active_space() eagerly
- * and the former asserts on a NULL SLS uuid in-process. Those branches run
- * Zig-only with the acting ids lifted in (same seam as
- * yabai_rule_serialize's did_index/sid_index) against hand-pinned bytes. */
+ * Both sides take their display=/space= manager queries from
+ * rule_lookup_stub (Zig through its lookup argument, the oracle through
+ * the ref_rule_lookup seam in ref_upstream_rule.c): the acting getters
+ * return rl_acting_did/rl_acting_sid and count their calls, and the
+ * relative neighbour lookups return 0 or, with rl_hit set, a value derived
+ * from their arguments, so a swapped direction or prev/next shows up as a
+ * different did/sid. Selectors that still reach real managers (index,
+ * first/last, mouse, labels) crash headless in the oracle and stay
+ * Zig-only pins below. */
 
 static const char *rsv_words[] = {
     ARGUMENT_WINDOW_TOGGLE_FLOAT, ARGUMENT_WINDOW_TOGGLE_STICKY,
@@ -1100,6 +1104,40 @@ static const char *rsv_words[] = {
 
 static const char *onoff_keys[] = { "manage", "sticky", "mouse_follows_focus", "native-fullscreen" };
 static const char *layer_vals[] = { "below", "normal", "above", "auto", "middle" };
+
+static uint32_t rl_acting_did;
+static uint64_t rl_acting_sid;
+static bool rl_hit;
+static int rl_did_calls;
+static int rl_sid_calls;
+
+static uint32_t rl_get_did(void) { ++rl_did_calls; return rl_acting_did; }
+static uint64_t rl_get_sid(void) { ++rl_sid_calls; return rl_acting_sid; }
+static uint32_t rl_dir_did(uint32_t did, int dir) { return rl_hit ? did * 1000 + (uint32_t) dir : 0; }
+static uint32_t rl_prev_did(uint32_t did) { return rl_hit ? did - 1 : 0; }
+static uint32_t rl_next_did(uint32_t did) { return rl_hit ? did + 1 : 0; }
+static uint64_t rl_prev_sid(uint64_t sid) { return rl_hit ? sid - 1 : 0; }
+static uint64_t rl_next_sid(uint64_t sid) { return rl_hit ? sid + 1 : 0; }
+
+static const struct yabai_rule_lookup rule_lookup_stub = {
+    .active_display_id    = rl_get_did,
+    .active_space         = rl_get_sid,
+    .display_in_direction = rl_dir_did,
+    .prev_display_id      = rl_prev_did,
+    .next_display_id      = rl_next_did,
+    .prev_space           = rl_prev_sid,
+    .next_space           = rl_next_sid,
+};
+
+static void rl_set(uint32_t did, uint64_t sid, bool hit)
+{
+    rl_acting_did = did;
+    rl_acting_sid = sid;
+    rl_hit = hit;
+    rl_did_calls = 0;
+    rl_sid_calls = 0;
+    ref_rule_lookup = &rule_lookup_stub;
+}
 
 static char *rule_msg_join(const char **toks, int n)
 {
@@ -1154,7 +1192,7 @@ static int rules_equal(struct rule *a, struct rule *b)
 
 /* Full oracle parity: return value, emitted bytes, resulting rule shape
  * (regex internals excluded, VALID flags compared), and cursor drain. */
-static int rule_case_oracle(const char **toks, int n)
+static int rule_case_oracle_ids(const char **toks, int n, uint32_t acting_did, uint64_t acting_sid, bool hit)
 {
     char *c_buf = rule_msg_join(toks, n);
     char *z_buf = rule_msg_join(toks, n);
@@ -1172,8 +1210,15 @@ static int rule_case_oracle(const char **toks, int n)
     size_t z_len = 0;
     FILE *c_rsp = open_memstream(&c_msg, &c_len);
     FILE *z_rsp = open_memstream(&z_msg, &z_len);
+    rl_set(acting_did, acting_sid, hit);
     bool c_ret = ref_parse_rule(c_rsp, &c_cur, &c_rule, c_first);
-    bool z_ret = yabai_parse_rule(z_rsp, &z_cur, &z_rule, &z_first, 0, 0);
+    int c_did_calls = rl_did_calls;
+    int c_sid_calls = rl_sid_calls;
+    rl_set(acting_did, acting_sid, hit);
+    bool z_ret = yabai_parse_rule(z_rsp, &z_cur, &z_rule, &z_first, &rule_lookup_stub);
+    int z_did_calls = rl_did_calls;
+    int z_sid_calls = rl_sid_calls;
+    rl_set(0, 0, false);
     fflush(c_rsp);
     fflush(z_rsp);
     fclose(c_rsp);
@@ -1208,6 +1253,13 @@ static int rule_case_oracle(const char **toks, int n)
         printf("rule cursor not drained\n");
         ok = 0;
     }
+    if (c_did_calls != z_did_calls || c_sid_calls != z_sid_calls) {
+        printf("rule acting getter calls mismatch c %d/%d z %d/%d toks:", c_did_calls, c_sid_calls, z_did_calls, z_sid_calls);
+        int i = 0;
+        for (i = 0; i < n; ++i) printf(" [%s]", toks[i]);
+        printf("\n");
+        ok = 0;
+    }
     rule_destroy(&c_rule);
     yabai_rule_destroy(&z_rule);
     free(c_buf);
@@ -1215,6 +1267,11 @@ static int rule_case_oracle(const char **toks, int n)
     free(c_msg);
     free(z_msg);
     return ok;
+}
+
+static int rule_case_oracle(const char **toks, int n)
+{
+    return rule_case_oracle_ids(toks, n, 0, 0, false);
 }
 
 TEST_FUNC(zig_rule_parse_parity,
@@ -1299,12 +1356,16 @@ TEST_FUNC(zig_rule_parse_parity,
     TEST_CHECK(rule_case_oracle((const char *[]){"label=only"}, 1), 1);
     TEST_CHECK(rule_case_oracle((const char *[]){"grid!=1:1:1:1:1:1", "label!=x", "app=y"}, 3), 1);
     TEST_CHECK(rule_case_oracle((const char *[]){"opacity!=0.5", "app=x"}, 2), 1);
+    /* Overflowing space index wraps before the (headless NULL-guarded)
+     * mission-control lookup and in the emitted index. */
+    TEST_CHECK(rule_case_oracle((const char *[]){"space=99999999999", "app=x"}, 2), 1);
+    TEST_CHECK(rule_case_oracle((const char *[]){"space=4294967297", "app=x"}, 2), 1);
     /* Full happy path across every pure key. */
     TEST_CHECK(rule_case_oracle((const char *[]){"label=L", "app=Term.*", "title!=bash", "role=AXWindow", "subrole=AXStandardWindow", "scratchpad=pad", "manage=on", "sticky=off", "mouse_follows_focus=on", "native-fullscreen=off", "sub-layer=above", "opacity=0.75", "grid=1:1:10:20:30:40"}, 13), 1);
 })
 
 /* Zig-only pins: hand-pinned daemon_fail bytes (0x07 marker + shape),
- * the manager-backed display/space branches with lifted acting ids, and
+ * the display/space branches that reach real managers (stub acting ids), and
  * the NULL-stream case (C has no NULL guard; only Zig is exercised). */
 static int z_rule_pinned(const char **toks, int n, uint32_t acting_did, uint64_t acting_sid, bool exp_ret, const char *exp_out)
 {
@@ -1316,7 +1377,9 @@ static int z_rule_pinned(const char **toks, int n, uint32_t acting_did, uint64_t
     char *z_msg = NULL;
     size_t z_len = 0;
     FILE *z_rsp = open_memstream(&z_msg, &z_len);
-    bool z_ret = yabai_parse_rule(z_rsp, &z_cur, &z_rule, &z_first, acting_did, acting_sid);
+    rl_set(acting_did, acting_sid, false);
+    bool z_ret = yabai_parse_rule(z_rsp, &z_cur, &z_rule, &z_first, &rule_lookup_stub);
+    rl_set(0, 0, false);
     fflush(z_rsp);
     fclose(z_rsp);
     int ok = 1;
@@ -1353,8 +1416,8 @@ TEST_FUNC(zig_rule_parse_pinned,
      * space ints miss via the NULL-guarded SLS path; floats/hex take
      * the else path. Display int/first/last/mouse lookups dereference
      * NULL CoreFoundation state in-process, so those branches are
-     * covered by inspection only (same reason the C oracle is
-     * uncallable for every display/space key). */
+     * covered by inspection only (the oracle reaches the same real
+     * managers there). */
     TEST_CHECK(z_rule_pinned((const char *[]){"display=recent", "app=x"}, 2, 0, 0, false, ""), 1);
     TEST_CHECK(z_rule_pinned((const char *[]){"space=recent", "app=x"}, 2, 0, 0, false, ""), 1);
     TEST_CHECK(z_rule_pinned((const char *[]){"display=bogus", "app=x"}, 2, 0, 0, false, "\x07value 'bogus' is not a valid option for DISPLAY_SEL\n"), 1);
@@ -1378,7 +1441,7 @@ TEST_FUNC(zig_rule_parse_pinned,
         struct token z_first = get_token(&z_cur);
         struct rule z_rule;
         memset(&z_rule, 0, sizeof(z_rule));
-        bool z_ret = yabai_parse_rule(NULL, &z_cur, &z_rule, &z_first, 0, 0);
+        bool z_ret = yabai_parse_rule(NULL, &z_cur, &z_rule, &z_first, &rule_lookup_stub);
         TEST_CHECK(z_ret, false);
         TEST_CHECK(rule_effects_check_flag(&z_rule.effects, RULE_FOLLOW_SPACE), true);
         TEST_CHECK(z_rule.effects.did, 0);
@@ -1393,7 +1456,7 @@ TEST_FUNC(zig_rule_parse_pinned,
         struct token z_first = get_token(&z_cur);
         struct rule z_rule;
         memset(&z_rule, 0, sizeof(z_rule));
-        bool z_ret = yabai_parse_rule(NULL, &z_cur, &z_rule, &z_first, 0, 0);
+        bool z_ret = yabai_parse_rule(NULL, &z_cur, &z_rule, &z_first, &rule_lookup_stub);
         TEST_CHECK(z_ret, true);
         TEST_CHECK(z_rule.effects.manage, RULE_PROP_ON);
         yabai_rule_destroy(&z_rule);
@@ -1405,11 +1468,97 @@ TEST_FUNC(zig_rule_parse_pinned,
         struct token z_first = get_token(&z_cur);
         struct rule z_rule;
         memset(&z_rule, 0, sizeof(z_rule));
-        bool z_ret = yabai_parse_rule(NULL, &z_cur, &z_rule, &z_first, 0, 0);
+        bool z_ret = yabai_parse_rule(NULL, &z_cur, &z_rule, &z_first, &rule_lookup_stub);
         TEST_CHECK(z_ret, false);
         yabai_rule_destroy(&z_rule);
         free(z_buf);
     }
+})
+
+/* Relative display/space selectors with nonzero acting ids against the
+ * oracle: every neighbour lookup both missing (failure bytes) and hitting
+ * (derived did/sid lands in the effects), with and without the ^ prefix,
+ * plus acting id 0 and a rule carrying both keys. */
+static const char *rel_display_vals[] = { "north", "east", "south", "west", "prev", "next", "^north", "^west", "^prev", "^next" };
+static const char *rel_space_vals[] = { "prev", "next", "^prev", "^next" };
+
+TEST_FUNC(zig_rule_parse_relative_parity,
+{
+    int hit = 0;
+    int i = 0;
+    for (hit = 0; hit < 2; ++hit) {
+        for (i = 0; i < (int) array_count(rel_display_vals); ++i) {
+            char tok[64];
+            snprintf(tok, sizeof(tok), "display=%s", rel_display_vals[i]);
+            TEST_CHECK(rule_case_oracle_ids((const char *[]){tok, "app=x"}, 2, 7, 42, hit), 1);
+            TEST_CHECK(rule_case_oracle_ids((const char *[]){tok, "app=x"}, 2, 0, 42, hit), 1);
+        }
+        for (i = 0; i < (int) array_count(rel_space_vals); ++i) {
+            char tok[64];
+            snprintf(tok, sizeof(tok), "space=%s", rel_space_vals[i]);
+            TEST_CHECK(rule_case_oracle_ids((const char *[]){tok, "app=x"}, 2, 7, 42, hit), 1);
+            TEST_CHECK(rule_case_oracle_ids((const char *[]){tok, "app=x"}, 2, 7, 0, hit), 1);
+        }
+        TEST_CHECK(rule_case_oracle_ids((const char *[]){"display=next", "space=prev", "app=x"}, 3, 7, 42, hit), 1);
+        TEST_CHECK(rule_case_oracle_ids((const char *[]){"display!=east", "space!=next", "app=x"}, 3, 7, 42, hit), 1);
+        TEST_CHECK(rule_case_oracle_ids((const char *[]){"display=bogus", "space=bogus", "app=x"}, 3, 7, 42, hit), 1);
+    }
+    /* Hit path really stores the derived ids (guards the stub, too). */
+    {
+        char *z_buf = rule_msg_join((const char *[]){"display=east", "space=next", "app=x"}, 3);
+        char *z_cur = z_buf;
+        struct token z_first = get_token(&z_cur);
+        struct rule z_rule;
+        memset(&z_rule, 0, sizeof(z_rule));
+        rl_set(7, 42, true);
+        bool z_ret = yabai_parse_rule(NULL, &z_cur, &z_rule, &z_first, &rule_lookup_stub);
+        rl_set(0, 0, false);
+        TEST_CHECK(z_ret, true);
+        TEST_CHECK(z_rule.effects.did, 7 * 1000 + DIR_EAST);
+        TEST_CHECK(z_rule.effects.sid, 43);
+        yabai_rule_destroy(&z_rule);
+        free(z_buf);
+    }
+})
+
+/* The acting getters (AX + SkyLight in the daemon) run only when a
+ * display=/space= key needs them, once per key, like upstream. */
+static int rule_getter_calls(const char **toks, int n, int *did_calls, int *sid_calls)
+{
+    char *z_buf = rule_msg_join(toks, n);
+    char *z_cur = z_buf;
+    struct token z_first = get_token(&z_cur);
+    struct rule z_rule;
+    memset(&z_rule, 0, sizeof(z_rule));
+    rl_set(7, 42, false);
+    bool z_ret = yabai_parse_rule(NULL, &z_cur, &z_rule, &z_first, &rule_lookup_stub);
+    *did_calls = rl_did_calls;
+    *sid_calls = rl_sid_calls;
+    rl_set(0, 0, false);
+    yabai_rule_destroy(&z_rule);
+    free(z_buf);
+    return z_ret;
+}
+
+TEST_FUNC(zig_rule_parse_lazy_lookup,
+{
+    int did_calls = -1;
+    int sid_calls = -1;
+    rule_getter_calls((const char *[]){"app=Foo", "manage=off"}, 2, &did_calls, &sid_calls);
+    TEST_CHECK(did_calls, 0);
+    TEST_CHECK(sid_calls, 0);
+    rule_getter_calls((const char *[]){"label=L", "title=bash", "grid=1:1:1:1:1:1", "opacity=0.5", "sticky=on", "sub-layer=above", "app=x"}, 7, &did_calls, &sid_calls);
+    TEST_CHECK(did_calls, 0);
+    TEST_CHECK(sid_calls, 0);
+    rule_getter_calls((const char *[]){"display=north", "app=x"}, 2, &did_calls, &sid_calls);
+    TEST_CHECK(did_calls, 1);
+    TEST_CHECK(sid_calls, 0);
+    rule_getter_calls((const char *[]){"space=next", "app=x"}, 2, &did_calls, &sid_calls);
+    TEST_CHECK(did_calls, 0);
+    TEST_CHECK(sid_calls, 1);
+    rule_getter_calls((const char *[]){"display=prev", "space=prev", "display=next", "app=x"}, 4, &did_calls, &sid_calls);
+    TEST_CHECK(did_calls, 2);
+    TEST_CHECK(sid_calls, 1);
 })
 
 /* ref_regex_match() + ref_window_manager_rule_matches_window() (frozen

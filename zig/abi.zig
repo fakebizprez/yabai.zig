@@ -99,6 +99,18 @@ pub const ViewDefaults = extern struct {
     split_type: c_int,
 };
 
+// struct yabai_rule_lookup in src/zig_abi.h: manager queries for the
+// display=/space= rule keys, called lazily from yabai_parse_rule.
+pub const RuleLookup = extern struct {
+    active_display_id: *const fn () callconv(.c) u32,
+    active_space: *const fn () callconv(.c) u64,
+    display_in_direction: *const fn (did: u32, direction: c_int) callconv(.c) u32,
+    prev_display_id: *const fn (did: u32) callconv(.c) u32,
+    next_display_id: *const fn (did: u32) callconv(.c) u32,
+    prev_space: *const fn (sid: u64) callconv(.c) u64,
+    next_space: *const fn (sid: u64) callconv(.c) u64,
+};
+
 pub const BalanceNode = extern struct {
     y_count: c_int,
     x_count: c_int,
@@ -402,6 +414,11 @@ comptime {
         .{ "layout", 0 },        .{ "top_padding", 4 },    .{ "bottom_padding", 8 },
         .{ "left_padding", 12 }, .{ "right_padding", 16 }, .{ "window_gap", 20 },
         .{ "auto_balance", 24 }, .{ "split_type", 28 },
+    });
+    pin(RuleLookup, 56, .{
+        .{ "active_display_id", 0 }, .{ "active_space", 8 },     .{ "display_in_direction", 16 },
+        .{ "prev_display_id", 24 },  .{ "next_display_id", 32 }, .{ "prev_space", 40 },
+        .{ "next_space", 48 },
     });
     pin(BalanceNode, 8, .{ .{ "y_count", 0 }, .{ "x_count", 4 } });
     pin(RgbaColor, 20, .{ .{ "p", 0 }, .{ "r", 4 }, .{ "g", 8 }, .{ "b", 12 }, .{ "a", 16 } });

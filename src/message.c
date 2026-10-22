@@ -2582,12 +2582,21 @@ static void handle_domain_query(FILE *rsp, struct token domain, char *message)
     }
 }
 
-/* Rule parsing lives in Zig (zig/rule.zig). The acting display/space ids
- * arrive lifted in, so call sites evaluate
- * display_manager_active_display_id() and space_manager_active_space()
- * eagerly. struct rule passes as the Rule pointer, the message cursor
- * passes directly, and token passes by address. rule_add()/
- * rule_destroy() stay C. */
+/* Rule parsing lives in Zig (zig/rule.zig). The manager queries for the
+ * display=/space= keys go through this table, and the acting display/space
+ * getters run only inside those branches, as upstream parse_rule did (a
+ * plain app=Foo rule never touches AX or SkyLight). struct rule passes as
+ * the Rule pointer, the message cursor passes directly, and token passes
+ * by address. rule_add()/rule_destroy() stay C. */
+static const struct yabai_rule_lookup rule_lookup = {
+    .active_display_id    = display_manager_active_display_id,
+    .active_space         = space_manager_active_space,
+    .display_in_direction = display_manager_find_closest_display_in_direction,
+    .prev_display_id      = display_manager_prev_display_id,
+    .next_display_id      = display_manager_next_display_id,
+    .prev_space           = space_manager_prev_space,
+    .next_space           = space_manager_next_space,
+};
 
 static void handle_domain_rule(FILE *rsp, struct token domain, char *message)
 {
@@ -2603,7 +2612,7 @@ static void handle_domain_rule(FILE *rsp, struct token domain, char *message)
             token = get_token(&message);
         }
 
-        if (yabai_parse_rule(rsp, &message, &rule, &token, display_manager_active_display_id(), space_manager_active_space())) {
+        if (yabai_parse_rule(rsp, &message, &rule, &token, &rule_lookup)) {
             rule_add(&rule);
         } else {
             rule_destroy(&rule);
@@ -2617,7 +2626,7 @@ static void handle_domain_rule(FILE *rsp, struct token domain, char *message)
         } else if (value.type == TOKEN_TYPE_STRING) {
             if (!rule_reapply_by_label(value.string_value)) {
                 struct rule rule = {0};
-                if (yabai_parse_rule(rsp, &message, &rule, &value.token, display_manager_active_display_id(), space_manager_active_space())) {
+                if (yabai_parse_rule(rsp, &message, &rule, &value.token, &rule_lookup)) {
                     rule_apply(&rule);
                 }
                 rule_destroy(&rule);
