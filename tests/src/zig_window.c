@@ -1,8 +1,10 @@
-/* Resize-math parity tests (doc/zig-refactor-plan.md step 3).
+/* Window parity tests for zig/window.zig: resize/move frame math,
+ * can_move/can_resize/is_undersized, and window_layer
+ * (doc/zig-refactor-plan.md step 3).
  *
- * The Zig export in zig/window.zig must match the frozen dd84572 frame
- * math (ref_resize_frame_math in tests/src/ref_upstream_view.c)
- * exactly. That helper holds the statements of the dd84572
+ * Routed exports must match their ref_ copies in
+ * tests/src/ref_upstream_view.c (frozen dd84572) exactly. For resize, the
+ * oracle is ref_resize_frame_math. That helper holds the statements of the dd84572
  * window_manager_resize_window_relative_internal() (pure frame math;
  * the AX/animate effects stay in the caller), so it is the oracle. CGRect fields
  * are doubles; the narrowing to float outputs is part of the pinned

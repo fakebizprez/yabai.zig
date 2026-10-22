@@ -4,9 +4,17 @@ Recorded from a clean `make` build with the pinned toolchain below. Any
 Zig-led replacement must reproduce everything in this file byte for byte
 unless doc/zig-refactor-plan.md explicitly allows a change.
 
+The "Step 2/Step 3 progress" sections are a dated log: export and test
+counts there are what each step recorded at the time, and "the C
+function as oracle" meant the live C body, before routing replaced it.
+Parity tests now compare routed exports against the frozen dd84572 copies
+in tests/src/ref_upstream_*.c. Current figures are in "Daemon linkage"
+and "Routing map" below.
+
 ## Toolchain
 
-- `zig version`: 0.16.0 (pinned for the migration)
+- `zig version`: 0.17.0, pinned in zig/ZIG_VERSION and enforced by
+  zig/build.sh (the migration started on 0.16.0)
 - `xcrun clang` from system Xcode; macOS minimum 11.0 (`-mmacosx-version-min=11.0`)
 
 ## Reference binary
@@ -18,20 +26,21 @@ unless doc/zig-refactor-plan.md explicitly allows a change.
   `--message/-m`, `--config/-c`, `--verbose/-V`, `--version/-v`,
   `--help/-h`) plus the `man yabai` pointer.
 - `lipo -info ./bin/yabai`: fat file with `x86_64 arm64` slices.
-- Existing suite: `cd tests && make` runs 38 tests, all passing
-  (2 display geometry + 8 socket wire-format/dispatcher characterization
-  in tests/src/socket_frame.c + 3 geometry parity in
-  tests/src/zig_geometry.c + 8 tokenizer/command-decoding parity in
-  tests/src/zig_message.c + 6 view-tree parity in tests/src/zig_view.c
-  + 6 pure-helper parity in tests/src/zig_util.c + 3 rule-effects
-  parity in tests/src/zig_rule.c + 2 window-math parity in
-  tests/src/zig_window.c).
+- Suite: `cd tests && make` runs the 106 entries in `TEST_LIST`
+  (tests/src/tests.m) as `tests/bin/tests`, then the `tests/bin/osax27`
+  Dock payload helper checks, then the same suite built for x86_64
+  (`tests/bin/tests-x86_64`) under Rosetta, or prints a skip line when
+  Rosetta is not installed.
 
 ## Step 2 boundary evidence
 
-- `zig/geometry.zig` (pinned Zig 0.16.0, enforced by tests/makefile)
-  exports `_yabai_area_make_pair` with a C ABI; the tests/makefile
-  builds it with `zig build-obj` and links it into `tests/bin/tests`.
+Historical (Zig 0.16.0 at the time; zig/build.sh has since replaced the
+`zig build-obj` rule that tests/makefile used, and the oracle is now the
+frozen `ref_area_make_pair` in tests/src/ref_upstream_view.c).
+
+- `zig/geometry.zig` exports `_yabai_area_make_pair` with a C ABI;
+  tests/makefile built it with `zig build-obj` and linked it into
+  `tests/bin/tests`.
 - Parity: `zig_area_make_pair_parity` runs 10 split/gap/ratio cases
   through both the C `area_make_pair` (oracle) and the Zig export and
   byte-compares all outputs; `zig_area_make_pair_rounding` pins
@@ -209,9 +218,13 @@ unless doc/zig-refactor-plan.md explicitly allows a change.
   ownership pins. 71/71 tests; leaks 0; fat daemon, 101 exports.
 - Stack routing: view_stack_window_node delegates to Zig.
   find_window_list deliberately stays C (sole caller never frees;
-  Zig returns caller-frees memory — routing would leak).
+  Zig returns caller-frees memory — routing would leak). Superseded
+  by "List routing" below.
 - Rule call-site routing: both handle_domain_rule parse sites call
   Zig with eager acting ids; C parse_rule stays as the live oracle.
+  Superseded: the C body now lives only as `ref_parse_rule` in
+  tests/src/ref_upstream_rule.c, and the acting ids are resolved lazily
+  through `struct yabai_rule_lookup` (see the routing map).
   71/71 tests; leaks 0; fat daemon, 101 exports.
 - Lifecycle routing: view_create/clear/destroy delegate to Zig
   (SLS uuid and defaults lifted in wrappers; trailing view_update
@@ -251,26 +264,32 @@ unless doc/zig-refactor-plan.md explicitly allows a change.
 
 ## Daemon linkage (universal objects)
 
-- `zig/build.sh` (pin: zig/ZIG_VERSION = 0.16.0) compiles
-  zig/geometry.zig and zig/message.zig with `-O ReleaseSafe` for
-  x86_64-macos.11.0 and aarch64-macos.11.0 (minos 11.0 on both slices)
-  and lipos them into zig/zig-geometry.o and zig/zig-message.o.
-- The root makefile links both objects into `bin/yabai` (still a fat
-  x86_64+arm64 binary, `--version` unchanged); all 11 `yabai_*`
-  exports are present in the daemon. The objects need no Zig runtime
-  (geometry: zero external symbols; message: libc `strlen`/`strtof`
-  plus stack guard only).
-- tests/makefile links these same universal objects, so the 17-test
-  parity suite proves the shipped ReleaseSafe objects directly.
+- `zig/build.sh` (pin: zig/ZIG_VERSION, currently 0.17.0) compiles each
+  of the eight modules (geometry, message, view, util, rule, window,
+  display, mouse) with `-O ReleaseSafe` for x86_64-macos.11.0 and
+  aarch64-macos.11.0 (minos 11.0 on both slices) and lipos them into
+  `zig/zig-<mod>.o`. Before building it checks the C/Zig ABI pins and
+  every `yabai_*` prototype against its export.
+- Both makefiles depend on one stamp, `zig/bin/build.stamp`, so
+  `make -j` runs build.sh once for all objects.
+- The root makefile links all eight objects into `bin/yabai` (still a
+  fat x86_64+arm64 binary, `--version` unchanged); 107 `yabai_*`
+  exports. The objects need no Zig runtime; geometry, message, util,
+  window, display and mouse need only libc/libm, while rule and view
+  call back into C manager functions and globals (see the routing map).
+- tests/makefile links these same universal objects into both test
+  binaries, so the parity suite proves the shipped ReleaseSafe objects
+  directly.
 
 ## CLI/daemon wire format (frozen)
 
 - Socket path: `/tmp/yabai_$USER.socket` (SOCKET_PATH_FMT in src/yabai.c),
   created with mode `0600` (message_loop_begin in src/message.c).
 - Accept thread (message_loop_run) hands each fd to the event worker;
-  the DAEMON_MESSAGE handler in src/event_loop.c reads a native `int`
-  byte length, then loops until exactly that many payload bytes arrive.
-- Encoder (client_send_message in src/yabai.c):
+  `daemon_read_message` in src/event_loop.c reads a native `int` byte
+  length, then loops until exactly that many payload bytes arrive.
+- Encoder (`socket_frame_encode`, called by client_send_message in
+  src/yabai.c):
   `length = argc + sum(strlen(argv[i]))`; frame = native `int` length,
   then each argument bytes plus `'\0'`, then one final `'\0'`.
   Example: `yabai query --windows` encodes a 17-byte payload
@@ -279,46 +298,62 @@ unless doc/zig-refactor-plan.md explicitly allows a change.
   src/misc/macros.h) go to stderr and force a non-zero CLI exit.
 - The seven command domains (src/message.c): `config`, `display`,
   `space`, `window`, `query`, `rule`, `signal`.
-- Checked-decode contract for the Zig replacement: reject truncated
-  length prefixes, short or over-long payloads, non-positive or absurd
-  (>1 MiB) declared lengths, and payloads whose last byte is not NUL,
-  all without allocating. Covered by the `socket_frame_malformed` test.
+- Checked decode (deliberate change from dd84572, which allocated the
+  declared length unchecked): `daemon_read_message` rejects a declared
+  length outside 1..1 MiB before allocating, and a short read; the full
+  frame then goes through `yabai_socket_frame_decode`, which also
+  rejects a payload that does not end in an empty final field (the
+  CLI's trailing `\0\0`). A rejected frame is closed with no reply;
+  upstream also closed short reads without a reply. Valid CLI frames are
+  handled byte for byte as before. Covered by the `socket_frame_*`
+  tests in tests/src/socket_frame.c, which drive the production encoder
+  and read path.
 
-## Known current weakness (must not be carried over)
+## Deliberate output changes (macOS 27 backport)
 
-The DAEMON_MESSAGE handler allocates `bytes_to_read` bytes via
-`ts_alloc_unaligned` with no validation of the declared length. The Zig
-decoder must add the checked lengths above while preserving every valid
-message byte for byte.
+- `space --focus`, `space --switch` and `display --space` can fail with
+  two new messages when the synthetic-gesture fallback runs:
+  `cannot focus space: synthetic gesture failed.` (nothing was posted)
+  and `cannot focus space: synthetic gesture was interrupted; the
+  focused space may have changed.` (src/message.c). For
+  `space --switch` and `display --space` the fallback runs only on
+  macOS 27 (`space_manager_focus_space_fallback`); elsewhere they fail
+  with the upstream scripting-addition message as before.
 
-## Routing map (2026-09-26, 107 exports, 8 objects, 77/77 tests)
+## Routing map (2026-10-22, 107 exports, 8 objects, 106 tests)
 
-Census via `nm -gU zig/*.o` plus C call-site grep. 36 exports have
-live C callers (the daemon runs them); the rest are test-oracle
-parallels or Zig-to-Zig shared helpers.
+Census via `nm -gU zig/zig-*.o` plus a grep of src/ for each export
+outside src/zig_abi.h. 36 exports have live C callers (the daemon runs
+them); the rest are test-only parallels or Zig-to-Zig shared helpers.
 
 Routed (daemon runs Zig): area_make_pair (warp site);
-in_range_ii_f; rule_combine_effects, rule_matches_window,
-rule_serialize; parse_rule (both handle_domain_rule sites, C body moved
-to tests/src/ref_upstream_rule.c); window_can_move/can_resize/is_undersized;
+rule_combine_effects, rule_matches_window, rule_serialize; parse_rule
+(both handle_domain_rule sites; takes a `const struct yabai_rule_lookup *`
+of seven C manager functions, called only inside the display=/space=
+branches, as upstream evaluated them; C body frozen as `ref_parse_rule`
+in tests/src/ref_upstream_rule.c); socket_frame_decode
+(`daemon_read_message`); window_can_move/can_resize/is_undersized;
 move/resize_frame_math and get_split/get_gap/get_ratio (warp site);
 view_create/clear/destroy, view_serialize, view_find_window_list
 (caller frees), view_find_window_node (+in_direction),
 first/last/next/prev_leaf, fence, contains/index lookups,
-is_valid/is_dirty, stack_window, swap/rotate/mirror;
+is_invalid/is_dirty, stack_window, swap/rotate/mirror;
 display_serialize; mouse_determine_drop_action.
 
-Zig-to-Zig shared (no C callers, reused across objects): token
-stream/equals/to_value/get_token, area predicates/distance/max-point,
-balance_node_add, find_rank_in_list, json_bool/optional,
-ts_string_escape, parse_property/label/key-value internals.
+Zig-to-Zig shared (no C callers, reused across objects): in_range_ii_f
+(rule.zig opacity checks), token is_valid/equals/to_value/get_token,
+area_is_in_direction/distance_in_direction, balance_node_add, find_rank_in_list,
+json_bool/optional, parse_key_value_pair.
 
 Deliberately unrouted: 21 easing curves (C-derived vectors would go
-tautological; only 5 exact-value pins exist); same-TU statics with
-zero boundary value (message decoders, view split/balance/equalize/
-clear_zoom/getters/predicates, window_layer, mouse mod/triangle);
-rule_destroy/flags (same-file/header-inline callers);
-view_find_min_depth_leaf (no callers).
+tautological; only 5 exact-value pins exist; see doc/zig-release.md for
+the debug/release difference in the C oracle); same-TU statics with
+zero boundary value (message decoders, parse_label/properties/
+insert_selector, view split/balance/equalize/clear_zoom/get_child/
+predicates, window_layer, mouse mod/triangle); rule_destroy/flags
+(same-file/header-inline callers); regex_match and ts_string_escape
+(reached through the routed rule exports); view_find_min_depth_leaf
+(no callers).
 
 Never ported (coupled, needs live sessions): display/space/window
 selector resolution beyond parse_rule's call-through, node

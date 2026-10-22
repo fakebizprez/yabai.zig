@@ -1,6 +1,6 @@
-# The test binary links the same universal Zig objects shipped in the
-# daemon (built by ../zig/build.sh, pinned Zig 0.17.0), so the parity
-# suite proves the shipped objects, not a separate Debug build.
+# Both test binaries link the same universal Zig objects shipped in the
+# daemon (built by ../zig/build.sh, Zig pinned in ../zig/ZIG_VERSION), so
+# the parity suite proves the shipped objects, not a separate Debug build.
 ZIG_OBJ = ../zig/zig-geometry.o ../zig/zig-message.o ../zig/zig-view.o ../zig/zig-util.o ../zig/zig-rule.o ../zig/zig-window.o ../zig/zig-display.o ../zig/zig-mouse.o
 
 .PHONY: clean build run all daemon osax27

@@ -2,7 +2,7 @@
 
 This plan describes a feature-compatible Zig migration of yabai at commit `dd84572` (yabai 7.1.25). The recommended result is a Zig daemon and CLI with a small native macOS bridge and the existing Dock scripting addition. A literal all-Zig rewrite is a separate, higher-risk project whose `arm64e` toolchain path must first be proved.
 
-The local Zig compiler is 0.16.0. Pin the version used for the migration and validate build instructions against that version: Zig's [0.16.0 language reference](https://ziglang.org/documentation/0.16.0/) documents C imports, C ABI exports, and mixed Zig/C objects; its [release notes](https://ziglang.org/download/0.16.0/release-notes.html) describe the current toolchain and its known limitations. None of those facilities translates Objective-C source or removes yabai's macOS private API dependencies.
+When this plan was written the local Zig compiler was 0.16.0; the pin has since moved to 0.17.0 (`zig/ZIG_VERSION`). Pin the version used for the migration and validate build instructions against that version: Zig's [0.16.0 language reference](https://ziglang.org/documentation/0.16.0/) documents C imports, C ABI exports, and mixed Zig/C objects; its [release notes](https://ziglang.org/download/0.16.0/release-notes.html) describe the current toolchain and its known limitations. None of those facilities translates Objective-C source or removes yabai's macOS private API dependencies.
 
 ## What exists today
 
@@ -33,7 +33,7 @@ The daemon's state is spread across globals in [`src/yabai.c`](../src/yabai.c), 
 3. **Scripting addition protocol.** The daemon uses `/tmp/yabai-sa_$USER.socket`, an `OSAX_VERSION` handshake, feature bits, and binary opcodes from [`src/osax/common.h`](../src/osax/common.h). Preserve the exact native field sizes, byte order, framing, and failure behavior while the existing payload remains in use. Add checked lengths to any new Zig decoder.
 4. **Event ownership and ordering.** AX, CoreGraphics, Carbon, SkyLight, and Cocoa callbacks enqueue work; the single consumer applies mutations, flushes signals, and resets temporary storage ([`src/event_loop.c`](../src/event_loop.c)). Record which callback data is retained, copied, or borrowed before moving it across the Zig/C boundary.
 
-The current automated suite has only two display-geometry tests ([`tests/src/tests.m`](../tests/src/tests.m), [`tests/src/area.c`](../tests/src/area.c)); there is no CI workflow. A port needs a small set of characterization checks for protocol, geometry, parser/query output, and event ordering before the original implementations are removed.
+When this plan was written, the automated suite had only two display-geometry tests ([`tests/src/tests.m`](../tests/src/tests.m), [`tests/src/area.c`](../tests/src/area.c)); there is still no CI workflow. A port needs a small set of characterization checks for protocol, geometry, parser/query output, and event ordering before the original implementations are removed.
 
 ## Native macOS work that Zig does not eliminate
 

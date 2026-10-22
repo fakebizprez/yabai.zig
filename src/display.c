@@ -17,8 +17,10 @@ static DISPLAY_EVENT_HANDLER(display_handler)
 }
 #pragma clang diagnostic pop
 
-/* Zig delegate (zig/display.zig): parity-proven equivalent of the JSON
- * emission below. Signature in src/display.h is unchanged. */
+/* Zig delegate (zig/display.zig): display_serialize below calls the Zig
+ * JSON emitter, which replaces the dd84572 body frozen as
+ * ref_display_serialize in tests/src/ref_upstream_rule.c and is
+ * parity-tested against it. Signature in src/display.h is unchanged. */
 
 void display_serialize(FILE *rsp, uint32_t did, uint64_t flags)
 {

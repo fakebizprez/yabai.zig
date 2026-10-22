@@ -1,4 +1,4 @@
-// C ABI mirror shared by every Zig boundary module (Zig 0.17.0).
+// C ABI mirror shared by every Zig boundary module (Zig version: zig/ZIG_VERSION).
 //
 // Types, constants and extern fn declarations only: no exports, so
 // importing this file from each separately built object adds no
