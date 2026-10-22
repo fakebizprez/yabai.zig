@@ -1,8 +1,12 @@
-/* Rule-effects parity tests (doc/zig-refactor-plan.md step 3).
+/* Rule parity tests for zig/rule.zig: combine_effects, serialize,
+ * ts_string_escape, regex_match, rule_matches_window, parse_rule (with the
+ * rule lookup seam), and rule_destroy/flag helpers (doc/zig-refactor-plan.md
+ * step 3).
  *
- * The Zig export in zig/rule.zig must match ref_rule_combine_effects() in
- * tests/src/ref_upstream_rule.c (frozen dd84572 src/rule.c) exactly, including scratchpad ownership (old copy freed,
- * new copy allocated) and the untouched-field paths.
+ * Routed exports must match their ref_ copies in
+ * tests/src/ref_upstream_rule.c (frozen dd84572) exactly. For
+ * combine_effects that includes scratchpad ownership (old copy freed, new
+ * copy allocated) and the untouched-field paths.
  */
 
 static struct rule_effects *make_effects(void)

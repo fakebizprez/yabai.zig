@@ -6,11 +6,11 @@ This is a fork of [asmvik/yabai](https://github.com/asmvik/yabai) (7.1.25, commi
 
 ## Commands
 
-- `make`: debug universal (`x86_64` + `arm64`) build to `bin/yabai`. Always deletes `bin/` first. Rebuilds the Zig objects when any `zig/` source, `src/zig_abi.h`, or the pin file is newer.
+- `make`: debug universal (`x86_64` + `arm64`) build to `bin/yabai`. Always deletes `bin/` first. Reruns `zig/build.sh` once (stamp file `zig/bin/build.stamp`, safe under `make -j`) when any `zig/` source, `zig/build.sh`, `src/zig_abi.h`, or the pin file is newer.
 - `make install`: optimized build only (`-O3 -DNDEBUG`). It does not install anything on the system.
 - `make asan` / `make tsan`: sanitizer builds.
-- `./zig/build.sh`: builds only the Zig objects (`zig/zig-<mod>.o`, universal via `lipo`). Fails if `zig version` differs from `zig/ZIG_VERSION` (currently 0.17.0; older docs that say 0.16.0 are historical) or if the C and Zig ABI constants disagree.
-- `cd tests && make`: clean, rebuild the daemon and the test binary, type-check the tests for `x86_64`, then run `tests/bin/tests` and `tests/bin/osax27` (Dock payload helper checks). Tests run headless, on the host architecture only.
+- `./zig/build.sh`: builds only the Zig objects (`zig/zig-<mod>.o`, universal via `lipo`). Fails if `zig version` differs from `zig/ZIG_VERSION` (currently 0.17.0) or if the C and Zig ABI checks disagree (constants, prototypes, enum cases).
+- `cd tests && make`: clean, rebuild `bin/yabai` if stale, build `tests/bin/tests`, an `x86_64` copy `tests/bin/tests-x86_64`, and `tests/bin/osax27` (Dock payload helper checks, type-checked for `x86_64`), then run `tests`, `osax27`, and `tests-x86_64` under Rosetta (skipped with a message when Rosetta is not installed). Tests run headless.
 - `make -C tests build run`: same without the clean. `make -C tests osax27`: payload helper checks only.
 - Single test: there is no filter; `tests/bin/tests` ignores its arguments and runs every entry in `TEST_LIST` (`tests/src/tests.m`). Trim that list locally to run one.
 - `make clean`: also removes the generated Dock helper blobs (`src/osax/{payload,loader}_bin.c`) and Zig objects.
@@ -28,18 +28,18 @@ The development machine runs a live yabai. Do not run `--install-service`, `--st
 
 **macOS 27 additions.** Version detection, modern window notifications, and Space-switching gestures that work with SIP enabled. `src/event_serialize.c` writes Apple's private CGEvent data format so a raw IOHID payload can be attached to synthetic Dock-swipe events. Tested scope and open items are in `doc/zig-release.md`.
 
-**Zig boundary.** `zig/*.zig` are pure-logic modules (geometry, message tokenizing/frame decoding, view tree, util/easing, rule parse/match/serialize, window math, display serialize, mouse drop action). Each is built `ReleaseSafe` for both architectures and needs no Zig runtime (exports call `@setRuntimeSafety(false)`). The C functions keep their names and bodies become thin calls to `yabai_*` exports; `doc/zig-baseline.md` has the routing map of what the daemon actually runs in Zig and what is deliberately left in C.
+**Zig boundary.** `zig/*.zig` are mostly pure-logic modules (geometry, message tokenizing/frame decoding, view tree, util/easing, rule parse/match/serialize, window math, display serialize, mouse drop action); `rule.zig` and `view.zig` also call back into C manager functions and globals. Each is built `ReleaseSafe` for both architectures and needs no Zig runtime (exports call `@setRuntimeSafety(false)`). The C functions keep their names and bodies become thin calls to `yabai_*` exports; `doc/zig-baseline.md` has the routing map of what the daemon actually runs in Zig and what is deliberately left in C.
 
-- `src/zig_abi.h` has every `yabai_*` prototype and literal size/offset pins for each shared struct. `zig/abi.zig` mirrors the structs and pins the same literals with `pin(...)`. Layout drift fails whichever side's build.
+- `src/zig_abi.h` has every `yabai_*` prototype and literal layout pins for each shared struct: `ZIG_ABI_STRUCT` (size and member count), `ZIG_ABI_FIELD` / `ZIG_ABI_FIELD_FP` (offset, size, float-ness per member), `ZIG_ABI_SIZE` for partly mirrored or opaque types. `zig/abi.zig` mirrors the structs and repeats the same literals with `pin(...)`; nothing compares the two lists, so change both by hand. Layout drift fails whichever side's build. `zig/build.sh` also checks each prototype against its export (name, parameter count, width class).
 - Integer constants: `pub const NAME: T = N;` in `zig/abi.zig` must have a matching `_Static_assert(C_NAME == N, "NAME");` line in `src/zig_abi.h`; `zig/build.sh` checks the pairs both ways by regex, so keep that one-line format.
 - `zig_abi.h` is included twice from `manifest.m`; the second pass (`ZIG_ABI_PRIVATE_PINS`) covers types private to `src/message.c`.
-- A new Zig module must be added to the module loop in `zig/build.sh`, `ZIG_SRC`/`ZIG_OBJ` in `makefile`, and `ZIG_OBJ` plus its dependency line in `tests/makefile`.
+- A new Zig module must be added to the module loop in `zig/build.sh`, `ZIG_SRC`/`ZIG_OBJ` in `makefile`, and `ZIG_OBJ` plus the `build.stamp` dependency line in `tests/makefile`.
 - Ports must match C bit for bit, including float rounding. Apple clang fuses multiply-adds even at `-O0`, so the easing port uses explicit `@mulAdd` at those sites.
 
 ## Tests
 
 - `tests/src/tests.m` includes `src/manifest.m` (built with `-DTESTS`), then `#include`s each test file; every test is a `TEST_FUNC` registered in `TEST_LIST`. It stubs the embedded helper blobs and redirects `CGEventPost`/`CGEventCreate` to capture functions.
-- Parity tests compare a Zig export against a frozen upstream C copy in `tests/src/ref_upstream_view.c` / `ref_upstream_rule.c` (`ref_` prefix, verbatim from `dd84572`). Because the routed C functions now call Zig, comparing against them would test Zig against itself. Never edit the `ref_` bodies to make a test pass; a mismatch means the port is wrong.
-- Headless tests cannot call SkyLight (the connection is 0 and calls abort), so those calls are split out as parameters (seams listed at the top of `ref_upstream_view.c`).
+- Parity tests compare each routed Zig export against a frozen upstream C copy in `tests/src/ref_upstream_view.c` / `ref_upstream_rule.c` (`ref_` prefix, verbatim from `dd84572`); unrouted helpers are compared against the live C. Because the routed C functions now call Zig, comparing against them would test Zig against itself. Never edit the `ref_` bodies to make a test pass; a mismatch means the port is wrong.
+- Headless tests cannot call SkyLight (the connection is 0 and calls abort), so those calls are split out as parameters (seams listed at the top of each `ref_upstream_*.c`; the rule copies route manager queries through `struct yabai_rule_lookup`, the same table `yabai_parse_rule` takes).
 - `tests/src/zig_cli.c` runs the built `bin/yabai` against goldens in `tests/data/`; after a version bump, regenerate `help.txt` (and `version.txt`, `m_no_args.txt` if they changed) using the procedure in that file's header.
 - The CLI/daemon wire format, help text, and query JSON are frozen to the upstream baseline (`doc/zig-baseline.md`); any change has to be deliberate and documented there.

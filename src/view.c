@@ -3,13 +3,15 @@ extern struct display_manager g_display_manager;
 extern struct space_manager g_space_manager;
 extern struct window_manager g_window_manager;
 
-/* Zig delegates (zig/view.zig): parity-proven equivalents of the swap,
- * rotate, mirror, leaf walk, window lookup, directional search, fence,
- * contains/index, invalid/dirty predicates, stack insert, and view
- * lifecycle (create/clear/destroy) below. The directional-search
- * wrapper lifts the SLS space_window_list here exactly as the C body
- * derived it. The lifecycle wrappers lift the SLS
- * uuid and the manager-defaults block here exactly as the C bodies
+/* Zig delegates (zig/view.zig): the swap, rotate, mirror, leaf walk,
+ * window lookup, directional search, fence, contains/index,
+ * invalid/dirty predicates, stack insert, serializer, window-list walk,
+ * and view lifecycle (create/clear/destroy) below are wrappers around Zig
+ * exports. The exports replace the dd84572 bodies frozen as ref_* in
+ * tests/src/ref_upstream_view.c and are parity-tested against them. The
+ * directional-search wrapper lifts the SLS space_window_list here
+ * exactly as the dd84572 body derived it. The lifecycle wrappers lift the
+ * SLS uuid and the manager-defaults block here exactly as those bodies
  * did, then call the Zig exports; the SLS-backed trailing
  * view_update stays in the wrappers. Signatures in src/view.h are
  * unchanged. view_find_window_list delegates to Zig: the export
@@ -716,8 +718,9 @@ void view_flush(struct view *view)
     }
 }
 
-/* Zig delegate (zig/view.zig): parity-proven equivalent of the JSON
- * emission below. Signature in src/view.h is unchanged. */
+/* Zig delegate (zig/view.zig): the JSON emitter replaces the dd84572 body
+ * frozen as ref_view_serialize in tests/src/ref_upstream_view.c and is
+ * parity-tested against it. Signature in src/view.h is unchanged. */
 void view_serialize(FILE *rsp, struct view *view, uint64_t flags)
 {
     TIME_FUNCTION;

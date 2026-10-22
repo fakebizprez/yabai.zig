@@ -4,8 +4,10 @@ extern int g_layer_below_window_level;
 extern int g_layer_above_window_level;
 extern int g_connection;
 
-/* Zig delegates (zig/window.zig): parity-proven equivalents of the
- * flag/size reads below. Signatures in src/window.h are unchanged. */
+/* Zig delegates (zig/window.zig): window_can_move, window_can_resize and
+ * window_is_undersized below call Zig exports that replace the dd84572
+ * bodies frozen as ref_* in tests/src/ref_upstream_view.c and are
+ * parity-tested against them. Signatures in src/window.h are unchanged. */
 
 bool window_observe(struct window *window)
 {

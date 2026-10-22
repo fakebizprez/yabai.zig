@@ -1,9 +1,13 @@
-/* View-tree traversal parity tests (doc/zig-refactor-plan.md step 3).
+/* View parity tests for zig/view.zig: tree traversal, lookup and
+ * directional search, rotate/mirror/fence/swap/stack, split/balance/
+ * equalize, view lifecycle, window-list walk, and the serializer
+ * (doc/zig-refactor-plan.md step 3).
  *
- * The Zig exports in zig/view.zig must match the pure tree helpers of
- * the frozen dd84572 src/view.c (ref_ copies in
- * tests/src/ref_upstream_view.c) exactly. Layout contract: src/zig_abi.h
- * pins struct window_node and struct view against zig/abi.zig.
+ * The Zig exports must match the frozen dd84572 src/view.c (ref_ copies
+ * in tests/src/ref_upstream_view.c) exactly; helpers that are not routed
+ * and have no ref_ copy are compared against the live C helpers.
+ * Layout contract: src/zig_abi.h pins struct window_node and struct view
+ * against zig/abi.zig.
  */
 
 static struct window_node *make_test_node(void)

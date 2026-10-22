@@ -5,3 +5,4 @@
 /src/osax/payload_bin.c
 /zig/bin
 /zig/zig-*.o
+/.codex/

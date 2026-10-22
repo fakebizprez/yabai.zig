@@ -46,9 +46,11 @@ parks on the semaphore.
   payload survives until the next reset). Callback producers must
   never park data in `ts_*`; everything crossing the queue must be
   heap-owned or passed by value with ownership noted.
-- DAEMON_MESSAGE allocates the frame with `ts_alloc_unaligned`
-  WITHOUT validating the declared length first (see doc/zig-baseline.md:
-  the Zig decoder must add checked lengths).
+- DAEMON_MESSAGE reads the frame through `daemon_read_message`
+  (src/event_loop.c), which rejects a declared length outside 1..1 MiB
+  before its `ts_alloc_unaligned` call and then validates the framing
+  with `yabai_socket_frame_decode` (see doc/zig-baseline.md). At dd84572
+  the declared length was allocated unchecked.
 
 ## Shutdown
 
@@ -58,7 +60,42 @@ parks on the semaphore.
   (no new flush-on-exit behavior) unless the service contract is
   deliberately changed and re-tested.
 
+## Current state at HEAD (supersedes parts of the dated audits below)
+
+The two audits below are dated records; their line numbers are at the
+commit each names. Since then:
+
+- view_create/clear/destroy and view_find_window_list are routed
+  (src/view.c). view_clear/view_destroy therefore run Zig code that calls
+  `window_manager_remove_managed_window(&g_window_manager, ...)`,
+  `insert_feedback_destroy` and `CFRelease` (zig/view.zig:594-627): Zig
+  triggers manager mutation in the daemon through those C calls, though
+  it still never assigns a `g_*` global itself.
+- view_find_window_list returns libc-malloc'd memory and its sole caller,
+  window_manager_validate_windows_on_space (src/window_manager.c), frees
+  it after its last use. The find_window_list routing decision is closed.
+- view_create and view_find_window_list are now routed allocations;
+  window_node_split and parse_label remain unrouted ones. Every Zig
+  malloc failure aborts (`orelse abort()`).
+- yabai_parse_rule (zig/rule.zig:745) takes
+  `const struct yabai_rule_lookup *` (src/message.c:2603, both call sites
+  at :2627 and :2641) instead of eager acting ids. The seven function
+  pointers (active display/space, closest display in direction, prev/next
+  display, prev/next space) are called only inside the display=/space=
+  branches. Label, cursor, first/last and mission-control lookups still
+  call C managers and read `g_display_manager`/`g_space_manager` directly.
+  The C body survives only as `ref_parse_rule` in
+  tests/src/ref_upstream_rule.c.
+- DAEMON_MESSAGE: `daemon_read_message` (src/event_loop.c:1625) validates
+  the length before `ts_alloc_unaligned` (:1633) and decodes at :1645;
+  the handler calls `handle_message` at :1659 and returns before the
+  consumer's `event_signal_flush()`/`ts_reset()` (:1694-1695). The
+  early-return skip described in "Consumer ordering" is unchanged.
+  A rejected frame is closed with no reply.
+
 ## 2026-09-26 routing-ownership audit (refactor/zig @ f0fe453)
+
+Line numbers in this section are at f0fe453.
 
 Method: every `yabai_` call site in src/*.c enumerated by grep;
 each claim checked against the Zig export body and the C call site.
@@ -78,7 +115,9 @@ plus `window_node_get_split/get_gap/get_ratio`; src/view.c
 `view_is_dirty`, `view_serialize`; src/rule.c `rule_serialize`,
 `rule_combine_effects`; src/display.c `display_serialize`; src/message.c
 `yabai_parse_rule` at both handle_domain_rule sites (add at :2829,
-apply-selector at :2843). Exported-but-unrouted (test-only, C still live):
+apply-selector at :2843). Exported-but-unrouted (test-only, C still live;
+view_create/clear/destroy, view_find_window_list and socket_frame_decode
+have since been routed, see "Current state at HEAD"):
 view_create/clear/destroy, view_find_window_list (deliberately, see below),
 window_node_split, balance/equalize/update statics, get_child, area
 converters, min-depth leaf, rule_destroy/flag helpers, parse_label,
@@ -126,7 +165,8 @@ easing/rgba/find_rank/layer — no C call sites found for any of these.
   borrowed live-tree pointers; swap/rotate/mirror/stack mutate nodes in
   place (mirror returns the same pointer, no allocation — verified both
   sides). No allocation crosses on any routed tree path.
-- Unrouted allocations (no live boundary yet): `window_node_split`
+- Unrouted allocations at f0fe453 (view_create and find_window_list are
+  routed now): `window_node_split`
   mallocs two children (zig/view.zig:453-454), `view_create` mallocs
   view+root (:632-635), `view_find_window_list` mallocs/reallocs the list
   (:574-582), `parse_label` mallocs the label (zig/message.zig:466).
@@ -145,13 +185,15 @@ easing/rgba/find_rank/layer — no C call sites found for any of these.
   like C (no seam split yet, as the baseline honestly records).
 - zig/view.zig declares `extern var g_window_manager` (opaque, :618)
   passed to `window_manager_remove_managed_window` in the clear/destroy
-  paths (:667, :687) — but those exports are UNROUTED (C view_clear/
-  view_destroy still live), so no Zig-triggered manager mutation runs in
-  the daemon today.
+  paths (:667, :687) — but those exports were UNROUTED at f0fe453 (C
+  view_clear/view_destroy still live), so no Zig-triggered manager
+  mutation ran in the daemon then. Superseded: both are routed now.
 - A grep for assignments to any `g_*` in zig/ returns nothing: Zig never
   writes manager globals directly. Indirect mutation via extern C calls
   exists only in unrouted exports (remove_managed_window,
-  insert_feedback_destroy, CFRelease) and routed `fwrite(rsp, ...)`.
+  insert_feedback_destroy, CFRelease) and routed `fwrite(rsp, ...)`
+  (at f0fe453; the first three now run through routed view_clear/
+  view_destroy).
   geometry/window/message/display/util touch no globals. Zig mutates only
   caller-passed structs: nodes, rule, effects, message cursor/buffer,
   out-params. Pure reads (out-params or return only): all getters, leaf
@@ -176,7 +218,8 @@ easing/rgba/find_rank/layer — no C call sites found for any of these.
 
 ### (4) Ownership asymmetries: documented plus new
 
-- Documented (upheld): `view_find_window_list` — C returns temp-pool
+- Documented (upheld at f0fe453; since routed with the caller freeing):
+  `view_find_window_list` — C returns temp-pool
   memory the sole caller never frees; the Zig export returns caller-
   frees malloc. Deliberately unrouted (src/view.c:9 comment; the Zig
   comment at zig/view.zig:567-569 states the same). Routing it without
@@ -199,9 +242,9 @@ easing/rgba/find_rank/layer — no C call sites found for any of these.
 - Pin the combine_effects scratchpad allocator invariant (libc-only) or
   move the free inside the producer.
 - Resolve find_window_list routing: change the sole caller to free, or
-  record C-forever with rationale. Currently decided-but-open.
+  record C-forever with rationale. Closed: routed, the caller frees.
 - Route or explicitly defer each unrouted export, notably view_create/
-  clear/destroy (extern SLS inputs + g_window_manager mutation via
+  clear/destroy (since routed; extern SLS inputs + g_window_manager mutation via
   remove_managed_window + CFRelease) and rule_destroy (must stay the
   single free contract while C owns the store).
 - Prove the no-retention claim under the real consumer, including the
@@ -217,6 +260,8 @@ easing/rgba/find_rank/layer — no C call sites found for any of these.
   evidence cited from baseline, not re-verified here).
 
 ## 2026-09-26 close-out of §(5) verification items (@ 483174a)
+
+Line numbers in this section are at 483174a.
 
 Worktree was detached at 483174a (no branch checked out), working tree
 clean before this append. No source/test/build files touched.
@@ -262,7 +307,8 @@ service lifecycle) passing on real macOS sessions.
 ### (b) DAEMON_MESSAGE early-return path — CONFIRMED against the consumer
 
 - Handler src/event_loop.c:1614-1644: frame from `ts_alloc_unaligned`
-  at :1623 (NO length validation — unchanged); success path calls
+  at :1623 (NO length validation at 483174a; validated now, see
+  "Current state at HEAD"); success path calls
   `handle_message(rsp, message)` synchronously at :1634, flushes/closes
   `rsp`, and `return`s at :1639.
 - The skipped code is in the consumer `event_loop_run`
@@ -310,3 +356,5 @@ service lifecycle) passing on real macOS sessions.
   beyond zero-state; the combine_effects scratchpad libc-only
   invariant; find_window_list routing decision; unrouted exports
   (view_create/clear/destroy, rule_destroy and the test-only set).
+  Since closed: find_window_list and view_create/clear/destroy are
+  routed (see "Current state at HEAD").

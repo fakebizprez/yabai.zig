@@ -8,7 +8,7 @@
  * commands that reach the socket (-m <args>) are daemon-state dependent
  * and are deliberately NOT pinned here.
  *
- * --version is shape-checked (yabai-Major.Minor.Patch newline) instead
+ * --version is shape-checked (yabai-vMajor.Minor.Patch newline) instead
  * of byte-compared so version bumps do not break the suite. The
  * tests/data/version.txt golden is a record-time reference only; the
  * suite asserts it is well-formed, never that live output equals it.
@@ -90,7 +90,7 @@ static bool cli_read_golden(const char *name, struct cli_output *out)
     return n < sizeof(out->bytes) - 1;
 }
 
-/* Shape check for "yabai-<major>.<minor>.<patch>\n"; components must be
+/* Shape check for "yabai-v<major>.<minor>.<patch>\n"; components must be
  * non-negative decimal integers with no extra trailing bytes. */
 static bool cli_version_shape_ok(const char *s, int n)
 {

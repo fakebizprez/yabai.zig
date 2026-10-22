@@ -1,4 +1,6 @@
-/* Zig/C boundary parity tests (doc/zig-refactor-plan.md step 2).
+/* Geometry parity tests for zig/geometry.zig: area_make_pair (rounding and
+ * extreme values) and the direction predicate/distance exports
+ * (doc/zig-refactor-plan.md steps 2-3).
  *
  * The Zig export yabai_area_make_pair() in zig/geometry.zig must match
  * the frozen dd84572 area_make_pair() (ref_area_make_pair in

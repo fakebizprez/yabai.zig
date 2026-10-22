@@ -933,16 +933,19 @@ static CGEventRef space_manager_make_swipe_event(bool is_right, int phase)
     CGEventRef event = CGEventCreate(NULL);
     if (!event) return NULL;
 
-    CGEventSetIntegerValueField(event, 55, 30);
-    CGEventSetIntegerValueField(event, 110, 23);
-    CGEventSetIntegerValueField(event, 132, phase);
-    CGEventSetDoubleValueField(event, 124, is_right ? -0.000016 : 0.000016);
-    CGEventSetIntegerValueField(event, 123, 1);
-    CGEventSetIntegerValueField(event, 134, phase);
-    CGEventSetDoubleValueField(event, 138, 3.0);
-    CGEventSetDoubleValueField(event, 169, (double) mach_absolute_time());
-    CGEventSetDoubleValueField(event, 125, 0.1);
-    if (phase == 4) CGEventSetDoubleValueField(event, 129, is_right ? -500.0 : 500.0);
+    // Field names as in the legacy path below; 125 is read back as pos_x by
+    // iss_generate_iohid_payload (src/event_serialize.c); 134, 138 and 169
+    // are undocumented.
+    CGEventSetIntegerValueField(event, /* kCGSEventTypeField            */  55, /* kCGSEventDockControl       */ 30);
+    CGEventSetIntegerValueField(event, /* kCGEventGestureHIDType        */ 110, /* kIOHIDEventTypeDockSwipe   */ 23);
+    CGEventSetIntegerValueField(event, /* kCGEventGesturePhase          */ 132, phase);
+    CGEventSetDoubleValueField(event,  /* kCGEventGestureSwipeProgress  */ 124, is_right ? -0.000016 : 0.000016);
+    CGEventSetIntegerValueField(event, /* kCGEventGestureSwipeMotion    */ 123, /* kCGGestureMotionHorizontal */  1);
+    CGEventSetIntegerValueField(event, /* undocumented field            */ 134, phase);
+    CGEventSetDoubleValueField(event,  /* undocumented field            */ 138, 3.0);
+    CGEventSetDoubleValueField(event,  /* undocumented field            */ 169, (double) mach_absolute_time());
+    CGEventSetDoubleValueField(event,  /* pos_x                         */ 125, 0.1);
+    if (phase == 4) CGEventSetDoubleValueField(event, /* kCGEventGestureSwipeVelocityX */ 129, is_right ? -500.0 : 500.0);
 
     CGEventRef augmented = iss_augment_dock_swipe_event(event);
     CFRelease(event);
@@ -951,6 +954,8 @@ static CGEventRef space_manager_make_swipe_event(bool is_right, int phase)
 
 static bool space_manager_post_swipe(bool is_right)
 {
+    // 1 and 4 are kCGSGesturePhaseBegan/Ended as in the legacy path; 2 is
+    // undocumented here; 8 (below) is the cancel phase.
     const int phases[] = { 1, 2, 4 };
     for (int p = 0; p < 3; ++p) {
         // Raw HID timestamps must be generated immediately before each phase is posted.

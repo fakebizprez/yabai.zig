@@ -17,7 +17,8 @@
 // IOHID event payload stored in field 4205.
 //
 // The layout below is reverse-engineered and matches the notes shared by the
-// community in InstantSpaceSwitcher issue #72.
+// community in InstantSpaceSwitcher issue #72
+// (https://github.com/jurplel/InstantSpaceSwitcher/issues/72).
 
 static const int8_t kCGEventDataTagInt64OrBinaryBlob = 0b00;
 static const int8_t kCGEventDataTagInt32 = 0b01;

@@ -46,7 +46,8 @@ Make sure you fulfil all of them before filing an issue.
 
 This Zig fork includes macOS 27 compatibility backports from
 [Christian-SC26/yabai](https://github.com/Christian-SC26/yabai). Universal
-builds and headless tests pass on 27.0.1; live validation is pending.
+builds and headless tests pass on 27.0.1. A live trial ran; switching
+across several Spaces still flashes, and that is unresolved.
 Moving or reordering entire Spaces remains unsupported on 27.
 See the [verification record](doc/zig-release.md) for the tested scope.
 
