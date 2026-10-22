@@ -3,7 +3,14 @@ unsigned int __src_osax_payload_len;
 unsigned char __src_osax_loader[1];
 unsigned int __src_osax_loader_len;
 
+#include <CoreGraphics/CoreGraphics.h>
+static void test_capture_event_post(CGEventTapLocation tap, CGEventRef event);
+static CGEventRef test_create_event(CGEventSourceRef source);
+#define CGEventPost test_capture_event_post
+#define CGEventCreate test_create_event
 #include "../../src/manifest.m"
+#undef CGEventPost
+#undef CGEventCreate
 
 #define TEST_SIG(name) bool test_##name(void)
 typedef TEST_SIG(function);
@@ -25,9 +32,21 @@ typedef TEST_SIG(function);
 #include "zig_mouse.c"
 #include "zig_regress.c"
 #include "zig_cli.c"
+#include "macos27.c"
+#include "event_serialize.c"
+#include "sa_response.c"
 
 #define TEST_ENTRY(name) { #name, test_##name },
 #define TEST_LIST                                              \
+    TEST_ENTRY(macos_swipe_failure)                            \
+    TEST_ENTRY(macos_swipe_timing)                             \
+    TEST_ENTRY(sa_response_status)                             \
+    TEST_ENTRY(macos_space_dictionary)                         \
+    TEST_ENTRY(macos_swipe_events)                             \
+    TEST_ENTRY(event_serialize_roundtrip)                      \
+    TEST_ENTRY(event_serialize_payload_replacement)             \
+    TEST_ENTRY(event_serialize_malformed)                      \
+    TEST_ENTRY(macos_version_detection)                        \
     TEST_ENTRY(display_area_is_in_direction)                   \
     TEST_ENTRY(closest_display_in_direction)                   \
     TEST_ENTRY(socket_frame_valid_args)                        \

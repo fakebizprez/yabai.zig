@@ -279,7 +279,8 @@ static int scripting_addition_perform_validation(void)
     }
 
     if (string_equals(version, OSAX_VERSION)) {
-        if ((attrib & OSAX_ATTRIB_ALL) == OSAX_ATTRIB_ALL) {
+        uint32_t required = osax_required_attributes([[NSProcessInfo processInfo] operatingSystemVersion].majorVersion);
+        if ((attrib & required) == required) {
             notify("scripting-addition", "payload v%s", version);
             return 0;
         }
@@ -428,8 +429,8 @@ static bool scripting_addition_send_bytes(char *bytes, int length)
     if (socket_open(&sockfd)) {
         if (socket_connect(sockfd, g_sa_socket_file)) {
             if (send(sockfd, bytes, length, 0) != -1) {
-                recv(sockfd, &dummy, 1, 0);
-                result = true;
+                ssize_t received = recv(sockfd, &dummy, 1, 0);
+                result = received == 0 || (received == 1 && dummy == 0);
             }
         }
 
