@@ -115,6 +115,7 @@ typedef TEST_SIG(function);
     TEST_ENTRY(zig_rule_matches_window_parity)                   \
     TEST_ENTRY(zig_mouse_mod_parity)                             \
     TEST_ENTRY(zig_mouse_triangle_parity)                        \
+    TEST_ENTRY(zig_mouse_triangle_inexact_parity)                \
     TEST_ENTRY(zig_mouse_drop_action_parity)                     \
     TEST_ENTRY(zig_cli_help_golden)                              \
     TEST_ENTRY(zig_cli_help_domains)                             \
@@ -126,6 +127,7 @@ typedef TEST_SIG(function);
     TEST_ENTRY(zig_util_rgba)                                    \
     TEST_ENTRY(zig_util_find_rank)                               \
     TEST_ENTRY(zig_util_easing)                               \
+    TEST_ENTRY(zig_util_easing_dense)                            \
     TEST_ENTRY(zig_rule_combine_display_space)                   \
     TEST_ENTRY(zig_rule_combine_flags_cleared)                   \
     TEST_ENTRY(zig_rule_combine_scratchpad_props_grid)           \
