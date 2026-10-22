@@ -429,8 +429,8 @@ static bool scripting_addition_send_bytes(char *bytes, int length)
     if (socket_open(&sockfd)) {
         if (socket_connect(sockfd, g_sa_socket_file)) {
             if (send(sockfd, bytes, length, 0) != -1) {
-                ssize_t received = recv(sockfd, &dummy, 1, 0);
-                result = received == 0 || (received == 1 && dummy == 0);
+                // The payload replies with one status byte; no reply means it never ran the command.
+                result = recv(sockfd, &dummy, 1, 0) == 1 && dummy == SA_RESPONSE_SUCCESS;
             }
         }
 
