@@ -74,8 +74,9 @@ export fn yabai_token_is_valid(token: *const MsgToken) bool {
     return token.text != null and token.length > 0;
 }
 
-// Mirrors token_is_positive_integer(), including wrap-on-overflow (the C
-// build runs with wrapping -O0 codegen; safety is off here as well).
+// Mirrors token_is_positive_integer(). Overflow wraps explicitly (*%/+%):
+// the C int overflow is UB that clang emits as two's-complement wrap, and
+// with runtime safety off a plain * would be UB on the Zig side too.
 export fn yabai_token_is_positive_integer(token: *const MsgToken, value: *c_int) bool {
     @setRuntimeSafety(false);
     value.* = 0;
@@ -84,12 +85,13 @@ export fn yabai_token_is_positive_integer(token: *const MsgToken, value: *c_int)
     while (i < token.length) {
         const c: u8 = text[@intCast(i)];
         if (c < '0' or c > '9') return false;
-        value.* = value.* * 10 + @as(c_int, c - '0');
+        value.* = value.* *% 10 +% @as(c_int, c - '0');
         i += 1;
     }
     return true;
 }
 
+// uint32_t arithmetic in C wraps modulo 2^32; *%/+% keeps that defined.
 export fn yabai_token_is_hexadecimal(token: *const MsgToken, value: *u32) bool {
     @setRuntimeSafety(false);
     value.* = 0;
@@ -108,7 +110,7 @@ export fn yabai_token_is_hexadecimal(token: *const MsgToken, value: *u32) bool {
             c - 'A' + 10
         else
             return false;
-        value.* = value.* * 16 + nibble;
+        value.* = value.* *% 16 +% nibble;
         i += 1;
     }
     return true;
