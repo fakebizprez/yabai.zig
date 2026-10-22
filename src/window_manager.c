@@ -2264,6 +2264,10 @@ void window_manager_wait_for_native_fullscreen_transition(struct window *window)
 
             usleep(100000);
         }
+
+        if (timeout == 0) {
+            debug("%s: timed out waiting for window %d to leave native-fullscreen\n", __FUNCTION__, window->id);
+        }
     } else {
         uint32_t did = window_display_id(window->id);
 

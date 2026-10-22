@@ -2,12 +2,24 @@ static const int macos_test_versions[] = { 11, 12, 13, 14, 15, 26, 27, 28 };
 
 static struct {
     int phase;
+    double progress;
     uint64_t hid_timestamp;
     uint64_t posted_at;
-} macos_swipe_samples[3];
+} macos_swipe_samples[32];
 static int macos_swipe_sample_count;
 static bool macos_capture_swipe;
 static int macos_swipe_allocations_before_failure = -1;
+static int macos_warp_count;
+static int macos_warp_at_sample;
+static CGPoint macos_warp_point;
+
+static CGError test_capture_warp(CGPoint point)
+{
+    assert(macos_capture_swipe);
+    if (macos_warp_count++ == 0) macos_warp_at_sample = macos_swipe_sample_count;
+    macos_warp_point = point;
+    return kCGErrorSuccess;
+}
 
 static uint64_t macos_mach_ticks_to_ns(uint64_t ticks)
 {
@@ -28,11 +40,12 @@ static CGEventRef test_create_event(CGEventSourceRef source)
 
 static void test_capture_event_post(CGEventTapLocation tap, CGEventRef event)
 {
-    assert(macos_capture_swipe && macos_swipe_sample_count < 3);
+    assert(macos_capture_swipe && macos_swipe_sample_count < (int)array_count(macos_swipe_samples));
     assert(tap == kCGSessionEventTap);
     int index = macos_swipe_sample_count++;
     macos_swipe_samples[index].posted_at = macos_mach_ticks_to_ns(mach_absolute_time());
     macos_swipe_samples[index].phase = (int) CGEventGetIntegerValueField(event, (CGEventField)132);
+    macos_swipe_samples[index].progress = CGEventGetDoubleValueField(event, (CGEventField)124);
     CFDataRef data = CGEventCreateData(NULL, event);
     assert(data);
     ISSCGEventParsedData parsed;
@@ -141,8 +154,8 @@ TEST_FUNC(macos_space_dictionary,
 
 TEST_FUNC(macos_swipe_events,
 {
-    TEST_CHECK(space_manager_focus_space_using_gesture(0, 42), false);
-    TEST_CHECK(space_manager_focus_space_using_gesture(1, 0), false);
+    TEST_CHECK(space_manager_focus_space_using_gesture(0, 42), SPACE_OP_ERROR_GESTURE);
+    TEST_CHECK(space_manager_focus_space_using_gesture(1, 0), SPACE_OP_ERROR_GESTURE);
     for (int right = 0; right <= 1; ++right) {
         for (int phase = 1; phase <= 4; phase *= 2) {
             CGEventRef event = space_manager_make_swipe_event(right, phase);
@@ -161,3 +174,100 @@ TEST_FUNC(macos_swipe_events,
         }
     }
 })
+
+static void macos_save_versions(bool *saved)
+{
+    int i = 0;
+#define SUPPORT_MACOS_VERSION(name, version) saved[i++] = _workspace_is_macos_version_##name;
+    SUPPORTED_MACOS_VERSION_LIST
+#undef SUPPORT_MACOS_VERSION
+}
+
+static void macos_restore_versions(bool *saved)
+{
+    int i = 0;
+#define SUPPORT_MACOS_VERSION(name, version) _workspace_is_macos_version_##name = saved[i++];
+    SUPPORTED_MACOS_VERSION_LIST
+#undef SUPPORT_MACOS_VERSION
+}
+
+TEST_FUNC(macos_gesture_fallback_gate,
+{
+    bool saved[32];
+    macos_save_versions(saved);
+    macos_swipe_sample_count = 0;
+    macos_warp_count = 0;
+
+    // Capture is off, so any posted event or cursor warp asserts.
+    for (int major = 14; major <= 26; major = major == 15 ? 26 : major + 1) {
+        workspace_set_macos_version(major);
+        TEST_CHECK(space_manager_focus_space_fallback(1, 42), SPACE_OP_ERROR_SCRIPTING_ADDITION);
+    }
+
+    // A zero display id makes the gesture bail out before touching SkyLight.
+    workspace_set_macos_version(27);
+    TEST_CHECK(space_manager_focus_space_fallback(0, 42), SPACE_OP_ERROR_GESTURE);
+    TEST_CHECK(macos_swipe_sample_count, 0);
+    TEST_CHECK(macos_warp_count, 0);
+
+    macos_restore_versions(saved);
+})
+
+static TEST_SIG(macos_swipe_sequence)
+{
+    char *test_name = "macos_swipe_sequence";
+    bool result = true;
+    CGPoint point = { 100, 200 };
+    for (int right = 0; right <= 1; ++right) {
+        for (int warp = 0; warp <= 1; ++warp) {
+            macos_swipe_sample_count = 0;
+            macos_warp_count = 0;
+            macos_warp_at_sample = -1;
+            macos_capture_swipe = true;
+            enum space_op_error posted = space_manager_post_swipes(3, right, warp, point);
+            macos_capture_swipe = false;
+            TEST_CHECK(posted, SPACE_OP_ERROR_SUCCESS);
+            TEST_CHECK(macos_swipe_sample_count, 9);
+            for (int i = 0; i < macos_swipe_sample_count; ++i) {
+                TEST_CHECK(macos_swipe_samples[i].phase, 1 << (i % 3));
+                TEST_CHECK(right ? macos_swipe_samples[i].progress < 0.0 : macos_swipe_samples[i].progress > 0.0, true);
+            }
+            TEST_CHECK(macos_warp_count, warp);
+            if (warp) {
+                TEST_CHECK(macos_warp_at_sample, 0);
+                TEST_CHECK(macos_warp_point.x == point.x && macos_warp_point.y == point.y, true);
+            }
+        }
+    }
+    return result;
+}
+
+static TEST_SIG(macos_swipe_sequence_failure)
+{
+    char *test_name = "macos_swipe_sequence_failure";
+    bool result = true;
+    // Allocation 0 is the up-front probe; each swipe then allocates phases 1, 2, 4.
+    static const struct { int fail_at; enum space_op_error result; int events; int warps; int last_phase; } cases[] = {
+        { 0, SPACE_OP_ERROR_GESTURE,             0, 0, 0 },
+        { 1, SPACE_OP_ERROR_GESTURE_INTERRUPTED, 0, 1, 0 },
+        { 4, SPACE_OP_ERROR_GESTURE_INTERRUPTED, 3, 1, 4 },
+        { 5, SPACE_OP_ERROR_GESTURE_INTERRUPTED, 5, 1, 8 },
+    };
+    CGPoint point = { 100, 200 };
+    for (int c = 0; c < (int)array_count(cases); ++c) {
+        macos_swipe_sample_count = 0;
+        macos_warp_count = 0;
+        macos_capture_swipe = true;
+        macos_swipe_allocations_before_failure = cases[c].fail_at;
+        enum space_op_error posted = space_manager_post_swipes(3, true, true, point);
+        macos_capture_swipe = false;
+        macos_swipe_allocations_before_failure = -1;
+        TEST_CHECK(posted, cases[c].result);
+        TEST_CHECK(macos_swipe_sample_count, cases[c].events);
+        TEST_CHECK(macos_warp_count, cases[c].warps);
+        if (cases[c].events > 0) {
+            TEST_CHECK(macos_swipe_samples[macos_swipe_sample_count-1].phase, cases[c].last_phase);
+        }
+    }
+    return result;
+}
