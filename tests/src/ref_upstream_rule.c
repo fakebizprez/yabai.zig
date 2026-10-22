@@ -15,7 +15,18 @@
  * src/window_manager.c (window_manager_rule_matches_window),
  * src/display.c (display_serialize), src/message.c (parse_rule; dead in
  * the daemon since both handle_domain_rule sites call yabai_parse_rule,
- * so it lives only here now). */
+ * so it lives only here now; parse_display_selector and
+ * parse_space_selector, which parse_rule calls).
+ *
+ * Seam (the only departure from verbatim, forced by manager queries that
+ * assert or crash headless with g_connection == 0): inside
+ * ref_parse_rule and its two selector copies, macros route
+ * display_manager_active_display_id, space_manager_active_space,
+ * display_manager_find_closest_display_in_direction,
+ * display_manager_{prev,next}_display_id and space_manager_{prev,next}_space
+ * through ref_rule_lookup, the same struct yabai_rule_lookup the Zig port
+ * takes. Call order and arguments are untouched; the macros are #undef'd
+ * right after ref_parse_rule. */
 
 static char *ref_ts_string_escape(char *s)
 {
@@ -294,6 +305,224 @@ static void ref_display_serialize(FILE *rsp, uint32_t did, uint64_t flags)
     fprintf(rsp, "\n}");
 }
 
+/* ---- seam: manager queries via ref_rule_lookup (see header) ---- */
+static const struct yabai_rule_lookup *ref_rule_lookup;
+#define display_manager_active_display_id() ref_rule_lookup->active_display_id()
+#define space_manager_active_space() ref_rule_lookup->active_space()
+#define display_manager_find_closest_display_in_direction(did, dir) ref_rule_lookup->display_in_direction(did, dir)
+#define display_manager_prev_display_id(did) ref_rule_lookup->prev_display_id(did)
+#define display_manager_next_display_id(did) ref_rule_lookup->next_display_id(did)
+#define space_manager_prev_space(sid) ref_rule_lookup->prev_space(sid)
+#define space_manager_next_space(sid) ref_rule_lookup->next_space(sid)
+
+/* ---- src/message.c @ dd84572 ---- */
+
+static struct selector ref_parse_display_selector(FILE *rsp, char **message, uint32_t acting_did, bool optional)
+{
+    TIME_FUNCTION;
+
+    struct selector result = { .token = get_token(message), .did_parse = true };
+
+    struct token_value value = token_to_value(result.token);
+    if (value.type == TOKEN_TYPE_INT) {
+        uint32_t did = display_manager_arrangement_display_id(value.int_value);
+        if (did) {
+            result.did = did;
+        } else {
+            daemon_fail(rsp, "could not locate display with arrangement index '%d'.\n", value.int_value);
+        }
+    } else if (value.type == TOKEN_TYPE_STRING) {
+        if (token_equals(result.token, ARGUMENT_COMMON_SEL_NORTH)) {
+            if (acting_did) {
+                uint32_t did = display_manager_find_closest_display_in_direction(acting_did, DIR_NORTH);
+                if (did) {
+                    result.did = did;
+                } else {
+                    daemon_fail(rsp, "could not locate a northward display.\n");
+                }
+            } else {
+                daemon_fail(rsp, "could not locate the selected display.\n");
+            }
+        } else if (token_equals(result.token, ARGUMENT_COMMON_SEL_EAST)) {
+            if (acting_did) {
+                uint32_t did = display_manager_find_closest_display_in_direction(acting_did, DIR_EAST);
+                if (did) {
+                    result.did = did;
+                } else {
+                    daemon_fail(rsp, "could not locate a eastward display.\n");
+                }
+            } else {
+                daemon_fail(rsp, "could not locate the selected display.\n");
+            }
+        } else if (token_equals(result.token, ARGUMENT_COMMON_SEL_SOUTH)) {
+            if (acting_did) {
+                uint32_t did = display_manager_find_closest_display_in_direction(acting_did, DIR_SOUTH);
+                if (did) {
+                    result.did = did;
+                } else {
+                    daemon_fail(rsp, "could not locate a southward display.\n");
+                }
+            } else {
+                daemon_fail(rsp, "could not locate the selected display.\n");
+            }
+        } else if (token_equals(result.token, ARGUMENT_COMMON_SEL_WEST)) {
+            if (acting_did) {
+                uint32_t did = display_manager_find_closest_display_in_direction(acting_did, DIR_WEST);
+                if (did) {
+                    result.did = did;
+                } else {
+                    daemon_fail(rsp, "could not locate a westward display.\n");
+                }
+            } else {
+                daemon_fail(rsp, "could not locate the selected display.\n");
+            }
+        } else if (token_equals(result.token, ARGUMENT_COMMON_SEL_PREV)) {
+            if (acting_did) {
+                uint32_t did = display_manager_prev_display_id(acting_did);
+                if (did) {
+                    result.did = did;
+                } else {
+                    daemon_fail(rsp, "could not locate the previous display.\n");
+                }
+            } else {
+                daemon_fail(rsp, "could not locate the selected display.\n");
+            }
+        } else if (token_equals(result.token, ARGUMENT_COMMON_SEL_NEXT)) {
+            if (acting_did) {
+                uint32_t did = display_manager_next_display_id(acting_did);
+                if (did) {
+                    result.did = did;
+                } else {
+                    daemon_fail(rsp, "could not locate the next display.\n");
+                }
+            } else {
+                daemon_fail(rsp, "could not locate the selected display.\n");
+            }
+        } else if (token_equals(result.token, ARGUMENT_COMMON_SEL_FIRST)) {
+            uint32_t did = display_manager_first_display_id();
+            if (did) {
+                result.did = did;
+            } else {
+                daemon_fail(rsp, "could not locate the first display.\n");
+            }
+        } else if (token_equals(result.token, ARGUMENT_COMMON_SEL_LAST)) {
+            uint32_t did = display_manager_last_display_id();
+            if (did) {
+                result.did = did;
+            } else {
+                daemon_fail(rsp, "could not locate the last display.\n");
+            }
+        } else if (token_equals(result.token, ARGUMENT_COMMON_SEL_RECENT)) {
+            result.did = g_display_manager.last_display_id;
+        } else if (token_equals(result.token, ARGUMENT_COMMON_SEL_MOUSE)) {
+            uint32_t did = display_manager_cursor_display_id();
+            if (did) {
+                result.did = did;
+            } else {
+                daemon_fail(rsp, "could not locate display containing cursor.\n");
+            }
+        } else {
+            struct display_label *display_label = display_manager_get_display_for_label(&g_display_manager, value.string_value);
+            if (display_label) {
+                result.did_parse = true;
+                result.did = display_label->did;
+            } else {
+                result.did_parse = false;
+                daemon_fail(rsp, "value '%.*s' is not a valid option for DISPLAY_SEL\n", result.token.length, result.token.text);
+            }
+        }
+    } else if (value.type == TOKEN_TYPE_INVALID) {
+        result.did_parse = false;
+        if (!optional) daemon_fail(rsp, "value '%.*s' is not a valid option for DISPLAY_SEL\n", result.token.length, result.token.text);
+    } else {
+        result.did_parse = false;
+        daemon_fail(rsp, "value '%.*s' is not a valid option for DISPLAY_SEL\n", result.token.length, result.token.text);
+    }
+
+    return result;
+}
+
+static struct selector ref_parse_space_selector(FILE *rsp, char **message, uint64_t acting_sid, bool optional)
+{
+    TIME_FUNCTION;
+
+    struct selector result = { .token = get_token(message), .did_parse = true };
+
+    struct token_value value = token_to_value(result.token);
+    if (value.type == TOKEN_TYPE_INT) {
+        uint64_t sid = space_manager_mission_control_space(value.int_value);
+        if (sid) {
+            result.sid = sid;
+        } else {
+            daemon_fail(rsp, "could not locate space with mission-control index '%d'.\n", value.int_value);
+        }
+    } else if (value.type == TOKEN_TYPE_STRING) {
+        if (token_equals(result.token, ARGUMENT_COMMON_SEL_PREV)) {
+            if (acting_sid) {
+                uint64_t sid = space_manager_prev_space(acting_sid);
+                if (sid) {
+                    result.sid = sid;
+                } else {
+                    daemon_fail(rsp, "could not locate the previous space.\n");
+                }
+            } else {
+                daemon_fail(rsp, "could not locate the selected space.\n");
+            }
+        } else if (token_equals(result.token, ARGUMENT_COMMON_SEL_NEXT)) {
+            if (acting_sid) {
+                uint64_t sid = space_manager_next_space(acting_sid);
+                if (sid) {
+                    result.sid = sid;
+                } else {
+                    daemon_fail(rsp, "could not locate the next space.\n");
+                }
+            } else {
+                daemon_fail(rsp, "could not locate the selected space.\n");
+            }
+        } else if (token_equals(result.token, ARGUMENT_COMMON_SEL_FIRST)) {
+            uint64_t sid = space_manager_first_space();
+            if (sid) {
+                result.sid = sid;
+            } else {
+                daemon_fail(rsp, "could not locate the first space.\n");
+            }
+        } else if (token_equals(result.token, ARGUMENT_COMMON_SEL_LAST)) {
+            uint64_t sid = space_manager_last_space();
+            if (sid) {
+                result.sid = sid;
+            } else {
+                daemon_fail(rsp, "could not locate the last space.\n");
+            }
+        } else if (token_equals(result.token, ARGUMENT_COMMON_SEL_RECENT)) {
+            result.sid = g_space_manager.last_space_id;
+        } else if (token_equals(result.token, ARGUMENT_COMMON_SEL_MOUSE)) {
+            uint64_t sid = space_manager_cursor_space();
+            if (sid) {
+                result.sid = sid;
+            } else {
+                daemon_fail(rsp, "could not locate space containing cursor.\n");
+            }
+        } else {
+            struct space_label *space_label = space_manager_get_space_for_label(&g_space_manager, value.string_value);
+            if (space_label) {
+                result.did_parse = true;
+                result.sid = space_label->sid;
+            } else {
+                result.did_parse = false;
+                daemon_fail(rsp, "value '%.*s' is not a valid option for SPACE_SEL\n", result.token.length, result.token.text);
+            }
+        }
+    } else if (value.type == TOKEN_TYPE_INVALID) {
+        result.did_parse = false;
+        if (!optional) daemon_fail(rsp, "value '%.*s' is not a valid option for SPACE_SEL\n", result.token.length, result.token.text);
+    } else {
+        result.did_parse = false;
+        daemon_fail(rsp, "value '%.*s' is not a valid option for SPACE_SEL\n", result.token.length, result.token.text);
+    }
+
+    return result;
+}
+
 static bool ref_parse_rule(FILE *rsp, char **message, struct rule *rule, struct token token)
 {
     TIME_FUNCTION;
@@ -383,7 +612,7 @@ static bool ref_parse_rule(FILE *rsp, char **message, struct rule *rule, struct 
                 rule_effects_set_flag(&rule->effects, RULE_FOLLOW_SPACE);
             }
 
-            struct selector selector = parse_display_selector(rsp, &value, display_manager_active_display_id(), false);
+            struct selector selector = ref_parse_display_selector(rsp, &value, display_manager_active_display_id(), false);
             if (selector.did_parse && selector.did) {
                 rule->effects.did = selector.did;
             } else {
@@ -397,7 +626,7 @@ static bool ref_parse_rule(FILE *rsp, char **message, struct rule *rule, struct 
                 rule_effects_set_flag(&rule->effects, RULE_FOLLOW_SPACE);
             }
 
-            struct selector selector = parse_space_selector(rsp, &value, space_manager_active_space(), false);
+            struct selector selector = ref_parse_space_selector(rsp, &value, space_manager_active_space(), false);
             if (selector.did_parse && selector.sid) {
                 rule->effects.sid = selector.sid;
             } else {
@@ -503,3 +732,11 @@ static bool ref_parse_rule(FILE *rsp, char **message, struct rule *rule, struct 
 
     return did_parse;
 }
+
+#undef display_manager_active_display_id
+#undef space_manager_active_space
+#undef display_manager_find_closest_display_in_direction
+#undef display_manager_prev_display_id
+#undef display_manager_next_display_id
+#undef space_manager_prev_space
+#undef space_manager_next_space

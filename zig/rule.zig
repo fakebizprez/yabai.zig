@@ -392,25 +392,20 @@ export fn yabai_rule_serialize(rsp: ?*anyopaque, rule: *const Rule, index: c_int
 // already-ported message/util objects; string_copy/regcomp/sscanf come
 // from libc exactly like C. All daemon_fail emissions use the established
 // fwrite pattern (0x07 marker + literal bytes), so no varargs ABI is
-// involved. The acting display/space ids are lifted in as parameters
-// (same seam as yabai_rule_serialize's did_index/sid_index): C evaluates
-// display_manager_active_display_id()/space_manager_active_space()
-// eagerly at the call site, which cannot run in-process under test.
+// involved. Manager queries for the display=/space= keys come through
+// abi.RuleLookup; the acting getters are called only inside those
+// branches, at the point upstream parse_rule evaluated them, so other
+// rules never touch AX/SkyLight. Tests pass counting stubs.
 extern "c" fn sscanf(s: [*:0]const u8, fmt: [*:0]const u8, ...) c_int;
 extern "c" fn regcomp(regex: *anyopaque, pattern: [*:0]const u8, cflags: c_int) c_int;
 
 extern fn display_manager_arrangement_display_id(arrangement: c_int) u32;
-extern fn display_manager_find_closest_display_in_direction(acting_did: u32, direction: c_int) u32;
-extern fn display_manager_prev_display_id(did: u32) u32;
-extern fn display_manager_next_display_id(did: u32) u32;
 extern fn display_manager_first_display_id() u32;
 extern fn display_manager_last_display_id() u32;
 extern fn display_manager_cursor_display_id() u32;
 extern fn display_manager_get_display_for_label(dm: *DisplayManagerState, label: [*:0]u8) ?*DisplayLabel;
 extern fn space_manager_mission_control_space(desktop_id: c_int) u64;
 extern fn space_manager_cursor_space() u64;
-extern fn space_manager_prev_space(sid: u64) u64;
-extern fn space_manager_next_space(sid: u64) u64;
 extern fn space_manager_first_space() u64;
 extern fn space_manager_last_space() u64;
 extern fn space_manager_get_space_for_label(sm: *SpaceManagerState, label: [*:0]u8) ?*SpaceLabel;
@@ -530,8 +525,9 @@ fn failSelectorOption(rsp: ?*anyopaque, text: [*]const u8, len: usize, suffix: [
 
 // Byte-identical port of parse_display_selector() in src/message.c.
 // The union payload is zeroed up front (C leaves it implicit); every
-// manager query is an extern call with identical argument order.
-fn parseDisplaySelector(rsp: ?*anyopaque, message: *[*:0]u8, acting_did: u32, out: *Selector) void {
+// manager query keeps its argument order (relative lookups go through
+// abi.RuleLookup, the rest are extern calls).
+fn parseDisplaySelector(rsp: ?*anyopaque, message: *[*:0]u8, acting_did: u32, lookup: *const abi.RuleLookup, out: *Selector) void {
     @setRuntimeSafety(false);
     abi.yabai_message_get_token(message, &out.token);
     out.did_parse = true;
@@ -548,7 +544,7 @@ fn parseDisplaySelector(rsp: ?*anyopaque, message: *[*:0]u8, acting_did: u32, ou
     } else if (value.type == abi.TOKEN_TYPE_STRING) {
         if (abi.yabai_token_equals(&out.token, "north")) {
             if (acting_did != 0) {
-                const did = display_manager_find_closest_display_in_direction(acting_did, abi.DIR_NORTH);
+                const did = lookup.display_in_direction(acting_did, abi.DIR_NORTH);
                 if (did != 0) {
                     out.payload = did;
                 } else {
@@ -559,7 +555,7 @@ fn parseDisplaySelector(rsp: ?*anyopaque, message: *[*:0]u8, acting_did: u32, ou
             }
         } else if (abi.yabai_token_equals(&out.token, "east")) {
             if (acting_did != 0) {
-                const did = display_manager_find_closest_display_in_direction(acting_did, abi.DIR_EAST);
+                const did = lookup.display_in_direction(acting_did, abi.DIR_EAST);
                 if (did != 0) {
                     out.payload = did;
                 } else {
@@ -570,7 +566,7 @@ fn parseDisplaySelector(rsp: ?*anyopaque, message: *[*:0]u8, acting_did: u32, ou
             }
         } else if (abi.yabai_token_equals(&out.token, "south")) {
             if (acting_did != 0) {
-                const did = display_manager_find_closest_display_in_direction(acting_did, abi.DIR_SOUTH);
+                const did = lookup.display_in_direction(acting_did, abi.DIR_SOUTH);
                 if (did != 0) {
                     out.payload = did;
                 } else {
@@ -581,7 +577,7 @@ fn parseDisplaySelector(rsp: ?*anyopaque, message: *[*:0]u8, acting_did: u32, ou
             }
         } else if (abi.yabai_token_equals(&out.token, "west")) {
             if (acting_did != 0) {
-                const did = display_manager_find_closest_display_in_direction(acting_did, abi.DIR_WEST);
+                const did = lookup.display_in_direction(acting_did, abi.DIR_WEST);
                 if (did != 0) {
                     out.payload = did;
                 } else {
@@ -592,7 +588,7 @@ fn parseDisplaySelector(rsp: ?*anyopaque, message: *[*:0]u8, acting_did: u32, ou
             }
         } else if (abi.yabai_token_equals(&out.token, "prev")) {
             if (acting_did != 0) {
-                const did = display_manager_prev_display_id(acting_did);
+                const did = lookup.prev_display_id(acting_did);
                 if (did != 0) {
                     out.payload = did;
                 } else {
@@ -603,7 +599,7 @@ fn parseDisplaySelector(rsp: ?*anyopaque, message: *[*:0]u8, acting_did: u32, ou
             }
         } else if (abi.yabai_token_equals(&out.token, "next")) {
             if (acting_did != 0) {
-                const did = display_manager_next_display_id(acting_did);
+                const did = lookup.next_display_id(acting_did);
                 if (did != 0) {
                     out.payload = did;
                 } else {
@@ -658,7 +654,7 @@ fn parseDisplaySelector(rsp: ?*anyopaque, message: *[*:0]u8, acting_did: u32, ou
 }
 
 // Byte-identical port of parse_space_selector() in src/message.c.
-fn parseSpaceSelector(rsp: ?*anyopaque, message: *[*:0]u8, acting_sid: u64, out: *Selector) void {
+fn parseSpaceSelector(rsp: ?*anyopaque, message: *[*:0]u8, acting_sid: u64, lookup: *const abi.RuleLookup, out: *Selector) void {
     @setRuntimeSafety(false);
     abi.yabai_message_get_token(message, &out.token);
     out.did_parse = true;
@@ -675,7 +671,7 @@ fn parseSpaceSelector(rsp: ?*anyopaque, message: *[*:0]u8, acting_sid: u64, out:
     } else if (value.type == abi.TOKEN_TYPE_STRING) {
         if (abi.yabai_token_equals(&out.token, "prev")) {
             if (acting_sid != 0) {
-                const sid = space_manager_prev_space(acting_sid);
+                const sid = lookup.prev_space(acting_sid);
                 if (sid != 0) {
                     out.payload = sid;
                 } else {
@@ -686,7 +682,7 @@ fn parseSpaceSelector(rsp: ?*anyopaque, message: *[*:0]u8, acting_sid: u64, out:
             }
         } else if (abi.yabai_token_equals(&out.token, "next")) {
             if (acting_sid != 0) {
-                const sid = space_manager_next_space(acting_sid);
+                const sid = lookup.next_space(acting_sid);
                 if (sid != 0) {
                     out.payload = sid;
                 } else {
@@ -746,7 +742,7 @@ fn parseSpaceSelector(rsp: ?*anyopaque, message: *[*:0]u8, acting_sid: u64, out:
 // ownership, REG_EXTENDED regcomp with VALID/EXCLUDE flag sets, libc
 // sscanf numerics (%f opacity with in_range_ii, six-%d grid), and the
 // trailing missing-filter / unsupported-exclusion checks.
-export fn yabai_parse_rule(rsp: ?*anyopaque, message: *[*:0]u8, rule: *Rule, token: *const MsgToken, acting_did: u32, acting_sid: u64) bool {
+export fn yabai_parse_rule(rsp: ?*anyopaque, message: *[*:0]u8, rule: *Rule, token: *const MsgToken, lookup: *const abi.RuleLookup) bool {
     @setRuntimeSafety(false);
     var unsupported_exclusion: ?[*]u8 = null;
     var did_parse = true;
@@ -838,7 +834,7 @@ export fn yabai_parse_rule(rsp: ?*anyopaque, message: *[*:0]u8, rule: *Rule, tok
             }
 
             var selector: Selector = undefined;
-            parseDisplaySelector(rsp, &cursor, acting_did, &selector);
+            parseDisplaySelector(rsp, &cursor, lookup.active_display_id(), lookup, &selector);
             if (selector.did_parse and @as(u32, @truncate(selector.payload)) != 0) {
                 rule.effects.did = @truncate(selector.payload);
             } else {
@@ -854,7 +850,7 @@ export fn yabai_parse_rule(rsp: ?*anyopaque, message: *[*:0]u8, rule: *Rule, tok
             }
 
             var selector: Selector = undefined;
-            parseSpaceSelector(rsp, &cursor, acting_sid, &selector);
+            parseSpaceSelector(rsp, &cursor, lookup.active_space(), lookup, &selector);
             if (selector.did_parse and selector.payload != 0) {
                 rule.effects.sid = selector.payload;
             } else {

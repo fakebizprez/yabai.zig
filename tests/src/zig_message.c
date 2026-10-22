@@ -141,8 +141,10 @@ TEST_FUNC(zig_message_token_compare,
     TEST_CHECK(token_is_valid(nt) != yabai_token_is_valid(&nt), 0);
 })
 
-static char *int_texts[] = { "0", "42", "007", "4294967295", "", "12a", "-5", " 12", "0x10" };
-static char *hex_texts[] = { "0x1F", "0XdeadBEEF", "0x0", "0x", "0xG1", "123", "", "0x123456789" };
+/* Overflowing inputs wrap like the C helpers (int: two's complement as
+ * clang emits it; uint32_t: defined modulo 2^32). */
+static char *int_texts[] = { "0", "42", "007", "4294967295", "", "12a", "-5", " 12", "0x10", "2147483647", "2147483648", "99999999999", "999999999999999999999999" };
+static char *hex_texts[] = { "0x1F", "0XdeadBEEF", "0x0", "0x", "0xG1", "123", "", "0x123456789", "0xFFFFFFFF", "0xFFFFFFFFFFFF", "0x1234567890abcdef1" };
 static char *float_texts[] = { "3.5", "-0.25", "1e3", "nan", "inf", "0x1p3", "", "abc", "12px" };
 
 TEST_FUNC(zig_message_token_numbers,
@@ -186,6 +188,22 @@ TEST_FUNC(zig_message_token_numbers,
         bool z_ok = yabai_token_is_float(&t, &z_value);
         TEST_CHECK(c_ok != z_ok, 0);
         if (c_ok && z_ok) TEST_CHECK(memcmp(&c_value, &z_value, sizeof(float)), 0);
+    }
+
+    /* Pinned wrap results, independent of the C helper. */
+    {
+        struct token t;
+        t.text = "99999999999";
+        t.length = 11;
+        int v = 0;
+        TEST_CHECK(yabai_token_is_positive_integer(&t, &v), true);
+        TEST_CHECK(v, 1215752191);
+        struct token h;
+        h.text = "0x1234567890abcdef1";
+        h.length = 19;
+        uint32_t hv = 0;
+        TEST_CHECK(yabai_token_is_hexadecimal(&h, &hv), true);
+        TEST_CHECK(hv, 0x0abcdef1u);
     }
 
     struct token known;

@@ -76,7 +76,7 @@ TEST_FUNC(zig_regress_rule_negative_grid,
     struct token first = get_token(&cursor);
     struct rule rule;
     memset(&rule, 0, sizeof(rule));
-    bool parsed = yabai_parse_rule(NULL, &cursor, &rule, &first, 0, 0);
+    bool parsed = yabai_parse_rule(NULL, &cursor, &rule, &first, &rule_lookup_stub);
     TEST_CHECK(parsed, true);
 
     char *out = NULL;

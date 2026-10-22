@@ -41,6 +41,20 @@ struct yabai_view_defaults
     int split_type;
 };
 
+/* zig/abi.zig RuleLookup: the manager queries yabai_parse_rule needs for
+ * display=/space= keys. The acting getters run only inside those
+ * branches (upstream order); tests pass counting stubs. */
+struct yabai_rule_lookup
+{
+    uint32_t (*active_display_id)(void);
+    uint64_t (*active_space)(void);
+    uint32_t (*display_in_direction)(uint32_t did, int direction);
+    uint32_t (*prev_display_id)(uint32_t did);
+    uint32_t (*next_display_id)(uint32_t did);
+    uint64_t (*prev_space)(uint64_t sid);
+    uint64_t (*next_space)(uint64_t sid);
+};
+
 /* zig/abi.zig FrameField: one field of a decoded socket frame. */
 struct frame_field
 {
@@ -158,7 +172,7 @@ void yabai_rule_clear_flag(struct rule *r, uint16_t flag);
 void yabai_rule_destroy(struct rule *rule);
 char *yabai_ts_string_escape(const char *s);
 void yabai_rule_serialize(FILE *rsp, struct rule *rule, int index, int did_index, int sid_index);
-bool yabai_parse_rule(FILE *rsp, char **message, struct rule *rule, const struct token *token, uint32_t acting_did, uint64_t acting_sid);
+bool yabai_parse_rule(FILE *rsp, char **message, struct rule *rule, const struct token *token, const struct yabai_rule_lookup *lookup);
 int yabai_regex_match(bool valid, const regex_t *regex, const char *match);
 bool yabai_rule_matches_window(const struct rule *rule, const char *app_name, const char *window_title, const char *window_role, const char *window_subrole);
 
@@ -241,6 +255,15 @@ ZIG_ABI_OFFSET(struct yabai_view_defaults, right_padding, 16);
 ZIG_ABI_OFFSET(struct yabai_view_defaults, window_gap, 20);
 ZIG_ABI_OFFSET(struct yabai_view_defaults, auto_balance, 24);
 ZIG_ABI_OFFSET(struct yabai_view_defaults, split_type, 28);
+
+ZIG_ABI_SIZE(struct yabai_rule_lookup, 56);
+ZIG_ABI_OFFSET(struct yabai_rule_lookup, active_display_id, 0);
+ZIG_ABI_OFFSET(struct yabai_rule_lookup, active_space, 8);
+ZIG_ABI_OFFSET(struct yabai_rule_lookup, display_in_direction, 16);
+ZIG_ABI_OFFSET(struct yabai_rule_lookup, prev_display_id, 24);
+ZIG_ABI_OFFSET(struct yabai_rule_lookup, next_display_id, 32);
+ZIG_ABI_OFFSET(struct yabai_rule_lookup, prev_space, 40);
+ZIG_ABI_OFFSET(struct yabai_rule_lookup, next_space, 48);
 
 ZIG_ABI_SIZE(struct balance_node, 8);
 ZIG_ABI_OFFSET(struct balance_node, y_count, 0);
