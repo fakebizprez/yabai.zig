@@ -11,7 +11,8 @@ clean:
 	rm -rf ./bin
 
 # The CLI golden tests exec ../bin/yabai; rebuild it when any source is newer.
-daemon:
+# Waits for the Zig objects so make -j does not run build.sh twice at once.
+daemon: $(ZIG_OBJ)
 	$(MAKE) -C .. ./bin/yabai
 
 TEST_FLAGS = -DTESTS -DPROFILE=1 -F/System/Library/PrivateFrameworks
@@ -23,8 +24,12 @@ build: $(ZIG_OBJ) daemon ./bin/osax27
 	clang ./src/tests.m $(ZIG_OBJ) -o ./bin/tests $(TEST_FLAGS) -framework Carbon -framework Cocoa -framework CoreServices -framework CoreVideo -framework SkyLight
 	clang -fsyntax-only -arch x86_64 ./src/tests.m $(TEST_FLAGS)
 
-$(ZIG_OBJ): ../zig/abi.zig ../src/zig_abi.h ../zig/geometry.zig ../zig/message.zig ../zig/view.zig ../zig/util.zig ../zig/rule.zig ../zig/window.zig ../zig/display.zig ../zig/mouse.zig ../zig/build.sh ../zig/ZIG_VERSION
+# Same stamp as ../makefile: one build.sh run for all objects.
+$(ZIG_OBJ): ../zig/bin/build.stamp ;
+
+../zig/bin/build.stamp: ../zig/abi.zig ../src/zig_abi.h ../zig/geometry.zig ../zig/message.zig ../zig/view.zig ../zig/util.zig ../zig/rule.zig ../zig/window.zig ../zig/display.zig ../zig/mouse.zig ../zig/build.sh ../zig/ZIG_VERSION
 	../zig/build.sh
+	touch $@
 
 run:
 	./bin/tests

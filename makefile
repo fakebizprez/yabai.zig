@@ -11,6 +11,7 @@ ARCH_PATH      = ./archive
 OSAX_SRC       = ./src/osax/payload_bin.c ./src/osax/loader_bin.c
 ZIG_SRC        = ./zig/abi.zig ./zig/geometry.zig ./zig/message.zig ./zig/view.zig ./zig/util.zig ./zig/rule.zig ./zig/window.zig ./zig/display.zig ./zig/mouse.zig
 ZIG_OBJ        = ./zig/zig-geometry.o ./zig/zig-message.o ./zig/zig-view.o ./zig/zig-util.o ./zig/zig-rule.o ./zig/zig-window.o ./zig/zig-display.o ./zig/zig-mouse.o
+ZIG_STAMP      = ./zig/bin/build.stamp
 YABAI_SRC      = ./src/manifest.m $(OSAX_SRC) $(ZIG_OBJ)
 # manifest.m textually includes every other source, so all of them are prerequisites
 YABAI_DEPS     = $(shell find ./src -name '*.[chm]' -not -path './src/osax/*')
@@ -68,8 +69,13 @@ clean: clean-build
 	rm -f $(OSAX_SRC)
 	rm -rf ./zig/bin ./zig/zig-*.o
 
-$(ZIG_OBJ): $(ZIG_SRC) ./src/zig_abi.h ./zig/build.sh ./zig/ZIG_VERSION
+# One build.sh run writes every Zig object; the stamp keeps make -j from
+# starting one run per object (make 3.81 has no grouped targets).
+$(ZIG_OBJ): $(ZIG_STAMP) ;
+
+$(ZIG_STAMP): $(ZIG_SRC) ./src/zig_abi.h ./zig/build.sh ./zig/ZIG_VERSION
 	./zig/build.sh
+	touch $@
 
 $(BUILD_PATH)/yabai: $(YABAI_SRC) $(YABAI_DEPS) $(INFO_PLIST)
 	mkdir -p $(BUILD_PATH)
