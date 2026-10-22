@@ -3,6 +3,7 @@
 #include <ApplicationServices/ApplicationServices.h>
 #include <CoreFoundation/CoreFoundation.h>
 #include <mach/mach_time.h>
+#include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -83,6 +84,7 @@ static bool iss_parse_event_data(const uint8_t *data, size_t length, ISSCGEventP
     memset(out, 0, sizeof(*out));
 
     if (!data || length < 4) {
+        debug("%s: event data too short (%zu bytes)\n", __FUNCTION__, data ? length : 0);
         return false;
     }
 
@@ -101,6 +103,7 @@ static bool iss_parse_event_data(const uint8_t *data, size_t length, ISSCGEventP
     size_t offset = 4;
     while (offset < length) {
         if (length - offset < 4) {
+            debug("%s: truncated field header at offset %zu of %zu\n", __FUNCTION__, offset, length);
             iss_parsed_event_data_free(out);
             return false;
         }
@@ -119,6 +122,7 @@ static bool iss_parse_event_data(const uint8_t *data, size_t length, ISSCGEventP
             } else if (size_words > 1) {
                 payload_length = size_words;
             } else {
+                debug("%s: field %u (tag %u) has zero size at offset %zu\n", __FUNCTION__, field_id, tag, offset - 4);
                 iss_parsed_event_data_free(out);
                 return false;
             }
@@ -130,11 +134,13 @@ static bool iss_parse_event_data(const uint8_t *data, size_t length, ISSCGEventP
             payload_length = (size_t)size_words * 4;
             break;
         default:
+            debug("%s: field %u has unknown tag %u at offset %zu\n", __FUNCTION__, field_id, tag, offset - 4);
             iss_parsed_event_data_free(out);
             return false;
         }
 
         if (payload_length > length - offset) {
+            debug("%s: field %u (tag %u) payload of %zu bytes at offset %zu overruns %zu-byte buffer\n", __FUNCTION__, field_id, tag, payload_length, offset, length);
             iss_parsed_event_data_free(out);
             return false;
         }
@@ -285,7 +291,12 @@ static const uint32_t kIOHIDEventTypeFluidTouchGesture = 23;
 static const uint16_t kIOHIDGestureFlavorDockPrimary = 3;
 
 static int32_t iss_double_to_fixed1616(double val) {
-    int32_t fixed = (int32_t)(val * 65536.0);
+    // Out-of-range float-to-int casts are undefined; saturate, and map NaN to zero.
+    if (isnan(val)) return 0;
+    double scaled = val * 65536.0;
+    if (scaled >= (double)INT32_MAX) return INT32_MAX;
+    if (scaled <= (double)INT32_MIN) return INT32_MIN;
+    int32_t fixed = (int32_t)scaled;
     if (fixed == 0 && val != 0.0) {
         return val > 0.0 ? 1 : -1;
     }
@@ -404,6 +415,7 @@ CGEventRef iss_augment_dock_swipe_event(CGEventRef event) {
     CFDataRef new_data = CFDataCreate(kCFAllocatorDefault, new_bytes, (CFIndex)new_length);
     free(new_bytes);
     if (!new_data) {
+        debug("%s: CFDataCreate failed for %zu-byte augmented event\n", __FUNCTION__, new_length);
         return NULL;
     }
 
