@@ -42,6 +42,8 @@ enum space_op_error
     SPACE_OP_ERROR_DISPLAY_IS_ANIMATING = 8,
     SPACE_OP_ERROR_IN_MISSION_CONTROL   = 9,
     SPACE_OP_ERROR_SCRIPTING_ADDITION   = 10,
+    SPACE_OP_ERROR_GESTURE              = 11, // nothing was posted
+    SPACE_OP_ERROR_GESTURE_INTERRUPTED  = 12, // some swipes were posted; the cursor and space may have moved
 };
 
 bool space_manager_query_space(FILE *rsp, uint64_t sid, uint64_t flags);
@@ -90,7 +92,8 @@ bool space_manager_rotate_space(struct space_manager *sm, uint64_t sid, int degr
 bool space_manager_mirror_space(struct space_manager *sm, uint64_t sid, enum window_node_split axis);
 void space_manager_move_window_list_to_space(uint64_t sid, uint32_t *window_list, int window_count);
 void space_manager_move_window_to_space(uint64_t sid, struct window *window);
-bool space_manager_focus_space_using_gesture(uint32_t new_did, uint64_t new_sid);
+enum space_op_error space_manager_focus_space_using_gesture(uint32_t new_did, uint64_t new_sid);
+enum space_op_error space_manager_focus_space_fallback(uint32_t did, uint64_t sid);
 enum space_op_error space_manager_focus_space(uint64_t sid);
 enum space_op_error space_manager_switch_space(uint64_t sid);
 enum space_op_error space_manager_swap_space_with_space(uint64_t acting_sid, uint64_t selector_sid);

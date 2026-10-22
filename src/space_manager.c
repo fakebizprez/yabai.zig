@@ -956,11 +956,14 @@ static bool space_manager_post_swipe(bool is_right)
         // Raw HID timestamps must be generated immediately before each phase is posted.
         CGEventRef event = space_manager_make_swipe_event(is_right, phases[p]);
         if (!event) {
+            debug("%s: could not build swipe phase %d\n", __FUNCTION__, phases[p]);
             if (p > 0) {
                 CGEventRef cancelled = space_manager_make_swipe_event(is_right, 8);
                 if (cancelled) {
                     CGEventPost(kCGSessionEventTap, cancelled);
                     CFRelease(cancelled);
+                } else {
+                    debug("%s: could not build cancel phase; the Dock may be left mid-swipe\n", __FUNCTION__);
                 }
             }
             return false;
@@ -972,17 +975,40 @@ static bool space_manager_post_swipe(bool is_right)
     return true;
 }
 
-bool space_manager_focus_space_using_gesture(uint32_t new_did, uint64_t new_sid)
+static enum space_op_error space_manager_post_swipes(int count, bool is_right, bool warp, CGPoint point)
 {
-    if (!new_did || !new_sid) return false;
+    // Building one event up front catches augmentation failures before anything is posted.
+    CGEventRef probe = space_manager_make_swipe_event(is_right, 1);
+    if (!probe) {
+        debug("%s: could not build a synthetic swipe event; nothing posted\n", __FUNCTION__);
+        return SPACE_OP_ERROR_GESTURE;
+    }
+    CFRelease(probe);
+
+    if (warp) CGWarpMouseCursorPosition(point);
+
+    for (int i = 0; i < count; ++i) {
+        if (!space_manager_post_swipe(is_right)) {
+            debug("%s: swipe %d of %d failed\n", __FUNCTION__, i + 1, count);
+            return SPACE_OP_ERROR_GESTURE_INTERRUPTED;
+        }
+        if (i + 1 < count) usleep(25000);
+    }
+
+    return SPACE_OP_ERROR_SUCCESS;
+}
+
+enum space_op_error space_manager_focus_space_using_gesture(uint32_t new_did, uint64_t new_sid)
+{
+    if (!new_did || !new_sid) return SPACE_OP_ERROR_GESTURE;
     int cur_index = space_manager_mission_control_index(display_space_id(new_did));
     int new_index = space_manager_mission_control_index(new_sid);
-    if (cur_index <= 0 || new_index <= 0) return false;
+    if (cur_index <= 0 || new_index <= 0) return SPACE_OP_ERROR_GESTURE;
 
     int count = abs(new_index - cur_index);
     if (count == 0) {
         display_manager_focus_display(new_did, new_sid);
-        return true;
+        return SPACE_OP_ERROR_SUCCESS;
     }
 
     CGPoint point = display_center(new_did);
@@ -1002,15 +1028,13 @@ bool space_manager_focus_space_using_gesture(uint32_t new_did, uint64_t new_sid)
     //
 
     bool is_right = new_index > cur_index;
+    enum space_op_error result = SPACE_OP_ERROR_SUCCESS;
     if (workspace_is_macos_goldengate()) {
-        for (int i = 0; i < count; ++i) {
-            if (i == 0 && focus_display) CGWarpMouseCursorPosition(point);
-            if (!space_manager_post_swipe(is_right)) return false;
-            if (i + 1 < count) usleep(25000);
-        }
+        result = space_manager_post_swipes(count, is_right, focus_display, point);
+        if (result == SPACE_OP_ERROR_GESTURE) return result;
     } else {
         CGEventRef event_dock_control = CGEventCreate(NULL);
-        if (!event_dock_control) return false;
+        if (!event_dock_control) return SPACE_OP_ERROR_GESTURE;
         if (focus_display) CGWarpMouseCursorPosition(point);
 
         float sign = is_right ? 1.0 : -1.0;
@@ -1029,6 +1053,7 @@ bool space_manager_focus_space_using_gesture(uint32_t new_did, uint64_t new_sid)
         CFRelease(event_dock_control);
     }
 
+    // An interrupted sequence has already warped the cursor, so the display bookkeeping still applies.
     if (focus_display) {
         display_manager_set_active_display_id(new_did);
         if (space_manager_active_space() != new_sid) {
@@ -1037,9 +1062,18 @@ bool space_manager_focus_space_using_gesture(uint32_t new_did, uint64_t new_sid)
         }
     }
 
-    return true;
+    return result;
 }
 #pragma clang diagnostic pop
+
+enum space_op_error space_manager_focus_space_fallback(uint32_t did, uint64_t sid)
+{
+    // Upstream fails here; only macOS 27 needs the gesture, which warps the cursor and clicks.
+    if (!workspace_is_macos_goldengate()) return SPACE_OP_ERROR_SCRIPTING_ADDITION;
+
+    debug("%s: scripting addition failed, using synthetic gesture for space %lld\n", __FUNCTION__, sid);
+    return space_manager_focus_space_using_gesture(did, sid);
+}
 
 enum space_op_error space_manager_focus_space(uint64_t sid)
 {
@@ -1060,8 +1094,8 @@ enum space_op_error space_manager_focus_space(uint64_t sid)
         if (focus_display) {
             display_manager_focus_display(new_did, sid);
         }
-    } else if (!space_manager_focus_space_using_gesture(new_did, sid)) {
-        return SPACE_OP_ERROR_SCRIPTING_ADDITION;
+    } else {
+        return space_manager_focus_space_using_gesture(new_did, sid);
     }
 
     return SPACE_OP_ERROR_SUCCESS;
@@ -1091,7 +1125,7 @@ enum space_op_error space_manager_switch_space(uint64_t sid)
     }
 
     if (scripting_addition_focus_space(sid)) return SPACE_OP_ERROR_SUCCESS;
-    return space_manager_focus_space_using_gesture(did, sid) ? SPACE_OP_ERROR_SUCCESS : SPACE_OP_ERROR_SCRIPTING_ADDITION;
+    return space_manager_focus_space_fallback(did, sid);
 }
 
 enum space_op_error space_manager_destroy_space(uint64_t sid)
