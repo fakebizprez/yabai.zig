@@ -6,7 +6,7 @@ This is a fork of [asmvik/yabai](https://github.com/asmvik/yabai) (7.1.25, commi
 
 ## Commands
 
-- `make`: debug universal (`x86_64` + `arm64`) build to `bin/yabai`. Always deletes `bin/` first. Reruns `zig/build.sh` once (stamp file `zig/bin/build.stamp`, safe under `make -j`) when any `zig/` source, `zig/build.sh`, `src/zig_abi.h`, or the pin file is newer.
+- `make`: debug universal (`x86_64` + `arm64`) build to `bin/yabai`. Always deletes `bin/` first. Reruns `zig/build.sh` once (stamp file `zig/bin/build.stamp`, safe under `make -j`) when any `zig/` source, `zig/build.sh`, `src/zig_abi.h`, or `zig/ZIG_VERSION` is newer.
 - `make install`: optimized build only (`-O3 -DNDEBUG`). It does not install anything on the system.
 - `make asan` / `make tsan`: sanitizer builds.
 - `./zig/build.sh`: builds only the Zig objects (`zig/zig-<mod>.o`, universal via `lipo`). Fails if `zig version` differs from `zig/ZIG_VERSION` (currently 0.17.0) or if the C and Zig ABI checks disagree (constants, prototypes, enum cases).
@@ -15,6 +15,8 @@ This is a fork of [asmvik/yabai](https://github.com/asmvik/yabai) (7.1.25, commi
 - Single test: there is no filter; `tests/bin/tests` ignores its arguments and runs every entry in `TEST_LIST` (`tests/src/tests.m`). Trim that list locally to run one.
 - `make clean`: also removes the generated Dock helper blobs (`src/osax/{payload,loader}_bin.c`) and Zig objects.
 - `make sign` needs a `yabai-cert` signing identity; `make man` needs `asciidoctor`. There is no CI.
+
+To check a change against a real daemon, use the `verify` skill (`.claude/skills/verify/SKILL.md`): it runs a throwaway daemon under a different `USER`, so it gets its own socket and leaves the live one alone.
 
 The development machine runs a live yabai. Do not run `--install-service`, `--start-service`, `--restart-service`, `--load-sa`, or `-m` commands against the running daemon without asking.
 
