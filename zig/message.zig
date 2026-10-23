@@ -1,42 +1,24 @@
 // Message tokenizer boundary for the yabai migration (step 3).
 //
-// Pinned toolchain: Zig 0.16.0. Mirrors the token helpers in
-// src/message.c. Layout contract with the C structs, checked both by
-// the comptime block below and by _Static_assert in tests/src/zig_message.c.
+// Pinned toolchain: Zig 0.17.0. Mirrors the token helpers in
+// src/message.c. The mirrored C structs live in zig/abi.zig, pinned on
+// the C side by src/zig_abi.h.
 
 const std = @import("std");
 
-pub const MsgToken = extern struct {
-    text: ?[*]u8,
-    length: c_int,
-};
-
-pub const TOKEN_TYPE_INVALID: c_int = 0;
-pub const TOKEN_TYPE_UNKNOWN: c_int = 1;
-pub const TOKEN_TYPE_INT: c_int = 2;
-pub const TOKEN_TYPE_FLOAT: c_int = 3;
-pub const TOKEN_TYPE_U32: c_int = 4;
-pub const TOKEN_TYPE_STRING: c_int = 5;
-
-pub const TokenValueUnion = extern union {
-    int_value: c_int,
-    float_value: f32,
-    u32_value: u32,
-    string_value: ?[*]u8,
-};
-
-pub const TokenValue = extern struct {
-    token: MsgToken,
-    type: c_int,
-    u: TokenValueUnion,
-};
+const abi = @import("abi.zig");
+const MsgToken = abi.MsgToken;
+const TokenValue = abi.TokenValue;
+const FrameField = abi.FrameField;
+const Properties = abi.Properties;
+const Selector = abi.Selector;
 
 comptime {
-    if (@sizeOf(MsgToken) != 16) @compileError("MsgToken layout drift");
-    if (@offsetOf(MsgToken, "length") != 8) @compileError("MsgToken.length drift");
-    if (@sizeOf(TokenValue) != 32) @compileError("TokenValue layout drift");
-    if (@offsetOf(TokenValue, "type") != 16) @compileError("TokenValue.type drift");
-    if (@offsetOf(TokenValue, "u") != 24) @compileError("TokenValue.u drift");
+    abi.matches(yabai_message_get_token, abi.yabai_message_get_token);
+    abi.matches(yabai_token_is_valid, abi.yabai_token_is_valid);
+    abi.matches(yabai_token_equals, abi.yabai_token_equals);
+    abi.matches(yabai_token_to_value, abi.yabai_token_to_value);
+    abi.matches(yabai_parse_key_value_pair, abi.yabai_parse_key_value_pair);
 }
 
 // Mirrors get_token(): scan to NUL, then advance past it unless the next
@@ -92,8 +74,9 @@ export fn yabai_token_is_valid(token: *const MsgToken) bool {
     return token.text != null and token.length > 0;
 }
 
-// Mirrors token_is_positive_integer(), including wrap-on-overflow (the C
-// build runs with wrapping -O0 codegen; safety is off here as well).
+// Mirrors token_is_positive_integer(). Overflow wraps explicitly (*%/+%):
+// the C int overflow is UB that clang emits as two's-complement wrap, and
+// with runtime safety off a plain * would be UB on the Zig side too.
 export fn yabai_token_is_positive_integer(token: *const MsgToken, value: *c_int) bool {
     @setRuntimeSafety(false);
     value.* = 0;
@@ -102,12 +85,13 @@ export fn yabai_token_is_positive_integer(token: *const MsgToken, value: *c_int)
     while (i < token.length) {
         const c: u8 = text[@intCast(i)];
         if (c < '0' or c > '9') return false;
-        value.* = value.* * 10 + @as(c_int, c - '0');
+        value.* = value.* *% 10 +% @as(c_int, c - '0');
         i += 1;
     }
     return true;
 }
 
+// uint32_t arithmetic in C wraps modulo 2^32; *%/+% keeps that defined.
 export fn yabai_token_is_hexadecimal(token: *const MsgToken, value: *u32) bool {
     @setRuntimeSafety(false);
     value.* = 0;
@@ -126,7 +110,7 @@ export fn yabai_token_is_hexadecimal(token: *const MsgToken, value: *u32) bool {
             c - 'A' + 10
         else
             return false;
-        value.* = value.* * 16 + nibble;
+        value.* = value.* *% 16 +% nibble;
         i += 1;
     }
     return true;
@@ -194,44 +178,37 @@ fn litEqual(text: [*:0]const u8, comptime lit: []const u8) bool {
 
 export fn yabai_parse_value_type(typ: [*:0]const u8) u8 {
     @setRuntimeSafety(false);
-    if (litEqual(typ, "abs")) return 0x1;
-    if (litEqual(typ, "rel")) return 0x2;
+    if (litEqual(typ, "abs")) return abi.TYPE_ABS;
+    if (litEqual(typ, "rel")) return abi.TYPE_REL;
     return 0;
 }
 
 export fn yabai_parse_resize_handle(handle: [*:0]const u8) u8 {
     @setRuntimeSafety(false);
-    if (litEqual(handle, "top")) return 0x01;
-    if (litEqual(handle, "bottom")) return 0x02;
-    if (litEqual(handle, "left")) return 0x04;
-    if (litEqual(handle, "right")) return 0x08;
-    if (litEqual(handle, "top_left")) return 0x01 | 0x04;
-    if (litEqual(handle, "top_right")) return 0x01 | 0x08;
-    if (litEqual(handle, "bottom_left")) return 0x02 | 0x04;
-    if (litEqual(handle, "bottom_right")) return 0x02 | 0x08;
-    if (litEqual(handle, "abs")) return 0x10;
+    if (litEqual(handle, "top")) return abi.HANDLE_TOP;
+    if (litEqual(handle, "bottom")) return abi.HANDLE_BOTTOM;
+    if (litEqual(handle, "left")) return abi.HANDLE_LEFT;
+    if (litEqual(handle, "right")) return abi.HANDLE_RIGHT;
+    if (litEqual(handle, "top_left")) return abi.HANDLE_TOP | abi.HANDLE_LEFT;
+    if (litEqual(handle, "top_right")) return abi.HANDLE_TOP | abi.HANDLE_RIGHT;
+    if (litEqual(handle, "bottom_left")) return abi.HANDLE_BOTTOM | abi.HANDLE_LEFT;
+    if (litEqual(handle, "bottom_right")) return abi.HANDLE_BOTTOM | abi.HANDLE_RIGHT;
+    if (litEqual(handle, "abs")) return abi.HANDLE_ABS;
     return 0;
 }
 
-pub const FrameField = extern struct {
-    ptr: ?[*]u8,
-    len: c_int,
-};
-
 pub const SOCKET_FRAME_MAX: c_int = 1024 * 1024;
-
-comptime {
-    if (@sizeOf(FrameField) != 16) @compileError("FrameField size drift");
-}
 
 // Checked wire-format decoder: validates the native length prefix and
 // framing before exposing any field, so no allocation or parsing ever
 // runs on unvalidated sizes. Accepts exactly the CLI-produced language
 // (NUL-separated args plus final NUL); field pointers borrow the frame.
+// A null `fields` validates only, with no limit on the field count (the
+// DAEMON_MESSAGE read path in src/event_loop.c).
 export fn yabai_socket_frame_decode(
     frame: [*]const u8,
     frame_size: usize,
-    fields: [*]FrameField,
+    fields: ?[*]FrameField,
     max_fields: usize,
     out_count: *usize,
 ) c_int {
@@ -247,32 +224,24 @@ export fn yabai_socket_frame_decode(
 
     var count: usize = 0;
     var off: usize = 0;
+    var last_len: usize = 0;
     while (off < payload_len) {
-        if (count >= max_fields) return -1;
         var end = off;
         while (end < payload_len and frame[4 + end] != 0) : (end += 1) {}
         if (end >= payload_len) return -1;
-        fields[count].ptr = @constCast(frame + 4 + off);
-        fields[count].len = @intCast(end - off);
+        last_len = end - off;
+        if (fields) |out| {
+            if (count >= max_fields) return -1;
+            out[count].ptr = @constCast(frame + 4 + off);
+            out[count].len = @intCast(last_len);
+        }
         count += 1;
         off = end + 1;
     }
     if (count == 0) return -1;
-    if (fields[count - 1].len != 0) return -1;
+    if (last_len != 0) return -1;
     out_count.* = count;
     return 0;
-}
-
-pub const Properties = extern struct {
-    token: MsgToken,
-    did_parse: bool,
-    did_error: bool,
-    flags: u64,
-};
-
-comptime {
-    if (@sizeOf(Properties) != 32) @compileError("Properties size drift");
-    if (@offsetOf(Properties, "flags") != 24) @compileError("Properties.flags drift");
 }
 
 fn strEqualZ(a: [*:0]const u8, b: [*:0]const u8) bool {
@@ -369,10 +338,6 @@ export fn yabai_parse_properties(
     }
 }
 
-pub const LABEL_DISPLAY: c_int = 0;
-pub const LABEL_SPACE: c_int = 1;
-pub const LABEL_WINDOW: c_int = 2;
-
 extern "c" fn malloc(size: usize) ?[*]u8;
 
 // Byte-identical equivalent of daemon_fail() for the three parse_label()
@@ -426,18 +391,18 @@ export fn yabai_parse_label(
     @setRuntimeSafety(false);
     var value: TokenValue = std.mem.zeroes(TokenValue);
     yabai_token_to_value(token, &value);
-    if (value.type == TOKEN_TYPE_INVALID) {
+    if (value.type == abi.TOKEN_TYPE_INVALID) {
         label_out.* = null;
         return true;
     }
     const n: usize = @intCast(token.length);
     const text: [*]const u8 = @ptrCast(token.text orelse unreachable);
-    if (value.type != TOKEN_TYPE_STRING) {
+    if (value.type != abi.TOKEN_TYPE_STRING) {
         labelFail(rsp, text, n, "' cannot be used as a label.\n");
         return false;
     }
     switch (label_type) {
-        LABEL_DISPLAY => {
+        abi.LABEL_DISPLAY => {
             for (reserved_display_identifiers) |keyword| {
                 if (yabai_token_equals(token, keyword)) {
                     labelFail(rsp, text, n, "' is a reserved keyword and cannot be used as a label.\n");
@@ -445,7 +410,7 @@ export fn yabai_parse_label(
                 }
             }
         },
-        LABEL_SPACE => {
+        abi.LABEL_SPACE => {
             for (reserved_space_identifiers) |keyword| {
                 if (yabai_token_equals(token, keyword)) {
                     labelFail(rsp, text, n, "' is a reserved keyword and cannot be used as a label.\n");
@@ -453,7 +418,7 @@ export fn yabai_parse_label(
                 }
             }
         },
-        LABEL_WINDOW => {
+        abi.LABEL_WINDOW => {
             for (reserved_window_identifiers) |keyword| {
                 if (yabai_token_equals(token, keyword)) {
                     labelFail(rsp, text, n, "' is a reserved keyword and cannot be used as a scratchpad.\n");
@@ -477,38 +442,20 @@ export fn yabai_token_to_value(token: *const MsgToken, out: *TokenValue) void {
     @setRuntimeSafety(false);
     out.* = std.mem.zeroes(TokenValue);
     out.token = token.*;
-    out.type = TOKEN_TYPE_INVALID;
+    out.type = abi.TOKEN_TYPE_INVALID;
     if (!yabai_token_is_valid(token)) return;
     if (yabai_token_is_positive_integer(token, &out.u.int_value)) {
-        out.type = TOKEN_TYPE_INT;
+        out.type = abi.TOKEN_TYPE_INT;
     } else if (yabai_token_is_hexadecimal(token, &out.u.u32_value)) {
-        out.type = TOKEN_TYPE_U32;
+        out.type = abi.TOKEN_TYPE_U32;
     } else if (yabai_token_is_float(token, &out.u.float_value)) {
-        out.type = TOKEN_TYPE_FLOAT;
+        out.type = abi.TOKEN_TYPE_FLOAT;
     } else if (token.text != null) {
         out.u.string_value = token.text;
-        out.type = TOKEN_TYPE_STRING;
+        out.type = abi.TOKEN_TYPE_STRING;
     } else {
-        out.type = TOKEN_TYPE_UNKNOWN;
+        out.type = abi.TOKEN_TYPE_UNKNOWN;
     }
-}
-
-pub const DIR_NORTH: c_int = 360;
-pub const DIR_EAST: c_int = 90;
-pub const DIR_SOUTH: c_int = 180;
-pub const DIR_WEST: c_int = 270;
-pub const STACK: c_int = 111;
-
-pub const Selector = extern struct {
-    token: MsgToken,
-    did_parse: bool,
-    payload: u64,
-};
-
-comptime {
-    if (@sizeOf(Selector) != 32) @compileError("Selector size drift");
-    if (@offsetOf(Selector, "did_parse") != 16) @compileError("Selector.did_parse drift");
-    if (@offsetOf(Selector, "payload") != 24) @compileError("Selector.payload drift");
 }
 
 // Byte-identical equivalent of daemon_fail() for the parse_insert_selector
@@ -540,15 +487,15 @@ export fn yabai_parse_insert_selector(rsp: ?*anyopaque, message: *[*:0]u8, out: 
     out.did_parse = true;
     out.payload = 0;
     if (yabai_token_equals(&out.token, "north")) {
-        out.payload = @as(u64, @intCast(DIR_NORTH));
+        out.payload = @as(u64, @intCast(abi.DIR_NORTH));
     } else if (yabai_token_equals(&out.token, "east")) {
-        out.payload = @as(u64, @intCast(DIR_EAST));
+        out.payload = @as(u64, @intCast(abi.DIR_EAST));
     } else if (yabai_token_equals(&out.token, "south")) {
-        out.payload = @as(u64, @intCast(DIR_SOUTH));
+        out.payload = @as(u64, @intCast(abi.DIR_SOUTH));
     } else if (yabai_token_equals(&out.token, "west")) {
-        out.payload = @as(u64, @intCast(DIR_WEST));
+        out.payload = @as(u64, @intCast(abi.DIR_WEST));
     } else if (yabai_token_equals(&out.token, "stack")) {
-        out.payload = @as(u64, @intCast(STACK));
+        out.payload = @as(u64, @intCast(abi.STACK));
     } else {
         out.did_parse = false;
         const text: [*]const u8 = @ptrCast(out.token.text orelse unreachable);

@@ -488,6 +488,16 @@ void space_manager_toggle_window_split(struct space_manager *sm, struct window *
     }
 }
 
+static uint64_t space_manager_space_id(CFDictionaryRef space_ref)
+{
+    if (!space_ref || CFGetTypeID(space_ref) != CFDictionaryGetTypeID()) return 0;
+    CFNumberRef sid_ref = CFDictionaryGetValue(space_ref, CFSTR("ManagedSpaceID"));
+    if (!sid_ref) sid_ref = CFDictionaryGetValue(space_ref, CFSTR("id64"));
+    if (!sid_ref || CFGetTypeID(sid_ref) != CFNumberGetTypeID()) return 0;
+    int64_t sid = 0;
+    return CFNumberGetValue(sid_ref, kCFNumberSInt64Type, &sid) && sid > 0 ? (uint64_t) sid : 0;
+}
+
 int space_manager_mission_control_index(uint64_t sid)
 {
     uint64_t result = 0;
@@ -504,8 +514,7 @@ int space_manager_mission_control_index(uint64_t sid)
 
         for (int j = 0; j < spaces_count; ++j) {
             CFDictionaryRef space_ref = CFArrayGetValueAtIndex(spaces_ref, j);
-            CFNumberRef sid_ref = CFDictionaryGetValue(space_ref, CFSTR("id64"));
-            CFNumberGetValue(sid_ref, CFNumberGetType(sid_ref), &result);
+            result = space_manager_space_id(space_ref);
             if (sid == result) goto out;
 
             ++desktop_cnt;
@@ -534,8 +543,7 @@ uint64_t space_manager_mission_control_space(int desktop_id)
 
         for (int j = 0; j < spaces_count; ++j) {
             CFDictionaryRef space_ref = CFArrayGetValueAtIndex(spaces_ref, j);
-            CFNumberRef sid_ref = CFDictionaryGetValue(space_ref, CFSTR("id64"));
-            CFNumberGetValue(sid_ref, CFNumberGetType(sid_ref), &result);
+            result = space_manager_space_id(space_ref);
             if (desktop_cnt == desktop_id) goto out;
 
             ++desktop_cnt;
@@ -570,8 +578,7 @@ uint64_t space_manager_prev_space(uint64_t sid)
 
         for (int j = 0; j < spaces_count; ++j) {
             CFDictionaryRef space_ref = CFArrayGetValueAtIndex(spaces_ref, j);
-            CFNumberRef sid_ref = CFDictionaryGetValue(space_ref, CFSTR("id64"));
-            CFNumberGetValue(sid_ref, CFNumberGetType(sid_ref), &n_sid);
+            n_sid = space_manager_space_id(space_ref);
             if (n_sid == sid) goto out;
 
             p_sid = n_sid;
@@ -599,8 +606,7 @@ uint64_t space_manager_next_space(uint64_t sid)
 
         for (int j = 0; j < spaces_count; ++j) {
             CFDictionaryRef space_ref = CFArrayGetValueAtIndex(spaces_ref, j);
-            CFNumberRef sid_ref = CFDictionaryGetValue(space_ref, CFSTR("id64"));
-            CFNumberGetValue(sid_ref, CFNumberGetType(sid_ref), &n_sid);
+            n_sid = space_manager_space_id(space_ref);
             if (found_sid) goto out;
 
             found_sid = n_sid == sid;
@@ -623,8 +629,7 @@ uint64_t space_manager_first_space(void)
     CFArrayRef spaces_ref = CFDictionaryGetValue(display_ref, CFSTR("Spaces"));
 
     CFDictionaryRef space_ref = CFArrayGetValueAtIndex(spaces_ref, 0);
-    CFNumberRef sid_ref = CFDictionaryGetValue(space_ref, CFSTR("id64"));
-    CFNumberGetValue(sid_ref, CFNumberGetType(sid_ref), &sid);
+    sid = space_manager_space_id(space_ref);
 
     CFRelease(display_spaces_ref);
     return sid;
@@ -643,8 +648,7 @@ uint64_t space_manager_last_space(void)
     int spaces_count = CFArrayGetCount(spaces_ref);
 
     CFDictionaryRef space_ref = CFArrayGetValueAtIndex(spaces_ref, spaces_count-1);
-    CFNumberRef sid_ref = CFDictionaryGetValue(space_ref, CFSTR("id64"));
-    CFNumberGetValue(sid_ref, CFNumberGetType(sid_ref), &sid);
+    sid = space_manager_space_id(space_ref);
 
     CFRelease(display_spaces_ref);
     return sid;
@@ -924,22 +928,98 @@ enum space_op_error space_manager_move_space_to_display(struct space_manager *sm
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
-bool space_manager_focus_space_using_gesture(uint32_t new_did, uint64_t new_sid)
+static CGEventRef space_manager_make_swipe_event(bool is_right, int phase)
 {
+    CGEventRef event = CGEventCreate(NULL);
+    if (!event) return NULL;
+
+    // Field names as in the legacy path below; 125 is read back as pos_x by
+    // iss_generate_iohid_payload (src/event_serialize.c); 134, 138 and 169
+    // are undocumented.
+    CGEventSetIntegerValueField(event, /* kCGSEventTypeField            */  55, /* kCGSEventDockControl       */ 30);
+    CGEventSetIntegerValueField(event, /* kCGEventGestureHIDType        */ 110, /* kIOHIDEventTypeDockSwipe   */ 23);
+    CGEventSetIntegerValueField(event, /* kCGEventGesturePhase          */ 132, phase);
+    CGEventSetDoubleValueField(event,  /* kCGEventGestureSwipeProgress  */ 124, is_right ? -0.000016 : 0.000016);
+    CGEventSetIntegerValueField(event, /* kCGEventGestureSwipeMotion    */ 123, /* kCGGestureMotionHorizontal */  1);
+    CGEventSetIntegerValueField(event, /* undocumented field            */ 134, phase);
+    CGEventSetDoubleValueField(event,  /* undocumented field            */ 138, 3.0);
+    CGEventSetDoubleValueField(event,  /* undocumented field            */ 169, (double) mach_absolute_time());
+    CGEventSetDoubleValueField(event,  /* pos_x                         */ 125, 0.1);
+    if (phase == 4) CGEventSetDoubleValueField(event, /* kCGEventGestureSwipeVelocityX */ 129, is_right ? -500.0 : 500.0);
+
+    CGEventRef augmented = iss_augment_dock_swipe_event(event);
+    CFRelease(event);
+    return augmented;
+}
+
+static bool space_manager_post_swipe(bool is_right)
+{
+    // 1 and 4 are kCGSGesturePhaseBegan/Ended as in the legacy path; 2 is
+    // undocumented here; 8 (below) is the cancel phase.
+    const int phases[] = { 1, 2, 4 };
+    for (int p = 0; p < 3; ++p) {
+        // Raw HID timestamps must be generated immediately before each phase is posted.
+        CGEventRef event = space_manager_make_swipe_event(is_right, phases[p]);
+        if (!event) {
+            debug("%s: could not build swipe phase %d\n", __FUNCTION__, phases[p]);
+            if (p > 0) {
+                CGEventRef cancelled = space_manager_make_swipe_event(is_right, 8);
+                if (cancelled) {
+                    CGEventPost(kCGSessionEventTap, cancelled);
+                    CFRelease(cancelled);
+                } else {
+                    debug("%s: could not build cancel phase; the Dock may be left mid-swipe\n", __FUNCTION__);
+                }
+            }
+            return false;
+        }
+        CGEventPost(kCGSessionEventTap, event);
+        CFRelease(event);
+        usleep(1000);
+    }
+    return true;
+}
+
+static enum space_op_error space_manager_post_swipes(int count, bool is_right, bool warp, CGPoint point)
+{
+    // Building one event up front catches augmentation failures before anything is posted.
+    CGEventRef probe = space_manager_make_swipe_event(is_right, 1);
+    if (!probe) {
+        debug("%s: could not build a synthetic swipe event; nothing posted\n", __FUNCTION__);
+        return SPACE_OP_ERROR_GESTURE;
+    }
+    CFRelease(probe);
+
+    if (warp) CGWarpMouseCursorPosition(point);
+
+    for (int i = 0; i < count; ++i) {
+        if (!space_manager_post_swipe(is_right)) {
+            debug("%s: swipe %d of %d failed\n", __FUNCTION__, i + 1, count);
+            return SPACE_OP_ERROR_GESTURE_INTERRUPTED;
+        }
+        if (i + 1 < count) usleep(25000);
+    }
+
+    return SPACE_OP_ERROR_SUCCESS;
+}
+
+enum space_op_error space_manager_focus_space_using_gesture(uint32_t new_did, uint64_t new_sid)
+{
+    if (!new_did || !new_sid) return SPACE_OP_ERROR_GESTURE;
     int cur_index = space_manager_mission_control_index(display_space_id(new_did));
     int new_index = space_manager_mission_control_index(new_sid);
+    if (cur_index <= 0 || new_index <= 0) return SPACE_OP_ERROR_GESTURE;
 
     int count = abs(new_index - cur_index);
     if (count == 0) {
         display_manager_focus_display(new_did, new_sid);
-        return true;
+        return SPACE_OP_ERROR_SUCCESS;
     }
 
     CGPoint point = display_center(new_did);
     uint32_t cur_did = display_manager_cursor_display_id();
 
     bool focus_display = cur_did != new_did;
-    if (focus_display) CGWarpMouseCursorPosition(point);
 
     //
     // NOTE(asmvik): MacOS does not have an API that allows for space activation.
@@ -952,24 +1032,33 @@ bool space_manager_focus_space_using_gesture(uint32_t new_did, uint64_t new_sid)
     // Technique first observed in practice, and reverse-engineered from, BetterTouchTool.
     //
 
-    CGEventRef event_dock_control = CGEventCreate(NULL);
-    if (!event_dock_control) return false;
+    bool is_right = new_index > cur_index;
+    enum space_op_error result = SPACE_OP_ERROR_SUCCESS;
+    if (workspace_is_macos_goldengate()) {
+        result = space_manager_post_swipes(count, is_right, focus_display, point);
+        if (result == SPACE_OP_ERROR_GESTURE) return result;
+    } else {
+        CGEventRef event_dock_control = CGEventCreate(NULL);
+        if (!event_dock_control) return SPACE_OP_ERROR_GESTURE;
+        if (focus_display) CGWarpMouseCursorPosition(point);
 
-    float sign = (new_index - cur_index) > 0 ? 1.0 : -1.0;
-    CGEventSetIntegerValueField(event_dock_control, /* kCGSEventTypeField            */  55, /* kCGSEventDockControl       */ 30);
-    CGEventSetIntegerValueField(event_dock_control, /* kCGEventGestureHIDType        */ 110, /* kIOHIDEventTypeDockSwipe   */ 23);
-    CGEventSetIntegerValueField(event_dock_control, /* kCGEventGestureSwipeMotion    */ 123, /* kCGGestureMotionHorizontal */  1);
-    CGEventSetDoubleValueField(event_dock_control,  /* kCGEventGestureSwipeProgress  */ 124, sign);
-    CGEventSetDoubleValueField(event_dock_control,  /* kCGEventGestureSwipeVelocityX */ 129, sign * 9999.0);
+        float sign = is_right ? 1.0 : -1.0;
+        CGEventSetIntegerValueField(event_dock_control, /* kCGSEventTypeField            */  55, /* kCGSEventDockControl       */ 30);
+        CGEventSetIntegerValueField(event_dock_control, /* kCGEventGestureHIDType        */ 110, /* kIOHIDEventTypeDockSwipe   */ 23);
+        CGEventSetIntegerValueField(event_dock_control, /* kCGEventGestureSwipeMotion    */ 123, /* kCGGestureMotionHorizontal */  1);
+        CGEventSetDoubleValueField(event_dock_control,  /* kCGEventGestureSwipeProgress  */ 124, sign);
+        CGEventSetDoubleValueField(event_dock_control,  /* kCGEventGestureSwipeVelocityX */ 129, sign * 9999.0);
 
-    for (int i = 0; i < count; ++i) {
-        CGEventSetIntegerValueField(event_dock_control, /* kCGEventGesturePhase */ 132, /* kCGSGesturePhaseBegan */ 1);
-        CGEventPost(kCGSessionEventTap, event_dock_control);
-        CGEventSetIntegerValueField(event_dock_control, /* kCGEventGesturePhase */ 132, /* kCGSGesturePhaseEnded */ 4);
-        CGEventPost(kCGSessionEventTap, event_dock_control);
+        for (int i = 0; i < count; ++i) {
+            CGEventSetIntegerValueField(event_dock_control, /* kCGEventGesturePhase */ 132, /* kCGSGesturePhaseBegan */ 1);
+            CGEventPost(kCGSessionEventTap, event_dock_control);
+            CGEventSetIntegerValueField(event_dock_control, /* kCGEventGesturePhase */ 132, /* kCGSGesturePhaseEnded */ 4);
+            CGEventPost(kCGSessionEventTap, event_dock_control);
+        }
+        CFRelease(event_dock_control);
     }
-    CFRelease(event_dock_control);
 
+    // An interrupted sequence has already warped the cursor, so the display bookkeeping still applies.
     if (focus_display) {
         display_manager_set_active_display_id(new_did);
         if (space_manager_active_space() != new_sid) {
@@ -978,9 +1067,18 @@ bool space_manager_focus_space_using_gesture(uint32_t new_did, uint64_t new_sid)
         }
     }
 
-    return true;
+    return result;
 }
 #pragma clang diagnostic pop
+
+enum space_op_error space_manager_focus_space_fallback(uint32_t did, uint64_t sid)
+{
+    // Upstream fails here; only macOS 27 needs the gesture, which warps the cursor and clicks.
+    if (!workspace_is_macos_goldengate()) return SPACE_OP_ERROR_SCRIPTING_ADDITION;
+
+    debug("%s: scripting addition failed, using synthetic gesture for space %lld\n", __FUNCTION__, sid);
+    return space_manager_focus_space_using_gesture(did, sid);
+}
 
 enum space_op_error space_manager_focus_space(uint64_t sid)
 {
@@ -1002,7 +1100,7 @@ enum space_op_error space_manager_focus_space(uint64_t sid)
             display_manager_focus_display(new_did, sid);
         }
     } else {
-        space_manager_focus_space_using_gesture(new_did, sid);
+        return space_manager_focus_space_using_gesture(new_did, sid);
     }
 
     return SPACE_OP_ERROR_SUCCESS;
@@ -1031,7 +1129,8 @@ enum space_op_error space_manager_switch_space(uint64_t sid)
         return SPACE_OP_ERROR_SUCCESS;
     }
 
-    return scripting_addition_focus_space(sid) ? SPACE_OP_ERROR_SUCCESS : SPACE_OP_ERROR_SCRIPTING_ADDITION;
+    if (scripting_addition_focus_space(sid)) return SPACE_OP_ERROR_SUCCESS;
+    return space_manager_focus_space_fallback(did, sid);
 }
 
 enum space_op_error space_manager_destroy_space(uint64_t sid)
@@ -1069,23 +1168,6 @@ enum space_op_error space_manager_add_space(uint64_t sid)
     if (is_animating) return SPACE_OP_ERROR_DISPLAY_IS_ANIMATING;
 
     return scripting_addition_create_space(sid) ? SPACE_OP_ERROR_SUCCESS : SPACE_OP_ERROR_SCRIPTING_ADDITION;
-}
-
-void space_manager_assign_process_to_space(pid_t pid, uint64_t sid)
-{
-    SLSProcessAssignToSpace(g_connection, pid, sid);
-}
-
-void space_manager_assign_process_to_all_spaces(pid_t pid)
-{
-    SLSProcessAssignToAllSpaces(g_connection, pid);
-}
-
-bool space_manager_is_window_on_active_space(struct window *window)
-{
-    uint64_t sid = space_manager_active_space();
-    bool result = space_manager_is_window_on_space(sid, window);
-    return result;
 }
 
 bool space_manager_is_window_on_space(uint64_t sid, struct window *window)

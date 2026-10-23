@@ -3,7 +3,17 @@ unsigned int __src_osax_payload_len;
 unsigned char __src_osax_loader[1];
 unsigned int __src_osax_loader_len;
 
+#include <CoreGraphics/CoreGraphics.h>
+static void test_capture_event_post(CGEventTapLocation tap, CGEventRef event);
+static CGEventRef test_create_event(CGEventSourceRef source);
+static CGError test_capture_warp(CGPoint point);
+#define CGEventPost test_capture_event_post
+#define CGEventCreate test_create_event
+#define CGWarpMouseCursorPosition test_capture_warp
 #include "../../src/manifest.m"
+#undef CGEventPost
+#undef CGEventCreate
+#undef CGWarpMouseCursorPosition
 
 #define TEST_SIG(name) bool test_##name(void)
 typedef TEST_SIG(function);
@@ -11,8 +21,10 @@ typedef TEST_SIG(function);
 #define TEST_FUNC(name, code) static TEST_SIG(name) { char *test_name = #name; bool result = true; {code} return result; }
 #define TEST_CHECK(r, e) if ((r) != (e)) { printf("                   \e[1;33m%s\e[m\e[1;31m#%d %s == %s\e[m \e[1;31m(%d == %d)\e[m\n", test_name, __LINE__, #r, #e, r, e); result = false; }
 
+#include "ref_upstream_rule.c"
 #include "area.c"
 #include "socket_frame.c"
+#include "ref_upstream_view.c"
 #include "zig_geometry.c"
 #include "zig_message.c"
 #include "zig_view.c"
@@ -21,23 +33,48 @@ typedef TEST_SIG(function);
 #include "zig_window.c"
 #include "zig_display.c"
 #include "zig_mouse.c"
+#include "zig_regress.c"
 #include "zig_cli.c"
+#include "macos27.c"
+#include "event_serialize.c"
+#include "sa_response.c"
 
 #define TEST_ENTRY(name) { #name, test_##name },
 #define TEST_LIST                                              \
+    TEST_ENTRY(macos_swipe_failure)                            \
+    TEST_ENTRY(macos_swipe_timing)                             \
+    TEST_ENTRY(macos_swipe_sequence)                           \
+    TEST_ENTRY(macos_swipe_sequence_failure)                   \
+    TEST_ENTRY(macos_gesture_fallback_gate)                    \
+    TEST_ENTRY(sa_response_status)                             \
+    TEST_ENTRY(macos_space_dictionary)                         \
+    TEST_ENTRY(macos_swipe_events)                             \
+    TEST_ENTRY(event_serialize_roundtrip)                      \
+    TEST_ENTRY(event_serialize_payload_replacement)             \
+    TEST_ENTRY(event_serialize_malformed)                      \
+    TEST_ENTRY(event_serialize_version_rejected)               \
+    TEST_ENTRY(event_serialize_fixed1616_clamp)                \
+    TEST_ENTRY(macos_version_detection)                        \
     TEST_ENTRY(display_area_is_in_direction)                   \
     TEST_ENTRY(closest_display_in_direction)                   \
     TEST_ENTRY(socket_frame_valid_args)                        \
     TEST_ENTRY(socket_frame_byte_exact)                        \
-    TEST_ENTRY(socket_frame_malformed)                         \
+    TEST_ENTRY(socket_frame_many_args)                         \
+    TEST_ENTRY(socket_frame_max_boundary)                      \
     TEST_ENTRY(socket_frame_unknown_domain_fails)                \
     TEST_ENTRY(socket_frame_unknown_command_fails)               \
     TEST_ENTRY(socket_frame_rule_list_ok)                        \
     TEST_ENTRY(socket_frame_signal_list_ok)                      \
-    TEST_ENTRY(socket_frame_failure_marker)                      \
+    TEST_ENTRY(socket_frame_empty_arg)                           \
+    TEST_ENTRY(socket_frame_daemon_rejects_zero)                 \
+    TEST_ENTRY(socket_frame_daemon_rejects_negative)             \
+    TEST_ENTRY(socket_frame_daemon_rejects_short_read)           \
+    TEST_ENTRY(socket_frame_daemon_rejects_missing_nul)          \
+    TEST_ENTRY(socket_frame_daemon_rejects_oversized)            \
     TEST_ENTRY(zig_area_make_pair_parity)                        \
     TEST_ENTRY(zig_area_direction_parity)                      \
     TEST_ENTRY(zig_area_make_pair_rounding)                      \
+    TEST_ENTRY(zig_area_extreme_values)                          \
     TEST_ENTRY(zig_message_token_stream)                         \
     TEST_ENTRY(zig_message_token_compare)                        \
     TEST_ENTRY(zig_message_token_numbers)                        \
@@ -72,11 +109,13 @@ typedef TEST_SIG(function);
     TEST_ENTRY(zig_view_lifecycle_destroy)                       \
     TEST_ENTRY(zig_view_serialize)                               \
     TEST_ENTRY(zig_view_find_in_direction)                       \
+    TEST_ENTRY(zig_view_deep_spine)                              \
     TEST_ENTRY(zig_display_serialize)                            \
     TEST_ENTRY(zig_regex_match_parity)                           \
     TEST_ENTRY(zig_rule_matches_window_parity)                   \
     TEST_ENTRY(zig_mouse_mod_parity)                             \
     TEST_ENTRY(zig_mouse_triangle_parity)                        \
+    TEST_ENTRY(zig_mouse_triangle_inexact_parity)                \
     TEST_ENTRY(zig_mouse_drop_action_parity)                     \
     TEST_ENTRY(zig_cli_help_golden)                              \
     TEST_ENTRY(zig_cli_help_domains)                             \
@@ -88,6 +127,7 @@ typedef TEST_SIG(function);
     TEST_ENTRY(zig_util_rgba)                                    \
     TEST_ENTRY(zig_util_find_rank)                               \
     TEST_ENTRY(zig_util_easing)                               \
+    TEST_ENTRY(zig_util_easing_dense)                            \
     TEST_ENTRY(zig_rule_combine_display_space)                   \
     TEST_ENTRY(zig_rule_combine_flags_cleared)                   \
     TEST_ENTRY(zig_rule_combine_scratchpad_props_grid)           \
@@ -97,11 +137,16 @@ typedef TEST_SIG(function);
     TEST_ENTRY(zig_rule_serialize_parity)                        \
     TEST_ENTRY(zig_rule_parse_parity)                            \
     TEST_ENTRY(zig_rule_parse_pinned)                            \
+    TEST_ENTRY(zig_rule_parse_relative_parity)                   \
+    TEST_ENTRY(zig_rule_parse_lazy_lookup)                       \
     TEST_ENTRY(zig_window_resize_math)                           \
     TEST_ENTRY(zig_window_move_math)                             \
     TEST_ENTRY(zig_window_undersized_parity)                     \
     TEST_ENTRY(zig_window_flag_parity)                             \
-    TEST_ENTRY(zig_window_layer_parity)
+    TEST_ENTRY(zig_window_layer_parity)                          \
+    TEST_ENTRY(zig_regress_window_list_single_leaf_31)           \
+    TEST_ENTRY(zig_regress_window_list_two_leaves_12_31)         \
+    TEST_ENTRY(zig_regress_rule_negative_grid)
 
 static struct {
     char *name;

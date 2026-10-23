@@ -1,68 +1,9 @@
 /* Message tokenizer parity tests (doc/zig-refactor-plan.md step 3).
  *
  * The Zig exports in zig/message.zig must match the token helpers in
- * src/message.c exactly. Layout contract: C struct token is 16 bytes and
- * C struct token_value is 32 bytes; the Zig MsgToken/TokenValue mirrors
- * assert the same sizes at compile time.
+ * src/message.c exactly. Layout contract: src/zig_abi.h pins
+ * struct token/token_value/properties/selector against zig/abi.zig.
  */
-
-void yabai_message_get_token(char **message, struct token *out);
-bool yabai_token_prefix(const struct token *token, char *match);
-bool yabai_token_equals(const struct token *token, char *match);
-bool yabai_token_is_valid(const struct token *token);
-bool yabai_token_is_positive_integer(const struct token *token, int *value);
-bool yabai_token_is_hexadecimal(const struct token *token, uint32_t *value);
-bool yabai_token_is_float(const struct token *token, float *value);
-void yabai_token_to_value(const struct token *token, struct token_value *out);
-void yabai_parse_key_value_pair(char *token, char **key, char **value, bool *exclusion);
-uint8_t yabai_parse_value_type(char *type);
-uint8_t yabai_parse_resize_handle(char *handle);
-
-struct frame_field
-{
-    char *ptr;
-    int len;
-};
-
-int yabai_socket_frame_decode(const char *frame, size_t frame_size, struct frame_field *fields, size_t max_fields, size_t *out_count);
-
-_Static_assert(sizeof(struct frame_field) == 16, "frame_field size drift");
-
-struct yabai_properties
-{
-    struct token token;
-    bool did_parse;
-    bool did_error;
-    uint64_t flags;
-};
-
-bool yabai_parse_property(struct yabai_properties *properties, char *property, const uint64_t *property_val, char **property_str, int property_count);
-void yabai_parse_properties(FILE *rsp, const struct token *token, const uint64_t *property_val, char **property_str, int property_count, struct yabai_properties *out);
-bool yabai_parse_label(FILE *rsp, const struct token *token, int type, char **label);
-
-struct yabai_selector
-{
-    struct token token;
-    bool did_parse;
-    uint64_t payload;
-};
-
-void yabai_parse_insert_selector(FILE *rsp, char **message, struct yabai_selector *out);
-
-_Static_assert(sizeof(struct selector) == 32, "C selector size drift");
-_Static_assert(sizeof(struct yabai_selector) == 32, "yabai selector size drift");
-_Static_assert(offsetof(struct selector, did_parse) == 16, "C selector.did_parse drift");
-_Static_assert(offsetof(struct selector, dir) == 24, "C selector.dir drift");
-_Static_assert(offsetof(struct yabai_selector, payload) == 24, "yabai selector.payload drift");
-_Static_assert(DIR_NORTH == 360, "DIR_NORTH drift");
-_Static_assert(DIR_EAST == 90, "DIR_EAST drift");
-_Static_assert(DIR_SOUTH == 180, "DIR_SOUTH drift");
-_Static_assert(DIR_WEST == 270, "DIR_WEST drift");
-_Static_assert(STACK == 111, "STACK drift");
-
-_Static_assert(sizeof(struct properties) == 32, "C properties size drift");
-_Static_assert(sizeof(struct yabai_properties) == 32, "properties size drift");
-_Static_assert(offsetof(struct properties, flags) == 24, "C properties.flags drift");
 
 static char *prop_names[] = { "id", "uuid", "index", "label" };
 static uint64_t prop_vals[] = { 0x001, 0x002, 0x004, 0x008 };
@@ -70,7 +11,7 @@ static uint64_t prop_vals[] = { 0x001, 0x002, 0x004, 0x008 };
 static int prop_case(char *name, bool expected_found, uint64_t expected_flags)
 {
     struct properties c_props;
-    struct yabai_properties z_props;
+    struct properties z_props;
     memset(&c_props, 0, sizeof(c_props));
     memset(&z_props, 0, sizeof(z_props));
 
@@ -96,7 +37,7 @@ TEST_FUNC(zig_message_parse_property,
     TEST_CHECK(prop_case("idx", false, 0), 1);
 
     /* Flags accumulate across calls like the real query loop. */
-    struct yabai_properties acc;
+    struct properties acc;
     memset(&acc, 0, sizeof(acc));
     bool f1 = yabai_parse_property(&acc, "id", prop_vals, prop_names, array_count(prop_names));
     bool f2 = yabai_parse_property(&acc, "index", prop_vals, prop_names, array_count(prop_names));
@@ -104,10 +45,6 @@ TEST_FUNC(zig_message_parse_property,
     TEST_CHECK(f1 && f2 && !f3, 1);
     TEST_CHECK(acc.flags == 0x005, 1);
 })
-
-_Static_assert(sizeof(struct token) == 16, "struct token must stay 16 bytes");
-_Static_assert(sizeof(struct token_value) == 32, "struct token_value must stay 32 bytes");
-_Static_assert(offsetof(struct token_value, type) == 16, "token_value.type must sit at offset 16");
 
 static int token_stream_check(char *frame, int total)
 {
@@ -204,8 +141,10 @@ TEST_FUNC(zig_message_token_compare,
     TEST_CHECK(token_is_valid(nt) != yabai_token_is_valid(&nt), 0);
 })
 
-static char *int_texts[] = { "0", "42", "007", "4294967295", "", "12a", "-5", " 12", "0x10" };
-static char *hex_texts[] = { "0x1F", "0XdeadBEEF", "0x0", "0x", "0xG1", "123", "", "0x123456789" };
+/* Overflowing inputs wrap like the C helpers (int: two's complement as
+ * clang emits it; uint32_t: defined modulo 2^32). */
+static char *int_texts[] = { "0", "42", "007", "4294967295", "", "12a", "-5", " 12", "0x10", "2147483647", "2147483648", "99999999999", "999999999999999999999999" };
+static char *hex_texts[] = { "0x1F", "0XdeadBEEF", "0x0", "0x", "0xG1", "123", "", "0x123456789", "0xFFFFFFFF", "0xFFFFFFFFFFFF", "0x1234567890abcdef1" };
 static char *float_texts[] = { "3.5", "-0.25", "1e3", "nan", "inf", "0x1p3", "", "abc", "12px" };
 
 TEST_FUNC(zig_message_token_numbers,
@@ -249,6 +188,22 @@ TEST_FUNC(zig_message_token_numbers,
         bool z_ok = yabai_token_is_float(&t, &z_value);
         TEST_CHECK(c_ok != z_ok, 0);
         if (c_ok && z_ok) TEST_CHECK(memcmp(&c_value, &z_value, sizeof(float)), 0);
+    }
+
+    /* Pinned wrap results, independent of the C helper. */
+    {
+        struct token t;
+        t.text = "99999999999";
+        t.length = 11;
+        int v = 0;
+        TEST_CHECK(yabai_token_is_positive_integer(&t, &v), true);
+        TEST_CHECK(v, 1215752191);
+        struct token h;
+        h.text = "0x1234567890abcdef1";
+        h.length = 19;
+        uint32_t hv = 0;
+        TEST_CHECK(yabai_token_is_hexadecimal(&h, &hv), true);
+        TEST_CHECK(hv, 0x0abcdef1u);
     }
 
     struct token known;
@@ -346,21 +301,6 @@ struct named_const_case
     char *name;
     uint8_t expected;
 };
-
-/* Pin the macro values from src/misc/macros.h so a silent renumber of
- * the TYPE and HANDLE constants breaks the build instead of silently
- * re-pinning the hand vectors below. */
-_Static_assert(TYPE_ABS == 0x1, "TYPE_ABS drift");
-_Static_assert(TYPE_REL == 0x2, "TYPE_REL drift");
-_Static_assert(HANDLE_TOP == 0x01, "HANDLE_TOP drift");
-_Static_assert(HANDLE_BOTTOM == 0x02, "HANDLE_BOTTOM drift");
-_Static_assert(HANDLE_LEFT == 0x04, "HANDLE_LEFT drift");
-_Static_assert(HANDLE_RIGHT == 0x08, "HANDLE_RIGHT drift");
-_Static_assert(HANDLE_ABS == 0x10, "HANDLE_ABS drift");
-_Static_assert((HANDLE_TOP | HANDLE_LEFT) == 0x05, "HANDLE_TOP|LEFT drift");
-_Static_assert((HANDLE_TOP | HANDLE_RIGHT) == 0x09, "HANDLE_TOP|RIGHT drift");
-_Static_assert((HANDLE_BOTTOM | HANDLE_LEFT) == 0x06, "HANDLE_BOTTOM|LEFT drift");
-_Static_assert((HANDLE_BOTTOM | HANDLE_RIGHT) == 0x0A, "HANDLE_BOTTOM|RIGHT drift");
 
 static struct named_const_case value_type_cases[] =
 {
@@ -497,7 +437,7 @@ static int props_parity_case(char *input)
     if (!c_rsp || !z_rsp) return 0;
 
     struct properties c_props = parse_properties(c_rsp, c_tok, prop_vals, prop_names, array_count(prop_names));
-    struct yabai_properties z_props;
+    struct properties z_props;
     memset(&z_props, 0, sizeof(z_props));
     yabai_parse_properties(z_rsp, &z_tok, prop_vals, prop_names, array_count(prop_names), &z_props);
 
@@ -548,7 +488,7 @@ TEST_FUNC(zig_message_parse_properties,
     z_ntok.text = z_null;
     z_ntok.length = 8;
     struct properties c_np = parse_properties(NULL, c_ntok, prop_vals, prop_names, array_count(prop_names));
-    struct yabai_properties z_np;
+    struct properties z_np;
     memset(&z_np, 0, sizeof(z_np));
     yabai_parse_properties(NULL, &z_ntok, prop_vals, prop_names, array_count(prop_names), &z_np);
     TEST_CHECK(c_np.did_parse != z_np.did_parse, 0);
@@ -565,7 +505,7 @@ TEST_FUNC(zig_message_parse_properties,
     char *hmsg = NULL;
     size_t hlen = 0;
     FILE *hrsp = open_memstream(&hmsg, &hlen);
-    struct yabai_properties hz;
+    struct properties hz;
     memset(&hz, 0, sizeof(hz));
     yabai_parse_properties(hrsp, &htok, prop_vals, prop_names, array_count(prop_names), &hz);
     fflush(hrsp);
@@ -577,12 +517,6 @@ TEST_FUNC(zig_message_parse_properties,
     if (hlen > 0) TEST_CHECK(memcmp(hmsg, "\x07'bogus' is not a valid property.\n", hlen), 0);
     free(hmsg);
 })
-
-/* Pin the enum label_type values so a silent renumber breaks the build
- * instead of silently re-pinning the parity vectors below. */
-_Static_assert(LABEL_DISPLAY == 0, "LABEL_DISPLAY drift");
-_Static_assert(LABEL_SPACE == 1, "LABEL_SPACE drift");
-_Static_assert(LABEL_WINDOW == 2, "LABEL_WINDOW drift");
 
 /* C-vs-Zig parity for parse_label() (src/message.c): return value,
  * malloc'd label bytes plus NUL, untouched label on error paths, and

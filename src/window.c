@@ -4,11 +4,10 @@ extern int g_layer_below_window_level;
 extern int g_layer_above_window_level;
 extern int g_connection;
 
-/* Zig delegates (zig/window.zig): parity-proven equivalents of the
- * flag/size reads below. Signatures in src/window.h are unchanged. */
-bool yabai_window_can_move(uint8_t flags);
-bool yabai_window_can_resize(uint8_t flags);
-bool yabai_window_is_undersized(double w, double h);
+/* Zig delegates (zig/window.zig): window_can_move, window_can_resize and
+ * window_is_undersized below call Zig exports that replace the dd84572
+ * bodies frozen as ref_* in tests/src/ref_upstream_view.c and are
+ * parity-tested against them. Signatures in src/window.h are unchanged. */
 
 bool window_observe(struct window *window)
 {
@@ -904,7 +903,7 @@ int window_level(uint32_t wid)
 {
     int level = 0;
 
-    if (workspace_is_macos_ventura() || workspace_is_macos_sonoma() || workspace_is_macos_sequoia() || workspace_is_macos_tahoe()) {
+    if (workspace_is_macos_ventura() || workspace_is_macos_sonoma() || workspace_is_macos_sequoia() || (workspace_is_macos_tahoe() || workspace_is_macos_goldengate())) {
         CFArrayRef window_ref = cfarray_of_cfnumbers(&wid, sizeof(uint32_t), 1, kCFNumberSInt32Type);
 
         CFTypeRef query = SLSWindowQueryWindows(g_connection, window_ref, 1);
@@ -949,7 +948,7 @@ static int SLSGetWindowSubLevel__Internal(int cid, uint32_t wid)
     msg.header.msgh_bits = 0x1513;
     msg.header.msgh_remote_port = CGSGetConnectionPortById(cid);
     msg.header.msgh_local_port = mig_get_special_reply_port();
-    msg.header.msgh_id = workspace_is_macos_tahoe() ? 0x76E3 : 0x73C3;
+    msg.header.msgh_id = (workspace_is_macos_tahoe() || workspace_is_macos_goldengate()) ? 0x76E3 : 0x73C3;
     mach_msg(&msg.header, MACH_SEND_MSG|MACH_RCV_MSG, 0x24, 0x30, msg.header.msgh_local_port, 0, 0);
 
     return msg.sub_level;

@@ -4,7 +4,7 @@
 #define SA_SOCKET_PATH_FMT "/tmp/yabai-sa_%s.socket"
 #define SA_SOCKET_BUFF_LEN 0x1000
 
-#define OSAX_VERSION                "2.1.30"
+#define OSAX_VERSION                "2.1.37"
 
 #define OSAX_ATTRIB_DOCK_SPACES     0x01
 #define OSAX_ATTRIB_DPPM            0x02
@@ -21,6 +21,23 @@
                                      OSAX_ATTRIB_MOV_SPACE | \
                                      OSAX_ATTRIB_SET_WINDOW | \
                                      OSAX_ATTRIB_ANIM_TIME)
+
+static inline unsigned int osax_required_attributes(long major_version)
+{
+#ifdef __arm64__
+    // macOS 27 has no DPDesktopPictureManager, move-space or set-front-window signature, so require only the rest.
+    if (major_version == 27) {
+        return OSAX_ATTRIB_DOCK_SPACES | OSAX_ATTRIB_ADD_SPACE | OSAX_ATTRIB_REM_SPACE | OSAX_ATTRIB_ANIM_TIME;
+    }
+#else
+    (void) major_version;
+#endif
+    return OSAX_ATTRIB_ALL;
+}
+
+// Every request except the handshake gets exactly one status byte; no reply is a failure.
+#define SA_RESPONSE_SUCCESS 0x00
+#define SA_RESPONSE_FAILURE 0x01
 
 enum sa_opcode
 {

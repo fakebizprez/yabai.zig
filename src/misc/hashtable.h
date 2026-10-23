@@ -24,7 +24,6 @@ struct table
 };
 
 void table_init(struct table *table, int capacity, table_hash_func hash, table_compare_func cmp);
-void table_free(struct table *table);
 
 #define table_add(table, key, value) _table_add(table, key, sizeof(*key), value)
 void _table_add(struct table *table, void *key, int key_size, void *value);
@@ -52,24 +51,6 @@ void table_init(struct table *table, int capacity, table_hash_func hash, table_c
     table->cmp = cmp;
     table->buckets = malloc(sizeof(struct bucket *) * capacity);
     memset(table->buckets, 0, sizeof(struct bucket *) * capacity);
-}
-
-void table_free(struct table *table)
-{
-    for (int i = 0; i < table->capacity; ++i) {
-        struct bucket *next, *bucket = table->buckets[i];
-        while (bucket) {
-            next = bucket->next;
-            free(bucket->key);
-            free(bucket);
-            bucket = next;
-        }
-    }
-
-    if (table->buckets) {
-        free(table->buckets);
-        table->buckets = NULL;
-    }
 }
 
 static struct bucket **

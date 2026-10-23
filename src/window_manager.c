@@ -6,24 +6,11 @@ extern struct process_manager g_process_manager;
 extern struct mouse_state g_mouse_state;
 extern double g_cv_host_clock_frequency;
 
-/* Zig delegates (zig/window.zig): parity-proven equivalents of the
- * frame math below. Signatures and call sites are unchanged. */
-void yabai_move_frame_math(const CGRect *frame, int type, float dx, float dy, float *x, float *y, float *w, float *h);
-void yabai_resize_frame_math(const CGRect *frame, int direction, float dx, float dy, float *fx, float *fy, float *fw, float *fh);
-
-/* Zig delegates (zig/view.zig, zig/geometry.zig): parity-proven
- * equivalents of the warp split seam below. Signatures elsewhere
- * are unchanged. */
-int yabai_window_node_get_split(struct view *view, struct window_node *node, int space_split_type);
-int yabai_window_node_get_gap(struct view *view);
-float yabai_window_node_get_ratio(struct window_node *node, float space_split_ratio);
-void yabai_area_make_pair(int split, int gap, float ratio, const struct area *parent, struct area *left, struct area *right);
-
-/* Zig delegate (zig/rule.zig): parity-proven equivalent of
- * window_manager_rule_matches_window below. Signature in
- * src/window_manager.h is unchanged; the window's application name
- * is lifted as a plain string at the boundary. */
-bool yabai_rule_matches_window(const struct rule *rule, const char *app_name, const char *window_title, const char *window_role, const char *window_subrole);
+/* Zig delegates (prototypes in src/zig_abi.h): zig/window.zig backs the
+ * frame math, zig/view.zig and zig/geometry.zig the warp split seam,
+ * and zig/rule.zig window_manager_rule_matches_window (the window's
+ * application name is lifted as a plain string at the boundary).
+ * Signatures and call sites are unchanged. */
 
 static TABLE_HASH_FUNC(hash_wm)
 {
@@ -903,19 +890,6 @@ void window_manager_purify_window(struct window_manager *wm, struct window *wind
             window_clear_flag(window, WINDOW_SHADOW);
         }
     }
-}
-
-int window_manager_find_rank_of_window_in_list(uint32_t wid, uint32_t *window_list, int window_count)
-{
-    for (int i = 0, rank = 0; i < window_count; ++i) {
-        if (window_list[i] == wid) {
-            return rank;
-        } else {
-            ++rank;
-        }
-    }
-
-    return INT_MAX;
 }
 
 struct window *window_manager_find_window_on_space_by_rank_filtering_window(struct window_manager *wm, uint64_t sid, int rank, uint32_t filter_wid)
@@ -2276,8 +2250,9 @@ void window_manager_wait_for_native_fullscreen_transition(struct window *window)
         workspace_is_macos_ventura() ||
         workspace_is_macos_sonoma() ||
         workspace_is_macos_sequoia() ||
-        workspace_is_macos_tahoe()) {
-        while (!space_is_user(space_manager_active_space())) {
+        (workspace_is_macos_tahoe() || workspace_is_macos_goldengate())) {
+        int timeout = 30;
+        while (!space_is_user(space_manager_active_space()) && --timeout > 0) {
 
             //
             // NOTE(asmvik): Window has exited native-fullscreen mode.
@@ -2288,6 +2263,10 @@ void window_manager_wait_for_native_fullscreen_transition(struct window *window)
             //
 
             usleep(100000);
+        }
+
+        if (timeout == 0) {
+            debug("%s: timed out waiting for window %d to leave native-fullscreen\n", __FUNCTION__, window->id);
         }
     } else {
         uint32_t did = window_display_id(window->id);

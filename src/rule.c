@@ -1,12 +1,11 @@
 extern struct space_manager g_space_manager;
 extern struct window_manager g_window_manager;
 
-/* Zig delegates (zig/rule.zig): parity-proven equivalents of the JSON
- * emission and rule_combine_effects below. Signatures in src/rule.h are
- * unchanged. The combine export reuses the shared yabai_in_range_ii_f
- * across objects (defined in zig/util.zig). */
-void yabai_rule_serialize(FILE *rsp, struct rule *rule, int index, int did_index, int sid_index);
-void yabai_rule_combine_effects(struct rule_effects *effects, struct rule_effects *result);
+/* Zig delegates (zig/rule.zig): rule_serialize and rule_combine_effects
+ * below call Zig exports that replace the dd84572 bodies frozen as ref_*
+ * in tests/src/ref_upstream_rule.c and are parity-tested against them.
+ * Signatures in src/rule.h are unchanged. The combine export reuses the
+ * shared yabai_in_range_ii_f across objects (defined in zig/util.zig). */
 
 void rule_serialize(FILE *rsp, struct rule *rule, int index)
 {

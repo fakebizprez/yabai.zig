@@ -6,53 +6,6 @@
  * both variants are ported for the actually used combinations.
  */
 
-struct yabai_balance_node
-{
-    int y_count;
-    int x_count;
-};
-
-struct yabai_rgba_color
-{
-    uint32_t p;
-    float r;
-    float g;
-    float b;
-    float a;
-};
-
-void yabai_balance_node_add(const struct yabai_balance_node *a, const struct yabai_balance_node *b, struct yabai_balance_node *out);
-float yabai_clampf_range(float value, float min, float max);
-const char *yabai_json_bool(bool value);
-const char *yabai_json_optional_bool(int value);
-bool yabai_in_range_ii_f(float a, float b, float c);
-bool yabai_in_range_ii_i(int a, int b, int c);
-bool yabai_in_range_ei_f(float a, float b, float c);
-bool yabai_in_range_ie_i(int a, int b, int c);
-void yabai_rgba_color_from_hex(uint32_t color, struct yabai_rgba_color *out);
-int yabai_find_rank_in_list(uint32_t wid, const uint32_t *window_list, int window_count);
-float yabai_ease_in_sine(float t);
-float yabai_ease_out_sine(float t);
-float yabai_ease_in_out_sine(float t);
-float yabai_ease_in_quad(float t);
-float yabai_ease_out_quad(float t);
-float yabai_ease_in_out_quad(float t);
-float yabai_ease_in_cubic(float t);
-float yabai_ease_out_cubic(float t);
-float yabai_ease_in_out_cubic(float t);
-float yabai_ease_in_quart(float t);
-float yabai_ease_out_quart(float t);
-float yabai_ease_in_out_quart(float t);
-float yabai_ease_in_quint(float t);
-float yabai_ease_out_quint(float t);
-float yabai_ease_in_out_quint(float t);
-float yabai_ease_in_expo(float t);
-float yabai_ease_out_expo(float t);
-float yabai_ease_in_out_expo(float t);
-float yabai_ease_in_circ(float t);
-float yabai_ease_out_circ(float t);
-float yabai_ease_in_out_circ(float t);
-
 static float (*ease_c_fns[])(float) =
 {
     ease_in_sine, ease_out_sine, ease_in_out_sine,
@@ -98,17 +51,49 @@ TEST_FUNC(zig_util_easing,
     TEST_CHECK(yabai_ease_in_expo(0.0f) == 0.0f, 1);
 })
 
-_Static_assert(sizeof(struct balance_node) == 8, "C balance_node size drift");
-_Static_assert(sizeof(struct yabai_balance_node) == 8, "balance_node size drift");
-_Static_assert(sizeof(struct rgba_color) == 20, "C rgba_color size drift");
-_Static_assert(sizeof(struct yabai_rgba_color) == 20, "rgba_color size drift");
+/* Inputs an exhaustive [0,1] sweep found to differ:
+ * - powf(x, 2) rewritten to x * x by LLVM (in_out_quad, circ family; the
+ *   -O0 C build calls powf, which is not always x * x),
+ * - fused vs unfused a*b + c (out_quad, in_expo, in_out_expo): clang
+ *   contracts on arm64 only, so these fail on x86_64 if Zig fuses there. */
+static float ease_edge_inputs[] =
+{
+    0x1.00139ap-1f, 0x1.5d4318p-8f, 0x1.6a1002p-13f, 0x1.5d4318p-9f,
+    0x1.8p-24f, 0x1.99999ap-25f, 0x1.99999ap-26f,
+};
+
+/* Bit-pattern stride over [0,1] (about 1M floats per function), weighted
+ * like the exhaustive sweep, plus the edge inputs above. */
+TEST_FUNC(zig_util_easing_dense,
+{
+    int fn_count = array_count(ease_c_fns);
+    int edge_count = array_count(ease_edge_inputs);
+    for (int i = 0; i < fn_count; ++i) {
+        int mismatches = 0;
+        float first = 0.0f;
+        for (uint32_t u = 0; u <= 0x3f800000; u += 1013) {
+            float t;
+            memcpy(&t, &u, sizeof(t));
+            float c = ease_c_fns[i](t);
+            float z = ease_z_fns[i](t);
+            if (memcmp(&c, &z, sizeof(float)) != 0 && mismatches++ == 0) first = t;
+        }
+        for (int j = 0; j < edge_count; ++j) {
+            float c = ease_c_fns[i](ease_edge_inputs[j]);
+            float z = ease_z_fns[i](ease_edge_inputs[j]);
+            if (memcmp(&c, &z, sizeof(float)) != 0 && mismatches++ == 0) first = ease_edge_inputs[j];
+        }
+        if (mismatches) printf("ease %d: %d mismatches, first t=%a\n", i, mismatches, first);
+        TEST_CHECK(mismatches, 0);
+    }
+})
 
 TEST_FUNC(zig_util_balance_clamp,
 {
     struct balance_node c_add = balance_node_add((struct balance_node) { 1, 2 }, (struct balance_node) { 3, 4 });
-    struct yabai_balance_node za;
-    struct yabai_balance_node zb;
-    struct yabai_balance_node zout;
+    struct balance_node za;
+    struct balance_node zb;
+    struct balance_node zout;
     za.y_count = 1;
     za.x_count = 2;
     zb.y_count = 3;
@@ -218,7 +203,7 @@ TEST_FUNC(zig_util_in_range,
 TEST_FUNC(zig_util_rgba,
 {
     struct rgba_color c_red = rgba_color_from_hex(0xFF0000);
-    struct yabai_rgba_color z_red;
+    struct rgba_color z_red;
     yabai_rgba_color_from_hex(0xFF0000, &z_red);
     TEST_CHECK(memcmp(&c_red, &z_red, sizeof(struct rgba_color)), 0);
     TEST_CHECK(z_red.p, 0xFF0000);
@@ -229,7 +214,7 @@ TEST_FUNC(zig_util_rgba,
     TEST_CHECK(z_red.a == 0.0f, 1);
 
     struct rgba_color c_mix = rgba_color_from_hex(0x80402010);
-    struct yabai_rgba_color z_mix;
+    struct rgba_color z_mix;
     yabai_rgba_color_from_hex(0x80402010, &z_mix);
     TEST_CHECK(memcmp(&c_mix, &z_mix, sizeof(struct rgba_color)), 0);
 })
@@ -241,18 +226,18 @@ TEST_FUNC(zig_util_find_rank,
     int count = array_count(rank_list);
     int i = 0;
     for (i = 0; i < count; ++i) {
-        int c = window_manager_find_rank_of_window_in_list(rank_list[i], rank_list, count);
+        int c = ref_window_manager_find_rank_of_window_in_list(rank_list[i], rank_list, count);
         int z = yabai_find_rank_in_list(rank_list[i], rank_list, count);
         TEST_CHECK(c != z, 0);
         TEST_CHECK(c, i == 3 ? 1 : i);
     }
 
-    int c_miss = window_manager_find_rank_of_window_in_list(99, rank_list, count);
+    int c_miss = ref_window_manager_find_rank_of_window_in_list(99, rank_list, count);
     int z_miss = yabai_find_rank_in_list(99, rank_list, count);
     TEST_CHECK(c_miss != z_miss, 0);
     TEST_CHECK(c_miss, INT_MAX);
 
-    int c_empty = window_manager_find_rank_of_window_in_list(11, rank_list, 0);
+    int c_empty = ref_window_manager_find_rank_of_window_in_list(11, rank_list, 0);
     int z_empty = yabai_find_rank_in_list(11, rank_list, 0);
     TEST_CHECK(c_empty != z_empty, 0);
     TEST_CHECK(c_empty, INT_MAX);

@@ -46,7 +46,6 @@
 #include "misc/macros.h"
 #include "misc/memory_pool.h"
 #include "misc/ts.h"
-//#include "misc/autorelease.h"
 #include "misc/notify.h"
 #include "misc/log.h"
 #include "misc/helpers.h"
@@ -76,6 +75,8 @@
 #include "space_manager.h"
 #include "window_manager.h"
 #include "mouse_handler.h"
+#include "zig_abi.h"
+#include "event_serialize.h"
 
 #include "sa.m"
 #include "mission_control.c"
@@ -91,7 +92,11 @@
 #include "process_manager.c"
 #include "application.c"
 #include "display_manager.c"
+#include "event_serialize.c"
 #include "space_manager.c"
 #include "window_manager.c"
 #include "mouse_handler.c"
 #include "yabai.c"
+
+#define ZIG_ABI_PRIVATE_PINS
+#include "zig_abi.h"

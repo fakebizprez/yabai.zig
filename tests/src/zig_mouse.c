@@ -2,8 +2,9 @@
  *
  * The Zig exports in zig/mouse.zig must match triangle_contains_point() in
  * src/misc/helpers.h, mouse_mod_from_cgflags() and mouse_determine_drop_action()
- * in src/mouse_handler.c exactly. The C functions are the oracles (both are
- * linked into this TU via manifest.m; no SLS access needed).
+ * in src/mouse_handler.c exactly. The oracles are the unrouted C helpers
+ * and the frozen dd84572 drop-action body (ref_mouse_determine_drop_action
+ * in tests/src/ref_upstream_view.c); no SLS access needed.
  *
  * Seam: structs arrive lifted in. The triangle export takes a pointer to
  * three MousePoints (layout-identical to CGPoint: { f64, f64 } on 64-bit
@@ -14,42 +15,6 @@
  *
  * Must FAIL against the stub (TDD red) and pass on the real port (green).
  */
-
-bool yabai_triangle_contains_point(const CGPoint *t, const CGPoint *p);
-uint8_t yabai_mouse_mod_from_cgflags(uint32_t cgflags);
-int yabai_mouse_determine_drop_action(int drop_mode, int src_count, double fx, double fy, double fw, double fh, double px, double py);
-
-/* Pin the mirrored MOUSE_MOD_* bits (src/mouse_handler.h). */
-_Static_assert(MOUSE_MOD_NONE == 0x01, "MOUSE_MOD_NONE drift");
-_Static_assert(MOUSE_MOD_ALT == 0x02, "MOUSE_MOD_ALT drift");
-_Static_assert(MOUSE_MOD_SHIFT == 0x04, "MOUSE_MOD_SHIFT drift");
-_Static_assert(MOUSE_MOD_CMD == 0x08, "MOUSE_MOD_CMD drift");
-_Static_assert(MOUSE_MOD_CTRL == 0x10, "MOUSE_MOD_CTRL drift");
-_Static_assert(MOUSE_MOD_FN == 0x20, "MOUSE_MOD_FN drift");
-
-/* Pin the mirrored MOUSE_DROP_ACTION_* codes (src/mouse_handler.h). */
-_Static_assert(MOUSE_DROP_ACTION_NONE == 0, "MOUSE_DROP_ACTION_NONE drift");
-_Static_assert(MOUSE_DROP_ACTION_STACK == 1, "MOUSE_DROP_ACTION_STACK drift");
-_Static_assert(MOUSE_DROP_ACTION_SWAP == 2, "MOUSE_DROP_ACTION_SWAP drift");
-_Static_assert(MOUSE_DROP_ACTION_WARP_TOP == 3, "MOUSE_DROP_ACTION_WARP_TOP drift");
-_Static_assert(MOUSE_DROP_ACTION_WARP_RIGHT == 4, "MOUSE_DROP_ACTION_WARP_RIGHT drift");
-_Static_assert(MOUSE_DROP_ACTION_WARP_BOTTOM == 5, "MOUSE_DROP_ACTION_WARP_BOTTOM drift");
-_Static_assert(MOUSE_DROP_ACTION_WARP_LEFT == 6, "MOUSE_DROP_ACTION_WARP_LEFT drift");
-
-/* Pin the mirrored MOUSE_MODE_* codes (src/mouse_handler.h). */
-_Static_assert(MOUSE_MODE_NONE == 0, "MOUSE_MODE_NONE drift");
-_Static_assert(MOUSE_MODE_MOVE == 1, "MOUSE_MODE_MOVE drift");
-_Static_assert(MOUSE_MODE_RESIZE == 2, "MOUSE_MODE_RESIZE drift");
-_Static_assert(MOUSE_MODE_SWAP == 3, "MOUSE_MODE_SWAP drift");
-_Static_assert(MOUSE_MODE_STACK == 4, "MOUSE_MODE_STACK drift");
-
-/* Pin the CG flag constants the Zig mod map hardcodes (CGEventTypes.h via
- * NX_*MASK in IOLLEvent.h). A system-header change fails the build here. */
-_Static_assert(kCGEventFlagMaskShift == 0x00020000, "kCGEventFlagMaskShift drift");
-_Static_assert(kCGEventFlagMaskControl == 0x00040000, "kCGEventFlagMaskControl drift");
-_Static_assert(kCGEventFlagMaskAlternate == 0x00080000, "kCGEventFlagMaskAlternate drift");
-_Static_assert(kCGEventFlagMaskCommand == 0x00100000, "kCGEventFlagMaskCommand drift");
-_Static_assert(kCGEventFlagMaskSecondaryFn == 0x00800000, "kCGEventFlagMaskSecondaryFn drift");
 
 struct mod_case
 {
@@ -135,6 +100,33 @@ TEST_FUNC(zig_mouse_triangle_parity,
     }
 })
 
+/* Non-representable vertices with points on edge t0-t2: the products in
+ * a*b - c*d are inexact, so the edge term's sign depends on whether clang
+ * fuses it into fma(a, b, -(c*d)). It does on arm64 (even at -O0); the
+ * x86_64 default CPU has no FMA. The oracle is compiled for the running
+ * arch, so the Zig object must follow the same per-arch rule. */
+static CGPoint tri_inexact[3] = { { 0.1, 0.2 }, { 0.9, 0.05 }, { 0.7, 0.9 } };
+
+TEST_FUNC(zig_mouse_triangle_inexact_parity,
+{
+    int c_inside = 0;
+    for (int k = 1; k < 1000; ++k) {
+        double s = k / 1000.0;
+        CGPoint p;
+        p.x = tri_inexact[0].x + s * (tri_inexact[2].x - tri_inexact[0].x);
+        p.y = tri_inexact[0].y + s * (tri_inexact[2].y - tri_inexact[0].y);
+        bool c = triangle_contains_point(tri_inexact, p);
+        bool z = yabai_triangle_contains_point(tri_inexact, &p);
+        if (c != z) printf("triangle edge k=%d c=%d z=%d\n", k, c, z);
+        TEST_CHECK(z, c);
+        c_inside += c;
+    }
+#if defined(__aarch64__)
+    /* Guard against a vacuous sweep: fused rounding puts some edge points inside. */
+    TEST_CHECK(c_inside > 0, 1);
+#endif
+})
+
 static int c_drop_action(int drop_mode, int src_count, CGRect frame, CGPoint pt)
 {
     struct mouse_state ms;
@@ -146,7 +138,7 @@ static int c_drop_action(int drop_mode, int src_count, CGRect frame, CGPoint pt)
     ms.drop_action = drop_mode;
     src.window_count = src_count;
     dst.frame = frame;
-    return (int) mouse_determine_drop_action(&ms, &src, &dst, pt);
+    return (int) ref_mouse_determine_drop_action(&ms, &src, &dst, pt);
 }
 
 static int z_drop_action(int drop_mode, int src_count, CGRect frame, CGPoint pt)
@@ -243,4 +235,20 @@ TEST_FUNC(zig_mouse_drop_action_parity,
     dpt.y = 400;
     TEST_CHECK(z_drop_action(MOUSE_MODE_STACK, 1, drop_degenerate, dpt),
                c_drop_action(MOUSE_MODE_STACK, 1, drop_degenerate, dpt));
+
+    /* Odd-sized frame, points on the top/left diagonal toward the center
+     * (0.5 * 801 = 400.5): the triangle products are inexact here, so this
+     * covers the arm64 contraction through the routed drop-action path. */
+    CGRect odd_frame = CGRectMake(0, 0, 801, 601);
+    int mismatches = 0;
+    for (int k = 1; k < 10000; ++k) {
+        double s = k / 10000.0;
+        CGPoint pt;
+        pt.x = s * 400.5;
+        pt.y = s * 300.5;
+        int c = c_drop_action(MOUSE_MODE_STACK, 2, odd_frame, pt);
+        int z = z_drop_action(MOUSE_MODE_STACK, 2, odd_frame, pt);
+        mismatches += c != z;
+    }
+    TEST_CHECK(mismatches, 0);
 })

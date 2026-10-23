@@ -3,56 +3,23 @@ extern struct display_manager g_display_manager;
 extern struct space_manager g_space_manager;
 extern struct window_manager g_window_manager;
 
-/* Zig delegates (zig/view.zig): parity-proven equivalents of the swap,
- * rotate, mirror, leaf walk, window lookup, directional search, fence,
- * contains/index, invalid/dirty predicates, stack insert, and view
- * lifecycle (create/clear/destroy) below. The directional-search
- * wrapper lifts the SLS space_window_list here exactly as the C body
- * derived it. The lifecycle wrappers lift the SLS
- * uuid and the manager-defaults block here exactly as the C bodies
+/* Zig delegates (zig/view.zig): the swap, rotate, mirror, leaf walk,
+ * window lookup, directional search, fence, contains/index,
+ * invalid/dirty predicates, stack insert, serializer, window-list walk,
+ * and view lifecycle (create/clear/destroy) below are wrappers around Zig
+ * exports. The exports replace the dd84572 bodies frozen as ref_* in
+ * tests/src/ref_upstream_view.c and are parity-tested against them. The
+ * directional-search wrapper lifts the SLS space_window_list here
+ * exactly as the dd84572 body derived it. The lifecycle wrappers lift the
+ * SLS uuid and the manager-defaults block here exactly as those bodies
  * did, then call the Zig exports; the SLS-backed trailing
  * view_update stays in the wrappers. Signatures in src/view.h are
  * unchanged. view_find_window_list delegates to Zig: the export
  * returns caller-frees malloc memory (where C returned temp-pool
  * memory), and the sole daemon caller
  * (window_manager_validate_windows_on_space in src/window_manager.c)
- * frees it after its last use. */
-bool yabai_window_node_contains_window(struct window_node *node, uint32_t window_id);
-int yabai_window_node_index_of_window(struct window_node *node, uint32_t window_id);
-struct window_node *yabai_window_node_fence(struct window_node *node, int dir);
-void yabai_window_node_swap_window_list(struct window_node *a_node, struct window_node *b_node);
-void yabai_window_node_rotate(struct window_node *node, int degrees);
-struct window_node *yabai_window_node_mirror(struct window_node *node, int axis);
-struct window_node *yabai_window_node_find_first_leaf(struct window_node *root);
-struct window_node *yabai_window_node_find_last_leaf(struct window_node *root);
-struct window_node *yabai_window_node_find_prev_leaf(struct window_node *node);
-struct window_node *yabai_window_node_find_next_leaf(struct window_node *node);
-struct yabai_view;
-struct window_node *yabai_view_find_window_node(const struct yabai_view *view, uint32_t window_id);
-struct window_node *yabai_view_find_window_node_in_direction(const struct yabai_view *view, struct window_node *source, int direction, const uint32_t *window_list, int window_count);
-uint32_t *yabai_view_find_window_list(const struct yabai_view *view, int *window_count);
-bool yabai_view_is_invalid(const struct yabai_view *view);
-bool yabai_view_is_dirty(const struct yabai_view *view);
-void yabai_view_stack_window(struct window_node *node, uint32_t window_id);
-
-/* Caller-lifted inputs for yabai_view_create (zig/view.zig
- * ViewDefaults): field order mirrors the C user-branch assignment
- * order (layout, paddings, gap, auto_balance, split_type). */
-struct yabai_view_defaults
-{
-    int layout;
-    int top_padding;
-    int bottom_padding;
-    int left_padding;
-    int right_padding;
-    int window_gap;
-    uint32_t auto_balance;
-    int split_type;
-};
-struct yabai_view *yabai_view_create(uint64_t sid, CFStringRef uuid, bool is_user, const struct yabai_view_defaults *defaults);
-void yabai_view_clear(struct yabai_view *view);
-void yabai_view_destroy(struct yabai_view *view);
-_Static_assert(sizeof(struct yabai_view_defaults) == 32, "view defaults size drift");
+ * frees it after its last use. Prototypes and the defaults block live
+ * in src/zig_abi.h. */
 
 #define INSERT_FEEDBACK_WIDTH 2
 #define INSERT_FEEDBACK_RADIUS 9
@@ -92,7 +59,7 @@ void insert_feedback_show(struct window_node *node)
         SLSReenableUpdate(g_connection);
         SLSOrderWindow(g_connection, node->feedback_window.id, 1, node->window_order[0]);
         table_add(&g_window_manager.insert_feedback, &node->window_order[0], node);
-        if (!workspace_is_macos_sequoia() && !workspace_is_macos_tahoe()) {
+        if (!workspace_is_macos_sequoia() && !(workspace_is_macos_tahoe() || workspace_is_macos_goldengate())) {
             update_window_notifications();
         }
     }
@@ -158,7 +125,7 @@ void insert_feedback_destroy(struct window_node *node)
     if (node->feedback_window.id) {
         table_remove(&g_window_manager.insert_feedback, &node->window_order[0]);
 
-        if (!workspace_is_macos_sequoia() && !workspace_is_macos_tahoe()) {
+        if (!workspace_is_macos_sequoia() && !(workspace_is_macos_tahoe() || workspace_is_macos_goldengate())) {
             update_window_notifications();
         }
 
@@ -536,12 +503,12 @@ struct window_node *view_find_window_node_in_direction(struct view *view, struct
     uint32_t *window_list = space_window_list(view->sid, &window_count, false);
     if (!window_list) return NULL;
 
-    return yabai_view_find_window_node_in_direction((const struct yabai_view *) view, source, direction, window_list, window_count);
+    return yabai_view_find_window_node_in_direction(view, source, direction, window_list, window_count);
 }
 
 struct window_node *view_find_window_node(struct view *view, uint32_t window_id)
 {
-    return yabai_view_find_window_node((const struct yabai_view *) view, window_id);
+    return yabai_view_find_window_node(view, window_id);
 }
 
 struct window_node *view_remove_window_node(struct view *view, struct window *window)
@@ -728,17 +695,17 @@ struct window_node *view_add_window_node(struct view *view, struct window *windo
 
 uint32_t *view_find_window_list(struct view *view, int *window_count)
 {
-    return yabai_view_find_window_list((const struct yabai_view *) view, window_count);
+    return yabai_view_find_window_list(view, window_count);
 }
 
 bool view_is_invalid(struct view *view)
 {
-    return yabai_view_is_invalid((const struct yabai_view *) view);
+    return yabai_view_is_invalid(view);
 }
 
 bool view_is_dirty(struct view *view)
 {
-    return yabai_view_is_dirty((const struct yabai_view *) view);
+    return yabai_view_is_dirty(view);
 }
 
 void view_flush(struct view *view)
@@ -751,11 +718,9 @@ void view_flush(struct view *view)
     }
 }
 
-/* Zig delegate (zig/view.zig): parity-proven equivalent of the JSON
- * emission below. Signature in src/view.h is unchanged. */
-struct yabai_view;
-void yabai_view_serialize(FILE *rsp, const struct yabai_view *view, uint64_t flags, const char *uuid_str, int mission_index, const char *space_label_str, int display_index, const uint32_t *window_list, int window_count, bool has_focus, bool is_visible, bool is_fullscreen);
-
+/* Zig delegate (zig/view.zig): the JSON emitter replaces the dd84572 body
+ * frozen as ref_view_serialize in tests/src/ref_upstream_view.c and is
+ * parity-tested against it. Signature in src/view.h is unchanged. */
 void view_serialize(FILE *rsp, struct view *view, uint64_t flags)
 {
     TIME_FUNCTION;
@@ -780,7 +745,7 @@ void view_serialize(FILE *rsp, struct view *view, uint64_t flags)
     bool is_visible = (eff & SPACE_PROPERTY_IS_VISIBLE) ? space_is_visible(view->sid) : false;
     bool is_fullscreen = (eff & SPACE_PROPERTY_IS_FULLSCREEN) ? space_is_fullscreen(view->sid) : false;
 
-    yabai_view_serialize(rsp, (const struct yabai_view *) view, flags,
+    yabai_view_serialize(rsp, view, flags,
                          uuid,
                          mission_index,
                          space_label ? space_label->label : NULL,
@@ -828,7 +793,7 @@ struct view *view_create(uint64_t sid)
         .split_type     = g_space_manager.split_type,
     };
 
-    struct view *view = (struct view *) yabai_view_create(sid, uuid, is_user, &defaults);
+    struct view *view = yabai_view_create(sid, uuid, is_user, &defaults);
 
     if (is_user) view_update(view);
 
@@ -838,12 +803,12 @@ struct view *view_create(uint64_t sid)
 void view_clear(struct view *view)
 {
     if (view->root) {
-        yabai_view_clear((struct yabai_view *) view);
+        yabai_view_clear(view);
         view_update(view);
     }
 }
 
 void view_destroy(struct view *view)
 {
-    yabai_view_destroy((struct yabai_view *) view);
+    yabai_view_destroy(view);
 }

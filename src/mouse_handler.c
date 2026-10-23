@@ -2,11 +2,12 @@ extern struct event_loop g_event_loop;
 extern volatile bool __pending_gesture;
 extern volatile uint64_t __last_gesture_time;
 
-/* Zig delegate (zig/mouse.zig): parity-proven equivalent of the drop-action
- * geometry below. The wrapper lifts ms->drop_action, src_node->window_count,
- * dst_window->frame, and point to scalars here exactly as the C body read
- * them. Signature in src/mouse_handler.h is unchanged. */
-int yabai_mouse_determine_drop_action(int drop_mode, int src_count, double fx, double fy, double fw, double fh, double px, double py);
+/* Zig delegate (zig/mouse.zig): mouse_determine_drop_action below calls a
+ * Zig export that replaces the dd84572 body frozen as
+ * ref_mouse_determine_drop_action in tests/src/ref_upstream_view.c and is
+ * parity-tested against it. The wrapper lifts ms->drop_action,
+ * src_node->window_count, dst_window->frame, and point to scalars exactly
+ * as that body read them. Signature in src/mouse_handler.h is unchanged. */
 
 static inline uint8_t mouse_mod_from_cgflags(uint32_t cgflags)
 {

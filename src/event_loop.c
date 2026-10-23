@@ -16,9 +16,12 @@ volatile uint64_t __last_cmd_tab_time;
 static void update_window_notifications(void)
 {
     int window_count = 0;
-    uint32_t window_list[1024] = {0};
+    bool all_windows = workspace_is_macos_sequoia() || (workspace_is_macos_tahoe() || workspace_is_macos_goldengate());
+    int capacity = all_windows ? g_window_manager.window.count : g_window_manager.insert_feedback.count;
+    uint32_t *window_list = calloc(capacity > 0 ? capacity : 1, sizeof(uint32_t));
+    if (!window_list) return;
 
-    if (workspace_is_macos_sequoia() || workspace_is_macos_tahoe()) {
+    if (all_windows) {
         // NOTE(asmvik): Subscribe to all windows because of window_destroyed (and ordered) notifications
         table_for (struct window *window, g_window_manager.window, {
             window_list[window_count++] = window->id;
@@ -31,6 +34,7 @@ static void update_window_notifications(void)
     }
 
     SLSRequestNotificationsForWindows(g_connection, window_list, window_count);
+    free(window_list);
 }
 
 static void window_did_receive_focus(struct window_manager *wm, struct mouse_state *ms, struct window *window)
@@ -242,7 +246,7 @@ static EVENT_HANDLER(APPLICATION_LAUNCHED)
         view_clear_flag(view, VIEW_IS_DIRTY);
     }
 
-    if (workspace_is_macos_sequoia() || workspace_is_macos_tahoe()) {
+    if (workspace_is_macos_sequoia() || (workspace_is_macos_tahoe() || workspace_is_macos_goldengate())) {
         update_window_notifications();
     }
 }
@@ -336,7 +340,7 @@ static EVENT_HANDLER(APPLICATION_TERMINATED)
         view_clear_flag(view, VIEW_IS_DIRTY);
     }
 
-    if (workspace_is_macos_sequoia() || workspace_is_macos_tahoe()) {
+    if (workspace_is_macos_sequoia() || (workspace_is_macos_tahoe() || workspace_is_macos_goldengate())) {
         update_window_notifications();
     }
 
@@ -595,7 +599,7 @@ static EVENT_HANDLER(WINDOW_CREATED)
         event_signal_push(SIGNAL_WINDOW_CREATED, window);
     }
 
-    if (workspace_is_macos_sequoia() || workspace_is_macos_tahoe()) {
+    if (workspace_is_macos_sequoia() || (workspace_is_macos_tahoe() || workspace_is_macos_goldengate())) {
         update_window_notifications();
     }
 }
@@ -628,7 +632,7 @@ static EVENT_HANDLER(WINDOW_DESTROYED)
     window_unobserve(window);
     window_destroy(window);
 
-    if (workspace_is_macos_sequoia() || workspace_is_macos_tahoe()) {
+    if (workspace_is_macos_sequoia() || (workspace_is_macos_tahoe() || workspace_is_macos_goldengate())) {
         update_window_notifications();
     }
 }
@@ -1550,7 +1554,7 @@ static EVENT_HANDLER(DOCK_DID_RESTART)
         workspace_is_macos_ventura() ||
         workspace_is_macos_sonoma() ||
         workspace_is_macos_sequoia() ||
-        workspace_is_macos_tahoe()) {
+        (workspace_is_macos_tahoe() || workspace_is_macos_goldengate())) {
         mission_control_unobserve();
         mission_control_observe();
     }
@@ -1611,33 +1615,53 @@ static EVENT_HANDLER(SYSTEM_WOKE)
     event_signal_push(SIGNAL_SYSTEM_WOKE, NULL);
 }
 
+// Must equal SOCKET_FRAME_MAX in zig/message.zig (pinned by the
+// socket_frame_max_matches_zig test). Above macOS ARG_MAX, so every
+// frame the CLI can build fits.
+#define SOCKET_FRAME_MAX (1024 * 1024)
+
+// Reads one client frame. Returns the payload for handle_message, or NULL
+// for a malformed frame; a bad length is rejected before allocating.
+static char *daemon_read_message(int sockfd)
+{
+    int bytes_read    = 0;
+    int bytes_to_read = 0;
+
+    if (read(sockfd, &bytes_to_read, sizeof(int)) != sizeof(int)) return NULL;
+    if (bytes_to_read <= 0 || bytes_to_read > SOCKET_FRAME_MAX) return NULL;
+
+    char *frame = ts_alloc_unaligned(sizeof(int) + bytes_to_read);
+    char *message = frame + sizeof(int);
+    memcpy(frame, &bytes_to_read, sizeof(int));
+
+    do {
+        int cur_read = read(sockfd, message+bytes_read, bytes_to_read-bytes_read);
+        if (cur_read <= 0) return NULL;
+
+        bytes_read += cur_read;
+    } while (bytes_read < bytes_to_read);
+
+    size_t field_count;
+    if (yabai_socket_frame_decode(frame, sizeof(int) + bytes_to_read, NULL, 0, &field_count) != 0) return NULL;
+
+    return message;
+}
+
 static EVENT_HANDLER(DAEMON_MESSAGE)
 {
     TIME_FUNCTION;
 
-    FILE *rsp         = NULL;
-    int bytes_read    = 0;
-    int bytes_to_read = 0;
+    FILE *rsp = NULL;
+    char *message = daemon_read_message(param1);
 
-    if (read(param1, &bytes_to_read, sizeof(int)) == sizeof(int)) {
-        char *message = ts_alloc_unaligned(bytes_to_read);
+    if (message && (rsp = fdopen(param1, "w"))) {
+        debug_message(__FUNCTION__, message);
+        handle_message(rsp, message);
 
-        do {
-            int cur_read = read(param1, message+bytes_read, bytes_to_read-bytes_read);
-            if (cur_read <= 0) break;
+        fflush(rsp);
+        fclose(rsp);
 
-            bytes_read += cur_read;
-        } while (bytes_read < bytes_to_read);
-
-        if ((bytes_read == bytes_to_read) && (rsp = fdopen(param1, "w"))) {
-            debug_message(__FUNCTION__, message);
-            handle_message(rsp, message);
-
-            fflush(rsp);
-            fclose(rsp);
-
-            return;
-        }
+        return;
     }
 
     socket_close(param1);

@@ -17,9 +17,10 @@ static DISPLAY_EVENT_HANDLER(display_handler)
 }
 #pragma clang diagnostic pop
 
-/* Zig delegate (zig/display.zig): parity-proven equivalent of the JSON
- * emission below. Signature in src/display.h is unchanged. */
-void yabai_display_serialize(FILE *rsp, uint32_t did, uint64_t flags, const char *uuid_str, int arrange_index, const char *label_str, double frame_x, double frame_y, double frame_w, double frame_h, const int *space_list, int space_count, bool has_focus);
+/* Zig delegate (zig/display.zig): display_serialize below calls the Zig
+ * JSON emitter, which replaces the dd84572 body frozen as
+ * ref_display_serialize in tests/src/ref_upstream_rule.c and is
+ * parity-tested against it. Signature in src/display.h is unchanged. */
 
 void display_serialize(FILE *rsp, uint32_t did, uint64_t flags)
 {
@@ -157,34 +158,6 @@ inline uint64_t display_space_id(uint32_t did)
     CFRelease(uuid);
 
     return sid;
-}
-
-int display_space_count(uint32_t did)
-{
-    int space_count = 0;
-
-    CFStringRef uuid = display_uuid(did);
-    if (!uuid) goto out;
-
-    CFArrayRef display_spaces_ref = SLSCopyManagedDisplaySpaces(g_connection);
-    if (!display_spaces_ref) goto err;
-
-    int display_spaces_count = CFArrayGetCount(display_spaces_ref);
-    for (int i = 0; i < display_spaces_count; ++i) {
-        CFDictionaryRef display_ref = CFArrayGetValueAtIndex(display_spaces_ref, i);
-        CFStringRef identifier = CFDictionaryGetValue(display_ref, CFSTR("Display Identifier"));
-        if (!CFEqual(uuid, identifier)) continue;
-
-        CFArrayRef spaces_ref = CFDictionaryGetValue(display_ref, CFSTR("Spaces"));
-        space_count = CFArrayGetCount(spaces_ref);
-        break;
-    }
-
-    CFRelease(display_spaces_ref);
-err:
-    CFRelease(uuid);
-out:
-    return space_count;
 }
 
 uint64_t *display_space_list(uint32_t did, int *count)
