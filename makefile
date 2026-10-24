@@ -80,3 +80,4 @@ $(ZIG_STAMP): $(ZIG_SRC) ./src/zig_abi.h ./zig/build.sh ./zig/ZIG_VERSION
 $(BUILD_PATH)/yabai-zig: $(YABAI_SRC) $(YABAI_DEPS) $(INFO_PLIST)
 	mkdir -p $(BUILD_PATH)
 	xcrun clang $(YABAI_SRC) $(BUILD_FLAGS) $(CLI_FLAGS) $(FRAMEWORK_PATH) $(FRAMEWORK) -o $@
+	codesign -fs - $@
