@@ -2,7 +2,7 @@
 #define SERVICE_H
 
 #define _PATH_LAUNCHCTL   "/bin/launchctl"
-#define _NAME_YABAI_PLIST "com.asmvik.yabai"
+#define _NAME_YABAI_PLIST "com.fakebizprez.yabai-zig"
 #define _PATH_YABAI_PLIST "%s/Library/LaunchAgents/"_NAME_YABAI_PLIST".plist"
 
 #define _YABAI_PLIST \
