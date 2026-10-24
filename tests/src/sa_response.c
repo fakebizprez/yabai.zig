@@ -19,7 +19,7 @@ static const struct { int reply; bool expected; } sa_response_cases[] = {
 /* Exercise the real client against a private socket, without contacting the Dock payload. */
 TEST_FUNC(sa_response_status,
 {
-    char directory[] = "/tmp/yabai-sa-response-XXXXXX";
+    char directory[] = "/tmp/yabai-zig-sa-response-XXXXXX";
     char previous_path[sizeof(g_sa_socket_file)];
     memcpy(previous_path, g_sa_socket_file, sizeof(previous_path));
     struct sockaddr_un address = {0};

@@ -1,6 +1,6 @@
-#define SA_SOCKET_PATH_FMT      "/tmp/yabai-sa_%s.socket"
-#define SOCKET_PATH_FMT         "/tmp/yabai_%s.socket"
-#define LCFILE_PATH_FMT         "/tmp/yabai_%s.lock"
+#define SA_SOCKET_PATH_FMT      "/tmp/yabai-zig-sa_%s.socket"
+#define SOCKET_PATH_FMT         "/tmp/yabai-zig_%s.socket"
+#define LCFILE_PATH_FMT         "/tmp/yabai-zig_%s.lock"
 
 #define SCRPT_ADD_LOAD_OPT      "--load-sa"
 #define SCRPT_ADD_UNINSTALL_OPT "--uninstall-sa"
@@ -78,12 +78,12 @@ static int socket_frame_encode(int argc, char **argv, char *out, int out_size)
 static int client_send_message(int argc, char **argv)
 {
     if (argc <= 1) {
-        error("yabai-msg: no arguments given! abort..\n");
+        error("yabai-zig-msg: no arguments given! abort..\n");
     }
 
     char *user = getenv("USER");
     if (!user) {
-        error("yabai-msg: 'env USER' not set! abort..\n");
+        error("yabai-zig-msg: 'env USER' not set! abort..\n");
     }
 
     int frame_length = socket_frame_encode(argc, argv, NULL, 0);
@@ -95,15 +95,15 @@ static int client_send_message(int argc, char **argv)
     snprintf(socket_file, sizeof(socket_file), SOCKET_PATH_FMT, user);
 
     if (!socket_open(&sockfd)) {
-        error("yabai-msg: failed to open socket..\n");
+        error("yabai-zig-msg: failed to open socket..\n");
     }
 
     if (!socket_connect(sockfd, socket_file)) {
-        error("yabai-msg: failed to connect to socket..\n");
+        error("yabai-zig-msg: failed to connect to socket..\n");
     }
 
     if (send(sockfd, message, frame_length, 0) == -1) {
-        error("yabai-msg: failed to send data..\n");
+        error("yabai-zig-msg: failed to send data..\n");
     }
 
     shutdown(sockfd, SHUT_WR);
@@ -138,7 +138,7 @@ static inline bool configure_settings_and_acquire_lock(void)
 {
     char *user = getenv("USER");
     if (!user) {
-        error("yabai: 'env USER' not set! abort..\n");
+        error("yabai-zig: 'env USER' not set! abort..\n");
     }
 
     snprintf(g_sa_socket_file, sizeof(g_sa_socket_file), SA_SOCKET_PATH_FMT, user);
@@ -166,7 +166,7 @@ static inline bool configure_settings_and_acquire_lock(void)
 
     int handle = open(g_lock_file, O_CREAT | O_WRONLY | O_CLOEXEC, 0600);
     if (handle == -1) {
-        error("yabai: could not create lock-file! abort..\n");
+        error("yabai-zig: could not create lock-file! abort..\n");
     }
 
     struct flock lockfd = {
@@ -185,7 +185,7 @@ static void parse_arguments(int argc, char **argv)
 {
     if ((string_equals(argv[1], HELP_OPT_LONG)) ||
         (string_equals(argv[1], HELP_OPT_SHRT))) {
-        fprintf(stdout, "Usage: yabai [option]\n"
+        fprintf(stdout, "Usage: yabai-zig [option]\n"
                         "Options:\n"
                         "    --load-sa              Install and load the scripting-addition.\n"
                         "    --uninstall-sa         Uninstall the scripting-addition.\n"
@@ -194,19 +194,19 @@ static void parse_arguments(int argc, char **argv)
                         "    --start-service        Enable, load, and start the launchd service.\n"
                         "    --restart-service      Attempts to restart the service instance.\n"
                         "    --stop-service         Stops a running instance of the service.\n"
-                        "    --message, -m <msg>    Send message to a running instance of yabai.\n"
+                        "    --message, -m <msg>    Send message to a running instance of yabai-zig.\n"
                         "    --config, -c <config>  Use the specified configuration file.\n"
                         "    --verbose, -V          Output debug information to stdout.\n"
                         "    --version, -v          Print version to stdout and exit.\n"
                         "    --help, -h             Print options to stdout and exit.\n"
-                        "Type `man yabai` for more information, or visit: "
-                        "https://github.com/asmvik/yabai/blob/v%d.%d.%d/doc/yabai.asciidoc\n", MAJOR, MINOR, PATCH);
+                        "Type `man yabai-zig` for more information, or visit: "
+                        "https://github.com/fakebizprez/yabai.zig/blob/main/doc/yabai-zig.asciidoc\n");
         exit(EXIT_SUCCESS);
     }
 
     if ((string_equals(argv[1], VERSION_OPT_LONG)) ||
         (string_equals(argv[1], VERSION_OPT_SHRT))) {
-        fprintf(stdout, "yabai-v%d.%d.%d\n", MAJOR, MINOR, PATCH);
+        fprintf(stdout, "yabai-zig-v%d.%d.%d\n", MAJOR, MINOR, PATCH);
         exit(EXIT_SUCCESS);
     }
 
@@ -252,10 +252,10 @@ static void parse_arguments(int argc, char **argv)
         } else if ((string_equals(opt, CONFIG_OPT_LONG)) ||
                    (string_equals(opt, CONFIG_OPT_SHRT))) {
             char *val = i < argc - 1 ? argv[++i] : NULL;
-            if (!val) error("yabai: option '%s|%s' requires an argument!\n", CONFIG_OPT_LONG, CONFIG_OPT_SHRT);
+            if (!val) error("yabai-zig: option '%s|%s' requires an argument!\n", CONFIG_OPT_LONG, CONFIG_OPT_SHRT);
             snprintf(g_config_file, sizeof(g_config_file), "%s", val);
         } else {
-            error("yabai: '%s' is not a valid option!\n", opt);
+            error("yabai-zig: '%s' is not a valid option!\n", opt);
         }
     }
 }
@@ -268,47 +268,47 @@ int main(int argc, char **argv)
     }
 
     if (is_root()) {
-        require("yabai: running as root is not allowed! abort..\n");
+        require("yabai-zig: running as root is not allowed! abort..\n");
     }
 
     if (!ax_privilege()) {
-        require("yabai: could not access accessibility features! abort..\n");
+        require("yabai-zig: could not access accessibility features! abort..\n");
     }
 
     if (!(SLSGetSpaceManagementMode(SLSMainConnectionID()) == 1)) {
-        require("yabai: 'display has separate spaces' is disabled! abort..\n");
+        require("yabai-zig: 'display has separate spaces' is disabled! abort..\n");
     }
 
     if (!ts_init(MEGABYTES(8))) {
-        error("yabai: could not allocate temporary storage! abort..\n");
+        error("yabai-zig: could not allocate temporary storage! abort..\n");
     }
 
     if (!memory_pool_init(&g_signal_storage, KILOBYTES(256))) {
-        error("yabai: could not allocate event signal storage! abort..\n");
+        error("yabai-zig: could not allocate event signal storage! abort..\n");
     }
 
     if (!configure_settings_and_acquire_lock()) {
-        error("yabai: could not acquire lock-file! abort..\n");
+        error("yabai-zig: could not acquire lock-file! abort..\n");
     }
 
     if (!event_loop_begin(&g_event_loop)) {
-        error("yabai: could not start event loop! abort..\n");
+        error("yabai-zig: could not start event loop! abort..\n");
     }
 
     if (!workspace_event_handler_begin(&g_workspace_context)) {
-        error("yabai: could not start workspace context! abort..\n");
+        error("yabai-zig: could not start workspace context! abort..\n");
     }
 
     if (!process_manager_begin(&g_process_manager)) {
-        error("yabai: could not start process manager! abort..\n");
+        error("yabai-zig: could not start process manager! abort..\n");
     }
 
     if (!display_manager_begin(&g_display_manager)) {
-        error("yabai: could not start display manager! abort..\n");
+        error("yabai-zig: could not start display manager! abort..\n");
     }
 
     if (!mouse_handler_begin(&g_mouse_state, MOUSE_EVENT_MASK)) {
-        error("yabai: could not start mouse handler! abort..\n");
+        error("yabai-zig: could not start mouse handler! abort..\n");
     }
 
     if (workspace_is_macos_monterey() ||
@@ -345,7 +345,7 @@ int main(int argc, char **argv)
     }
 
     if (!message_loop_begin(g_socket_file)) {
-        error("yabai: could not start message loop! abort..\n");
+        error("yabai-zig: could not start message loop! abort..\n");
     }
 
     exec_config_file(g_config_file, sizeof(g_config_file));

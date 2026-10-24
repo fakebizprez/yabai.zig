@@ -1,1 +1,1 @@
-yabai-msg: no arguments given! abort..
+yabai-zig-msg: no arguments given! abort..

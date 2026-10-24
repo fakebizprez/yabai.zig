@@ -1,4 +1,4 @@
-Usage: yabai [option]
+Usage: yabai-zig [option]
 Options:
     --load-sa              Install and load the scripting-addition.
     --uninstall-sa         Uninstall the scripting-addition.
@@ -7,9 +7,9 @@ Options:
     --start-service        Enable, load, and start the launchd service.
     --restart-service      Attempts to restart the service instance.
     --stop-service         Stops a running instance of the service.
-    --message, -m <msg>    Send message to a running instance of yabai.
+    --message, -m <msg>    Send message to a running instance of yabai-zig.
     --config, -c <config>  Use the specified configuration file.
     --verbose, -V          Output debug information to stdout.
     --version, -v          Print version to stdout and exit.
     --help, -h             Print options to stdout and exit.
-Type `man yabai` for more information, or visit: https://github.com/asmvik/yabai/blob/v7.1.25/doc/yabai.asciidoc
+Type `man yabai-zig` for more information, or visit: https://github.com/fakebizprez/yabai.zig/blob/main/doc/yabai-zig.asciidoc

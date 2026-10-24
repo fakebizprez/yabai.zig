@@ -31,9 +31,9 @@
     " 	     <true/>\n" \
     "    </dict>\n" \
     "    <key>StandardOutPath</key>\n" \
-    "    <string>/tmp/yabai_%s.out.log</string>\n" \
+    "    <string>/tmp/yabai-zig_%s.out.log</string>\n" \
     "    <key>StandardErrorPath</key>\n" \
-    "    <string>/tmp/yabai_%s.err.log</string>\n" \
+    "    <string>/tmp/yabai-zig_%s.err.log</string>\n" \
     "    <key>ProcessType</key>\n" \
     "    <string>Interactive</string>\n" \
     "    <key>Nice</key>\n" \
@@ -83,13 +83,13 @@ static char *populate_plist_path(void)
     char *home = home_ref ? cfstring_copy(home_ref) : NULL;
 
     if (!home) {
-        error("yabai: unable to retrieve home directory! abort..\n");
+        error("yabai-zig: unable to retrieve home directory! abort..\n");
     }
 
     int size = strlen(_PATH_YABAI_PLIST)-2 + strlen(home) + 1;
     char *result = malloc(size);
     if (!result) {
-        error("yabai: could not allocate memory for plist path! abort..\n");
+        error("yabai-zig: could not allocate memory for plist path! abort..\n");
     }
 
     memset(result, 0, size);
@@ -102,24 +102,24 @@ static char *populate_plist(int *length)
 {
     char *user = getenv("USER");
     if (!user) {
-        error("yabai: 'env USER' not set! abort..\n");
+        error("yabai-zig: 'env USER' not set! abort..\n");
     }
 
     char *path_env = getenv("PATH");
     if (!path_env) {
-        error("yabai: 'env PATH' not set! abort..\n");
+        error("yabai-zig: 'env PATH' not set! abort..\n");
     }
 
     char exe_path[4096];
     unsigned int exe_path_size = sizeof(exe_path);
     if (_NSGetExecutablePath(exe_path, &exe_path_size) < 0) {
-        error("yabai: unable to retrieve path of executable! abort..\n");
+        error("yabai-zig: unable to retrieve path of executable! abort..\n");
     }
 
     int size = strlen(_YABAI_PLIST)-8 + strlen(exe_path) + strlen(path_env) + (2*strlen(user)) + 1;
     char *result = malloc(size);
     if (!result) {
-        error("yabai: could not allocate memory for plist contents! abort..\n");
+        error("yabai-zig: could not allocate memory for plist contents! abort..\n");
     }
 
     memset(result, 0, size);
@@ -173,7 +173,7 @@ static int service_install(void)
     char *yabai_plist_path = populate_plist_path();
 
     if (file_exists(yabai_plist_path)) {
-        error("yabai: service file '%s' is already installed! abort..\n", yabai_plist_path);
+        error("yabai-zig: service file '%s' is already installed! abort..\n", yabai_plist_path);
     }
 
     return service_install_internal(yabai_plist_path);
@@ -184,7 +184,7 @@ static int service_uninstall(void)
     char *yabai_plist_path = populate_plist_path();
 
     if (!file_exists(yabai_plist_path)) {
-        error("yabai: service file '%s' is not installed! abort..\n", yabai_plist_path);
+        error("yabai-zig: service file '%s' is not installed! abort..\n", yabai_plist_path);
     }
 
     return unlink(yabai_plist_path) == 0 ? 0 : 1;
@@ -194,11 +194,11 @@ static int service_start(void)
 {
     char *yabai_plist_path = populate_plist_path();
     if (!file_exists(yabai_plist_path)) {
-        warn("yabai: service file '%s' is not installed! attempting installation..\n", yabai_plist_path);
+        warn("yabai-zig: service file '%s' is not installed! attempting installation..\n", yabai_plist_path);
 
         int result = service_install_internal(yabai_plist_path);
         if (result) {
-            error("yabai: service file '%s' could not be installed! abort..\n", yabai_plist_path);
+            error("yabai-zig: service file '%s' could not be installed! abort..\n", yabai_plist_path);
         }
     }
 
@@ -251,7 +251,7 @@ static int service_restart(void)
 {
     char *yabai_plist_path = populate_plist_path();
     if (!file_exists(yabai_plist_path)) {
-        error("yabai: service file '%s' is not installed! abort..\n", yabai_plist_path);
+        error("yabai-zig: service file '%s' is not installed! abort..\n", yabai_plist_path);
     }
 
     char service_target[MAXLEN];
@@ -265,7 +265,7 @@ static int service_stop(void)
 {
     char *yabai_plist_path = populate_plist_path();
     if (!file_exists(yabai_plist_path)) {
-        error("yabai: service file '%s' is not installed! abort..\n", yabai_plist_path);
+        error("yabai-zig: service file '%s' is not installed! abort..\n", yabai_plist_path);
     }
 
     char service_target[MAXLEN];

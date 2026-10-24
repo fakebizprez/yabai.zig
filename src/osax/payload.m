@@ -219,7 +219,7 @@ uint64_t decode_adrp_add(uint64_t addr, uint64_t offset)
 
 static bool verify_os_version(NSOperatingSystemVersion os_version)
 {
-    NSLog(@"[yabai-sa] checking for macOS %ld.%ld.%ld compatibility!", os_version.majorVersion, os_version.minorVersion, os_version.patchVersion);
+    NSLog(@"[yabai-zig-sa] checking for macOS %ld.%ld.%ld compatibility!", os_version.majorVersion, os_version.minorVersion, os_version.patchVersion);
 
 #ifdef __x86_64__
     if (os_version.majorVersion == 11) {
@@ -235,17 +235,17 @@ static bool verify_os_version(NSOperatingSystemVersion os_version)
         return true; // Sequoia 15.0
     } else if (os_version.majorVersion == 26) {
 
-        NSLog(@"[yabai-sa] Detected Tahoe Preview... flagging 'macOSSequoia=true.'");
+        NSLog(@"[yabai-zig-sa] Detected Tahoe Preview... flagging 'macOSSequoia=true.'");
         macOSSequoia = true;
         return true; // Tahoe preview
     } else if (os_version.majorVersion == 27) {
 
-        NSLog(@"[yabai-sa] Detected Golden Gate... flagging 'macOSSequoia=true.'");
+        NSLog(@"[yabai-zig-sa] Detected Golden Gate... flagging 'macOSSequoia=true.'");
         macOSSequoia = true;
         return true; // Golden Gate
     }
 
-    NSLog(@"[yabai-sa] spaces functionality is only supported on macOS Big Sur 11.0.0+, Monterey 12.0.0+, Ventura 13.0.0+, Sonoma 14.0.0+, Sequoia 15.0, Tahoe 26.0, and Golden Gate 27.0");
+    NSLog(@"[yabai-zig-sa] spaces functionality is only supported on macOS Big Sur 11.0.0+, Monterey 12.0.0+, Ventura 13.0.0+, Sonoma 14.0.0+, Sequoia 15.0, Tahoe 26.0, and Golden Gate 27.0");
 #elif __arm64__
     if (os_version.majorVersion == 12) {
         return true; // Monterey 12.0
@@ -258,17 +258,17 @@ static bool verify_os_version(NSOperatingSystemVersion os_version)
         return true; // Sequoia 15.0
     } else if (os_version.majorVersion == 26) {
 
-        NSLog(@"[yabai-sa] Detected Tahoe Preview... flagging 'macOSSequoia=true.'");
+        NSLog(@"[yabai-zig-sa] Detected Tahoe Preview... flagging 'macOSSequoia=true.'");
         macOSSequoia = true;
         return true; // Tahoe preview
     } else if (os_version.majorVersion == 27) {
 
-        NSLog(@"[yabai-sa] Detected Golden Gate... flagging 'macOSSequoia=true.'");
+        NSLog(@"[yabai-zig-sa] Detected Golden Gate... flagging 'macOSSequoia=true.'");
         macOSSequoia = true;
         return true; // Golden Gate
     }
 
-    NSLog(@"[yabai-sa] spaces functionality is only supported on macOS Monterey 12.0.0+, Ventura 13.0.0+, Sonoma 14.0.0+, Sequoia 15.0, Tahoe 26.0, and Golden Gate 27.0");
+    NSLog(@"[yabai-zig-sa] spaces functionality is only supported on macOS Monterey 12.0.0+, Ventura 13.0.0+, Sonoma 14.0.0+, Sequoia 15.0, Tahoe 26.0, and Golden Gate 27.0");
 #endif
 
     return false;
@@ -284,15 +284,15 @@ static void init_instances()
     uint64_t dock_spaces_addr = hex_find_seq(baseaddr + get_dock_spaces_offset(os_version), get_dock_spaces_pattern(os_version));
     if (dock_spaces_addr == 0) {
         dock_spaces = nil;
-        NSLog(@"[yabai-sa] could not locate pointer to dock.spaces! spaces functionality will not work!");
+        NSLog(@"[yabai-zig-sa] could not locate pointer to dock.spaces! spaces functionality will not work!");
     } else {
 #ifdef __x86_64__
         uint32_t dock_spaces_offset = *(int32_t *)dock_spaces_addr;
-        NSLog(@"[yabai-sa] (0x%llx) dock.spaces found at address 0x%llX (0x%llx)", baseaddr, dock_spaces_addr, dock_spaces_addr - baseaddr);
+        NSLog(@"[yabai-zig-sa] (0x%llx) dock.spaces found at address 0x%llX (0x%llx)", baseaddr, dock_spaces_addr, dock_spaces_addr - baseaddr);
         dock_spaces = [(*(id *)(dock_spaces_addr + dock_spaces_offset + 0x4)) retain];
 #elif __arm64__
         uint64_t dock_spaces_offset = decode_adrp_add(dock_spaces_addr, dock_spaces_addr - baseaddr);
-        NSLog(@"[yabai-sa] (0x%llx) dock.spaces found at address 0x%llX (0x%llx)", baseaddr, dock_spaces_offset, dock_spaces_offset - baseaddr);
+        NSLog(@"[yabai-zig-sa] (0x%llx) dock.spaces found at address 0x%llX (0x%llx)", baseaddr, dock_spaces_offset, dock_spaces_offset - baseaddr);
         dock_spaces = [(*(id *)(baseaddr + dock_spaces_offset)) retain];
 #endif
     }
@@ -300,15 +300,15 @@ static void init_instances()
     uint64_t dppm_addr = hex_find_seq(baseaddr + get_dppm_offset(os_version), get_dppm_pattern(os_version));
     if (dppm_addr == 0) {
         dp_desktop_picture_manager = nil;
-        NSLog(@"[yabai-sa] could not locate pointer to dppm! moving spaces will not work!");
+        NSLog(@"[yabai-zig-sa] could not locate pointer to dppm! moving spaces will not work!");
     } else {
 #ifdef __x86_64__
         uint32_t dppm_offset = *(int32_t *)dppm_addr;
-        NSLog(@"[yabai-sa] (0x%llx) dppm found at address 0x%llX (0x%llx)", baseaddr, dppm_addr, dppm_addr - baseaddr);
+        NSLog(@"[yabai-zig-sa] (0x%llx) dppm found at address 0x%llX (0x%llx)", baseaddr, dppm_addr, dppm_addr - baseaddr);
         dp_desktop_picture_manager = [(*(id *)(dppm_addr + dppm_offset + 0x4)) retain];
 #elif __arm64__
         uint64_t dppm_offset = decode_adrp_add(dppm_addr, dppm_addr - baseaddr);
-        NSLog(@"[yabai-sa] (0x%llx) dppm found at address 0x%llX (0x%llx)", baseaddr, dppm_offset, dppm_offset - baseaddr);
+        NSLog(@"[yabai-zig-sa] (0x%llx) dppm found at address 0x%llX (0x%llx)", baseaddr, dppm_offset, dppm_offset - baseaddr);
         dp_desktop_picture_manager = [(*(id *)(baseaddr + dppm_offset)) retain];
 #endif
 
@@ -335,10 +335,10 @@ static void init_instances()
 
     uint64_t add_space_addr = hex_find_seq(baseaddr + get_add_space_offset(os_version), get_add_space_pattern(os_version));
     if (add_space_addr == 0x0) {
-        NSLog(@"[yabai-sa] failed to get pointer to addSpace function..");
+        NSLog(@"[yabai-zig-sa] failed to get pointer to addSpace function..");
         add_space_fp = 0;
     } else {
-        NSLog(@"[yabai-sa] (0x%llx) addSpace found at address 0x%llX (0x%llx)", baseaddr, add_space_addr, add_space_addr - baseaddr);
+        NSLog(@"[yabai-zig-sa] (0x%llx) addSpace found at address 0x%llX (0x%llx)", baseaddr, add_space_addr, add_space_addr - baseaddr);
 #ifdef __x86_64__
         add_space_fp = add_space_addr;
 #elif __arm64__
@@ -348,10 +348,10 @@ static void init_instances()
 
     uint64_t remove_space_addr = hex_find_seq(baseaddr + get_remove_space_offset(os_version), get_remove_space_pattern(os_version));
     if (remove_space_addr == 0x0) {
-        NSLog(@"[yabai-sa] failed to get pointer to removeSpace function..");
+        NSLog(@"[yabai-zig-sa] failed to get pointer to removeSpace function..");
         remove_space_fp = 0;
     } else {
-        NSLog(@"[yabai-sa] (0x%llx) removeSpace found at address 0x%llX (0x%llx)", baseaddr, remove_space_addr, remove_space_addr - baseaddr);
+        NSLog(@"[yabai-zig-sa] (0x%llx) removeSpace found at address 0x%llX (0x%llx)", baseaddr, remove_space_addr, remove_space_addr - baseaddr);
 #ifdef __x86_64__
         remove_space_fp = remove_space_addr;
 #elif __arm64__
@@ -361,10 +361,10 @@ static void init_instances()
 
     uint64_t move_space_addr = hex_find_seq(baseaddr + get_move_space_offset(os_version), get_move_space_pattern(os_version));
     if (move_space_addr == 0x0) {
-        NSLog(@"[yabai-sa] failed to get pointer to moveSpace function..");
+        NSLog(@"[yabai-zig-sa] failed to get pointer to moveSpace function..");
         move_space_fp = 0;
     } else {
-        NSLog(@"[yabai-sa] (0x%llx) moveSpace found at address 0x%llX (0x%llx)", baseaddr, move_space_addr, move_space_addr - baseaddr);
+        NSLog(@"[yabai-zig-sa] (0x%llx) moveSpace found at address 0x%llX (0x%llx)", baseaddr, move_space_addr, move_space_addr - baseaddr);
 #ifdef __x86_64__
         move_space_fp = move_space_addr;
 #elif __arm64__
@@ -374,10 +374,10 @@ static void init_instances()
 
     uint64_t set_front_window_addr = hex_find_seq(baseaddr + get_set_front_window_offset(os_version), get_set_front_window_pattern(os_version));
     if (set_front_window_addr == 0x0) {
-        NSLog(@"[yabai-sa] failed to get pointer to setFrontWindow function..");
+        NSLog(@"[yabai-zig-sa] failed to get pointer to setFrontWindow function..");
         set_front_window_fp = 0;
     } else {
-        NSLog(@"[yabai-sa] (0x%llx) setFrontWindow found at address 0x%llX (0x%llx)", baseaddr, set_front_window_addr, set_front_window_addr - baseaddr);
+        NSLog(@"[yabai-zig-sa] (0x%llx) setFrontWindow found at address 0x%llX (0x%llx)", baseaddr, set_front_window_addr, set_front_window_addr - baseaddr);
 #ifdef __x86_64__
         set_front_window_fp = set_front_window_addr;
 #elif __arm64__
@@ -387,9 +387,9 @@ static void init_instances()
 
     animation_time_addr = hex_find_seq(baseaddr + get_fix_animation_offset(os_version), get_fix_animation_pattern(os_version));
     if (animation_time_addr == 0x0) {
-        NSLog(@"[yabai-sa] failed to get pointer to animation-time..");
+        NSLog(@"[yabai-zig-sa] failed to get pointer to animation-time..");
     } else {
-        NSLog(@"[yabai-sa] (0x%llx) animation_time_addr found at address 0x%llX (0x%llx)", baseaddr, animation_time_addr, animation_time_addr - baseaddr);
+        NSLog(@"[yabai-zig-sa] (0x%llx) animation_time_addr found at address 0x%llX (0x%llx)", baseaddr, animation_time_addr, animation_time_addr - baseaddr);
         if (vm_protect(mach_task_self(), page_align(animation_time_addr), vm_page_size, 0, VM_PROT_READ | VM_PROT_WRITE | VM_PROT_COPY) == KERN_SUCCESS) {
 #ifdef __x86_64__
             *(uint64_t *) animation_time_addr = 0x660fefc0660fefc0;
@@ -398,7 +398,7 @@ static void init_instances()
 #endif
             vm_protect(mach_task_self(), page_align(animation_time_addr), vm_page_size, 0, VM_PROT_READ | VM_PROT_EXECUTE);
         } else {
-            NSLog(@"[yabai-sa] animation_time_addr vm_protect failed; unable to patch instruction!");
+            NSLog(@"[yabai-zig-sa] animation_time_addr vm_protect failed; unable to patch instruction!");
         }
     }
 }
@@ -1212,11 +1212,11 @@ __attribute__((constructor))
 #endif
 void load_payload(void)
 {
-    NSLog(@"[yabai-sa] loaded payload..");
+    NSLog(@"[yabai-zig-sa] loaded payload..");
 
     const char *user = getenv("USER");
     if (!user) {
-        NSLog(@"[yabai-sa] could not get 'env USER'! abort..");
+        NSLog(@"[yabai-zig-sa] could not get 'env USER'! abort..");
         return;
     }
 
@@ -1224,8 +1224,8 @@ void load_payload(void)
     snprintf(socket_file, sizeof(socket_file), SA_SOCKET_PATH_FMT, user);
 
     if (start_daemon(socket_file)) {
-        NSLog(@"[yabai-sa] now listening..");
+        NSLog(@"[yabai-zig-sa] now listening..");
     } else {
-        NSLog(@"[yabai-sa] failed to spawn thread..");
+        NSLog(@"[yabai-zig-sa] failed to spawn thread..");
     }
 }

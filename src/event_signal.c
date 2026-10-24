@@ -129,7 +129,7 @@ void event_signal_push(enum signal_type type, void *context)
         es->arg_name[0]  = ts_alloc_unaligned(arg_size);
         es->arg_value[0] = ts_alloc_unaligned(arg_size);
 
-        snprintf(es->arg_name[0],  arg_size, "%s", "YABAI_PROCESS_ID");
+        snprintf(es->arg_name[0],  arg_size, "%s", "YABAI_ZIG_PROCESS_ID");
         snprintf(es->arg_value[0], arg_size, "%d", application->pid);
 
         es->app = application->name;
@@ -140,7 +140,7 @@ void event_signal_push(enum signal_type type, void *context)
         es->arg_name[0]  = ts_alloc_unaligned(arg_size);
         es->arg_value[0] = ts_alloc_unaligned(arg_size);
 
-        snprintf(es->arg_name[0],  arg_size, "%s", "YABAI_PROCESS_ID");
+        snprintf(es->arg_name[0],  arg_size, "%s", "YABAI_ZIG_PROCESS_ID");
         snprintf(es->arg_value[0], arg_size, "%d", application->pid);
 
         es->app = ts_string_copy(application->name);
@@ -166,9 +166,9 @@ void event_signal_push(enum signal_type type, void *context)
         es->arg_name[1]  = ts_alloc_unaligned(arg_size);
         es->arg_value[1] = ts_alloc_unaligned(arg_size);
 
-        snprintf(es->arg_name[0],  arg_size, "%s", "YABAI_PROCESS_ID");
+        snprintf(es->arg_name[0],  arg_size, "%s", "YABAI_ZIG_PROCESS_ID");
         snprintf(es->arg_value[0], arg_size, "%d", g_process_manager.front_pid);
-        snprintf(es->arg_name[1],  arg_size, "%s", "YABAI_RECENT_PROCESS_ID");
+        snprintf(es->arg_name[1],  arg_size, "%s", "YABAI_ZIG_RECENT_PROCESS_ID");
         snprintf(es->arg_value[1], arg_size, "%d", g_process_manager.last_front_pid);
     } break;
     case SIGNAL_APPLICATION_HIDDEN: {
@@ -177,7 +177,7 @@ void event_signal_push(enum signal_type type, void *context)
         es->arg_name[0]  = ts_alloc_unaligned(arg_size);
         es->arg_value[0] = ts_alloc_unaligned(arg_size);
 
-        snprintf(es->arg_name[0],  arg_size, "%s", "YABAI_PROCESS_ID");
+        snprintf(es->arg_name[0],  arg_size, "%s", "YABAI_ZIG_PROCESS_ID");
         snprintf(es->arg_value[0], arg_size, "%d", application->pid);
 
         es->app = application->name;
@@ -191,7 +191,7 @@ void event_signal_push(enum signal_type type, void *context)
         es->arg_name[0]  = ts_alloc_unaligned(arg_size);
         es->arg_value[0] = ts_alloc_unaligned(arg_size);
 
-        snprintf(es->arg_name[0],  arg_size, "%s", "YABAI_WINDOW_ID");
+        snprintf(es->arg_name[0],  arg_size, "%s", "YABAI_ZIG_WINDOW_ID");
         snprintf(es->arg_value[0], arg_size, "%d", window->id);
 
         es->app   = window->application->name;
@@ -203,7 +203,7 @@ void event_signal_push(enum signal_type type, void *context)
         es->arg_name[0]  = ts_alloc_unaligned(arg_size);
         es->arg_value[0] = ts_alloc_unaligned(arg_size);
 
-        snprintf(es->arg_name[0],  arg_size, "%s", "YABAI_WINDOW_ID");
+        snprintf(es->arg_name[0],  arg_size, "%s", "YABAI_ZIG_WINDOW_ID");
         snprintf(es->arg_value[0], arg_size, "%d", window->id);
 
         es->app = window->application ? ts_string_copy(window->application->name) : "<unknown>";
@@ -218,7 +218,7 @@ void event_signal_push(enum signal_type type, void *context)
         es->arg_name[0]  = ts_alloc_unaligned(arg_size);
         es->arg_value[0] = ts_alloc_unaligned(arg_size);
 
-        snprintf(es->arg_name[0],  arg_size, "%s", "YABAI_WINDOW_ID");
+        snprintf(es->arg_name[0],  arg_size, "%s", "YABAI_ZIG_WINDOW_ID");
         snprintf(es->arg_value[0], arg_size, "%d", window->id);
 
         es->app   = window->application->name;
@@ -234,9 +234,9 @@ void event_signal_push(enum signal_type type, void *context)
         es->arg_name[1]  = ts_alloc_unaligned(arg_size);
         es->arg_value[1] = ts_alloc_unaligned(arg_size);
 
-        snprintf(es->arg_name[0],  arg_size, "%s",   "YABAI_SPACE_ID");
+        snprintf(es->arg_name[0],  arg_size, "%s",   "YABAI_ZIG_SPACE_ID");
         snprintf(es->arg_value[0], arg_size, "%lld", sid);
-        snprintf(es->arg_name[1],  arg_size, "%s",   "YABAI_SPACE_INDEX");
+        snprintf(es->arg_name[1],  arg_size, "%s",   "YABAI_ZIG_SPACE_INDEX");
         snprintf(es->arg_value[1], arg_size, "%d",   index);
     } break;
     case SIGNAL_SPACE_DESTROYED: {
@@ -245,7 +245,7 @@ void event_signal_push(enum signal_type type, void *context)
         es->arg_name[0]  = ts_alloc_unaligned(arg_size);
         es->arg_value[0] = ts_alloc_unaligned(arg_size);
 
-        snprintf(es->arg_name[0],  arg_size, "%s",   "YABAI_SPACE_ID");
+        snprintf(es->arg_name[0],  arg_size, "%s",   "YABAI_ZIG_SPACE_ID");
         snprintf(es->arg_value[0], arg_size, "%lld", sid);
     } break;
     case SIGNAL_SPACE_CHANGED: {
@@ -265,14 +265,14 @@ void event_signal_push(enum signal_type type, void *context)
         es->arg_name[3]  = ts_alloc_unaligned(arg_size);
         es->arg_value[3] = ts_alloc_unaligned(arg_size);
 
-        snprintf(es->arg_name[0],  arg_size, "%s",   "YABAI_SPACE_ID");
+        snprintf(es->arg_name[0],  arg_size, "%s",   "YABAI_ZIG_SPACE_ID");
         snprintf(es->arg_value[0], arg_size, "%lld", sid);
-        snprintf(es->arg_name[1],  arg_size, "%s",   "YABAI_RECENT_SPACE_ID");
+        snprintf(es->arg_name[1],  arg_size, "%s",   "YABAI_ZIG_RECENT_SPACE_ID");
         snprintf(es->arg_value[1], arg_size, "%lld", recent_sid);
 
-        snprintf(es->arg_name[2],  arg_size, "%s", "YABAI_SPACE_INDEX");
+        snprintf(es->arg_name[2],  arg_size, "%s", "YABAI_ZIG_SPACE_INDEX");
         snprintf(es->arg_value[2], arg_size, "%d", index);
-        snprintf(es->arg_name[3],  arg_size, "%s", "YABAI_RECENT_SPACE_INDEX");
+        snprintf(es->arg_name[3],  arg_size, "%s", "YABAI_ZIG_RECENT_SPACE_INDEX");
         snprintf(es->arg_value[3], arg_size, "%d", recent_index);
     } break;
     case SIGNAL_DISPLAY_ADDED:
@@ -286,9 +286,9 @@ void event_signal_push(enum signal_type type, void *context)
         es->arg_name[1]  = ts_alloc_unaligned(arg_size);
         es->arg_value[1] = ts_alloc_unaligned(arg_size);
 
-        snprintf(es->arg_name[0],  arg_size, "%s", "YABAI_DISPLAY_ID");
+        snprintf(es->arg_name[0],  arg_size, "%s", "YABAI_ZIG_DISPLAY_ID");
         snprintf(es->arg_value[0], arg_size, "%d", did);
-        snprintf(es->arg_name[1],  arg_size, "%s", "YABAI_DISPLAY_INDEX");
+        snprintf(es->arg_name[1],  arg_size, "%s", "YABAI_ZIG_DISPLAY_INDEX");
         snprintf(es->arg_value[1], arg_size, "%d", index);
     } break;
     case SIGNAL_DISPLAY_REMOVED: {
@@ -297,7 +297,7 @@ void event_signal_push(enum signal_type type, void *context)
         es->arg_name[0]  = ts_alloc_unaligned(arg_size);
         es->arg_value[0] = ts_alloc_unaligned(arg_size);
 
-        snprintf(es->arg_name[0],  arg_size, "%s", "YABAI_DISPLAY_ID");
+        snprintf(es->arg_name[0],  arg_size, "%s", "YABAI_ZIG_DISPLAY_ID");
         snprintf(es->arg_value[0], arg_size, "%d", did);
     } break;
     case SIGNAL_DISPLAY_CHANGED: {
@@ -317,14 +317,14 @@ void event_signal_push(enum signal_type type, void *context)
         es->arg_name[3]  = ts_alloc_unaligned(arg_size);
         es->arg_value[3] = ts_alloc_unaligned(arg_size);
 
-        snprintf(es->arg_name[0],  arg_size, "%s", "YABAI_DISPLAY_ID");
+        snprintf(es->arg_name[0],  arg_size, "%s", "YABAI_ZIG_DISPLAY_ID");
         snprintf(es->arg_value[0], arg_size, "%d", did);
-        snprintf(es->arg_name[1],  arg_size, "%s", "YABAI_RECENT_DISPLAY_ID");
+        snprintf(es->arg_name[1],  arg_size, "%s", "YABAI_ZIG_RECENT_DISPLAY_ID");
         snprintf(es->arg_value[1], arg_size, "%d", recent_did);
 
-        snprintf(es->arg_name[2],  arg_size, "%s", "YABAI_DISPLAY_INDEX");
+        snprintf(es->arg_name[2],  arg_size, "%s", "YABAI_ZIG_DISPLAY_INDEX");
         snprintf(es->arg_value[2], arg_size, "%d", index);
-        snprintf(es->arg_name[3],  arg_size, "%s", "YABAI_RECENT_DISPLAY_INDEX");
+        snprintf(es->arg_name[3],  arg_size, "%s", "YABAI_ZIG_RECENT_DISPLAY_INDEX");
         snprintf(es->arg_value[3], arg_size, "%d", recent_index);
     } break;
     case SIGNAL_MISSION_CONTROL_ENTER:
@@ -334,7 +334,7 @@ void event_signal_push(enum signal_type type, void *context)
         es->arg_name[0]  = ts_alloc_unaligned(arg_size);
         es->arg_value[0] = ts_alloc_unaligned(arg_size);
 
-        snprintf(es->arg_name[0],  arg_size, "%s", "YABAI_MISSION_CONTROL_MODE");
+        snprintf(es->arg_name[0],  arg_size, "%s", "YABAI_ZIG_MISSION_CONTROL_MODE");
         snprintf(es->arg_value[0], arg_size, "%s", mission_control_mode_str[mode]);
     } break;
     }

@@ -1,7 +1,7 @@
 #ifndef SA_COMMON_H
 #define SA_COMMON_H
 
-#define SA_SOCKET_PATH_FMT "/tmp/yabai-sa_%s.socket"
+#define SA_SOCKET_PATH_FMT "/tmp/yabai-zig-sa_%s.socket"
 #define SA_SOCKET_BUFF_LEN 0x1000
 
 #define OSAX_VERSION                "2.1.37"

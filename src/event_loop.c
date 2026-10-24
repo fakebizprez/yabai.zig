@@ -1730,8 +1730,8 @@ bool event_loop_begin(struct event_loop *event_loop)
 {
     if (!memory_pool_init(&event_loop->pool, KILOBYTES(512))) return false;
 
-    event_loop->semaphore = sem_open("yabai_event_loop_semaphore", O_CREAT, 0600, 0);
-    sem_unlink("yabai_event_loop_semaphore");
+    event_loop->semaphore = sem_open("yabai-zig_event_loop_semaphore", O_CREAT, 0600, 0);
+    sem_unlink("yabai-zig_event_loop_semaphore");
     if (event_loop->semaphore == SEM_FAILED) return false;
 
     event_loop->head = memory_pool_push(&event_loop->pool, sizeof(struct event));

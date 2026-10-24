@@ -96,7 +96,7 @@
 #include "space_manager.c"
 #include "window_manager.c"
 #include "mouse_handler.c"
-#include "yabai.c"
+#include "yabai-zig.c"
 
 #define ZIG_ABI_PRIVATE_PINS
 #include "zig_abi.h"

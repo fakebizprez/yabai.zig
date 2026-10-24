@@ -10,10 +10,10 @@ all: clean build run
 clean:
 	rm -rf ./bin
 
-# The CLI golden tests exec ../bin/yabai; rebuild it when any source is newer.
+# The CLI golden tests exec ../bin/yabai-zig; rebuild it when any source is newer.
 # Waits for the Zig objects so make -j does not run build.sh twice at once.
 daemon: $(ZIG_OBJ)
-	$(MAKE) -C .. ./bin/yabai
+	$(MAKE) -C .. ./bin/yabai-zig
 
 TEST_FLAGS = -DTESTS -DPROFILE=1 -F/System/Library/PrivateFrameworks
 

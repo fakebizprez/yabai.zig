@@ -75,7 +75,7 @@ static int token_stream_check(char *frame, int total)
 TEST_FUNC(zig_message_token_stream,
 {
     char *argv1[4];
-    argv1[0] = "yabai";
+    argv1[0] = "yabai-zig";
     argv1[1] = "window";
     argv1[2] = "--focus";
     argv1[3] = "west";
@@ -84,7 +84,7 @@ TEST_FUNC(zig_message_token_stream,
     TEST_CHECK(token_stream_check(frame1, total1), 1);
 
     char *argv2[3];
-    argv2[0] = "yabai";
+    argv2[0] = "yabai-zig";
     argv2[1] = "query";
     argv2[2] = "--windows";
     char frame2[256];
@@ -92,7 +92,7 @@ TEST_FUNC(zig_message_token_stream,
     TEST_CHECK(token_stream_check(frame2, total2), 1);
 
     char *argv3[6];
-    argv3[0] = "yabai";
+    argv3[0] = "yabai-zig";
     argv3[1] = "config";
     argv3[2] = "--space";
     argv3[3] = "3";
@@ -354,7 +354,7 @@ static int frame_decode_parity(char *frame, int total)
 TEST_FUNC(zig_message_frame_decode,
 {
     char *argv[3];
-    argv[0] = "yabai";
+    argv[0] = "yabai-zig";
     argv[1] = "query";
     argv[2] = "--windows";
     char frame[256];

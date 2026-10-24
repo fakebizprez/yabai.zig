@@ -17,7 +17,7 @@ YABAI_SRC      = ./src/manifest.m $(OSAX_SRC) $(ZIG_OBJ)
 YABAI_DEPS     = $(shell find ./src -name '*.[chm]' -not -path './src/osax/*')
 OSAX_PATH      = ./src/osax
 INFO_PLIST     = $(ASSET_PATH)/Info.plist
-BINS           = $(BUILD_PATH)/yabai
+BINS           = $(BUILD_PATH)/yabai-zig
 
 .PHONY: all asan tsan install man icon archive publish sign clean-build clean
 
@@ -41,14 +41,14 @@ $(OSAX_SRC): $(OSAX_PATH)/loader.m $(OSAX_PATH)/payload.m $(OSAX_PATH)/arm64_pay
 	rm -f $(OSAX_PATH)/loader
 
 man:
-	asciidoctor -b manpage $(DOC_PATH)/yabai.asciidoc -o $(DOC_PATH)/yabai.1
+	asciidoctor -b manpage $(DOC_PATH)/yabai-zig.asciidoc -o $(DOC_PATH)/yabai-zig.1
 
 icon:
-	python3 $(SCRIPT_PATH)/seticon.py $(ASSET_PATH)/icon/2x/icon-512px@2x.png $(BUILD_PATH)/yabai
+	python3 $(SCRIPT_PATH)/seticon.py $(ASSET_PATH)/icon/2x/icon-512px@2x.png $(BUILD_PATH)/yabai-zig
 
 publish:
-	sed -i '' "60s/^VERSION=.*/VERSION=\"$(shell $(BUILD_PATH)/yabai --version | cut -d "v" -f 2)\"/" $(SCRIPT_PATH)/install.sh
-	sed -i '' "61s/^EXPECTED_HASH=.*/EXPECTED_HASH=\"$(shell shasum -a 256 $(BUILD_PATH)/$(shell $(BUILD_PATH)/yabai --version).tar.gz | cut -d " " -f 1)\"/" $(SCRIPT_PATH)/install.sh
+	sed -i '' "60s/^VERSION=.*/VERSION=\"$(shell $(BUILD_PATH)/yabai-zig --version | cut -d "v" -f 2)\"/" $(SCRIPT_PATH)/install.sh
+	sed -i '' "61s/^EXPECTED_HASH=.*/EXPECTED_HASH=\"$(shell shasum -a 256 $(BUILD_PATH)/$(shell $(BUILD_PATH)/yabai-zig --version).tar.gz | cut -d " " -f 1)\"/" $(SCRIPT_PATH)/install.sh
 
 archive: man install sign icon
 	rm -rf $(ARCH_PATH)
@@ -56,11 +56,11 @@ archive: man install sign icon
 	cp -r $(BUILD_PATH) $(ARCH_PATH)/
 	cp -r $(DOC_PATH) $(ARCH_PATH)/
 	cp -r $(SMP_PATH) $(ARCH_PATH)/
-	tar -cvzf $(BUILD_PATH)/$(shell $(BUILD_PATH)/yabai --version).tar.gz $(ARCH_PATH)
+	tar -cvzf $(BUILD_PATH)/$(shell $(BUILD_PATH)/yabai-zig --version).tar.gz $(ARCH_PATH)
 	rm -rf $(ARCH_PATH)
 
 sign:
-	codesign -fs "yabai-cert" $(BUILD_PATH)/yabai
+	codesign -fs "yabai-zig-cert" $(BUILD_PATH)/yabai-zig
 
 clean-build:
 	rm -rf $(BUILD_PATH)
@@ -77,6 +77,6 @@ $(ZIG_STAMP): $(ZIG_SRC) ./src/zig_abi.h ./zig/build.sh ./zig/ZIG_VERSION
 	./zig/build.sh
 	touch $@
 
-$(BUILD_PATH)/yabai: $(YABAI_SRC) $(YABAI_DEPS) $(INFO_PLIST)
+$(BUILD_PATH)/yabai-zig: $(YABAI_SRC) $(YABAI_DEPS) $(INFO_PLIST)
 	mkdir -p $(BUILD_PATH)
 	xcrun clang $(YABAI_SRC) $(BUILD_FLAGS) $(CLI_FLAGS) $(FRAMEWORK_PATH) $(FRAMEWORK) -o $@

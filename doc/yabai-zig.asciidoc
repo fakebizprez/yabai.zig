@@ -1,6 +1,6 @@
-:man source:   Yabai
+:man source:   Yabai-zig
 :man version:  {revnumber}
-:man manual:   Yabai Manual
+:man manual:   Yabai-zig Manual
 
 ifdef::env-github[]
 :toc:
@@ -8,7 +8,7 @@ ifdef::env-github[]
 :toc-placement!:
 endif::[]
 
-yabai(1)
+yabai-zig(1)
 ========
 
 ifdef::env-github[]
@@ -18,17 +18,17 @@ endif::[]
 Name
 ----
 
-yabai - window manager
+yabai-zig - window manager
 
 Synopsis
 --------
 
-*yabai* [*--load-sa*|*--uninstall-sa*|*--install-service*|*--uninstall-service*|*--start-service*|*--restart-service*|*--stop-service*|*--message*,*-m* 'msg'|*--config*,*-c* 'config_file'|*--verbose*,*-V*|*--version*,*-v*|*--help*,*-h*]
+*yabai-zig* [*--load-sa*|*--uninstall-sa*|*--install-service*|*--uninstall-service*|*--start-service*|*--restart-service*|*--stop-service*|*--message*,*-m* 'msg'|*--config*,*-c* 'config_file'|*--verbose*,*-V*|*--version*,*-v*|*--help*,*-h*]
 
 Description
 -----------
 
-*yabai* is a tiling window manager for macOS based on binary space partitioning.
+*yabai-zig* is a tiling window manager for macOS based on binary space partitioning.
 
 Options
 -------
@@ -62,7 +62,7 @@ Options
     Stops a running instance of the service and unloads it.
 
 *--message*, *-m* '<msg>'::
-    Send message to a running instance of yabai.
+    Send message to a running instance of yabai-zig.
 
 *--config*, *-c* '<config_file>'::
     Use the specified configuration file. +
@@ -125,10 +125,10 @@ Config
 General Syntax
 ^^^^^^^^^^^^^^
 
-yabai -m config <global setting>::
+yabai-zig -m config <global setting>::
     Get or set the value of <global setting>.
 
-yabai -m config [--space '<SPACE_SEL>'] <space setting>::
+yabai-zig -m config [--space '<SPACE_SEL>'] <space setting>::
     Get or set the value of <space setting>.
 
 Global Settings
@@ -265,7 +265,7 @@ Display
 General Syntax
 ^^^^^^^^^^^^^^
 
-yabai -m display ['<DISPLAY_SEL'>] '<COMMAND>'
+yabai-zig -m display ['<DISPLAY_SEL'>] '<COMMAND>'
 
 COMMAND
 ^^^^^^^
@@ -288,7 +288,7 @@ Space
 General Syntax
 ^^^^^^^^^^^^^^
 
-yabai -m space ['<SPACE_SEL>'] '<COMMAND>'
+yabai-zig -m space ['<SPACE_SEL>'] '<COMMAND>'
 
 COMMAND
 ^^^^^^^
@@ -364,7 +364,7 @@ Window
 General Syntax
 ^^^^^^^^^^^^^^
 
-yabai -m window ['<WINDOW_SEL>'] '<COMMAND>'
+yabai-zig -m window ['<WINDOW_SEL>'] '<COMMAND>'
 
 COMMAND
 ^^^^^^^
@@ -464,7 +464,7 @@ Query
 General Syntax
 ^^^^^^^^^^^^^^
 
-yabai -m query '<COMMAND>' ['<PROPERTIES>'] ['<ARGUMENT>']
+yabai-zig -m query '<COMMAND>' ['<PROPERTIES>'] ['<ARGUMENT>']
 
 COMMAND
 ^^^^^^^
@@ -582,15 +582,15 @@ WINDOW
 }
 ----
 
-Some window properties are only accessible when yabai has a valid AX-reference for that window. +
+Some window properties are only accessible when yabai-zig has a valid AX-reference for that window. +
 This AX-reference can only be retrieved when the space that the window is visible on, is active. +
-If windows are already opened on inactive spaces when yabai is launched, yabai will attempt to detect +
+If windows are already opened on inactive spaces when yabai-zig is launched, yabai-zig will attempt to detect +
 these using a workaround, and for most applications and windows this will work. Some windows are not +
-detected using this method, and for those windows yabai will retrieve a limited amount of information, +
-until the window that space belongs to becomes active -- yabai window commands will NOT WORK for these windows. +
+detected using this method, and for those windows yabai-zig will retrieve a limited amount of information, +
+until the window that space belongs to becomes active -- yabai-zig window commands will NOT WORK for these windows. +
 These windows can be identified by looking at the `has-ax-reference` property. Once the space that the window +
-belongs to becomes active, yabai will automatically create an AX-reference. The queries will from that point +
-forwards contain complete information, and the window  can be used with yabai window commands.
+belongs to becomes active, yabai-zig will automatically create an AX-reference. The queries will from that point +
+forwards contain complete information, and the window  can be used with yabai-zig window commands.
 
 The properties that contain incorrect information for windows with `has-ax-reference: false` are as follows:
 ----
@@ -613,7 +613,7 @@ The following properties require System Integrity Protection to be partially dis
 General Syntax
 ^^^^^^^^^^^^^^
 
-yabai -m rule '<COMMAND>'
+yabai-zig -m rule '<COMMAND>'
 
 COMMAND
 ^^^^^^^
@@ -732,7 +732,7 @@ Arguments are passed through environment variables.
 General Syntax
 ^^^^^^^^^^^^^^
 
-yabai -m signal '<COMMAND>'
+yabai-zig -m signal '<COMMAND>'
 
 COMMAND
 ^^^^^^^
@@ -753,118 +753,118 @@ EVENT
 *application_launched*::
     Triggered when a new application is launched. +
     Eligible for *app* filter. +
-    Passes one argument: $YABAI_PROCESS_ID
+    Passes one argument: $YABAI_ZIG_PROCESS_ID
 
 *application_terminated*::
     Triggered when an application is terminated. +
     Eligible for *app* and *active* filter. +
-    Passes one argument: $YABAI_PROCESS_ID
+    Passes one argument: $YABAI_ZIG_PROCESS_ID
 
 *application_front_switched*::
     Triggered when the front-most application changes. +
-    Passes two arguments: $YABAI_PROCESS_ID, $YABAI_RECENT_PROCESS_ID
+    Passes two arguments: $YABAI_ZIG_PROCESS_ID, $YABAI_ZIG_RECENT_PROCESS_ID
 
 *application_activated*::
     Triggered when an application is activated. +
     Eligible for *app* filter. +
-    Passes one argument: $YABAI_PROCESS_ID
+    Passes one argument: $YABAI_ZIG_PROCESS_ID
 
 *application_deactivated*::
     Triggered when an application is deactivated. +
     Eligible for *app* filter. +
-    Passes one argument: $YABAI_PROCESS_ID
+    Passes one argument: $YABAI_ZIG_PROCESS_ID
 
 *application_visible*::
     Triggered when an application is unhidden. +
     Eligible for *app* filter. +
-    Passes one argument: $YABAI_PROCESS_ID
+    Passes one argument: $YABAI_ZIG_PROCESS_ID
 
 *application_hidden*::
     Triggered when an application is hidden. +
     Eligible for *app* and *active* filter. +
-    Passes one argument: $YABAI_PROCESS_ID
+    Passes one argument: $YABAI_ZIG_PROCESS_ID
 
 *window_created*::
     Triggered when a window is created. +
     Also applies to windows that are implicitly created at application launch. +
     Eligible for *app* and *title* filter. +
-    Passes one argument: $YABAI_WINDOW_ID
+    Passes one argument: $YABAI_ZIG_WINDOW_ID
 
 *window_destroyed*::
     Triggered when a window is destroyed. +
     Also applies to windows that are implicitly destroyed at application exit. +
     Eligible for *app* and *active* filter. +
-    Passes one argument: $YABAI_WINDOW_ID
+    Passes one argument: $YABAI_ZIG_WINDOW_ID
 
 *window_focused*::
     Triggered when a window becomes the key-window. +
     Eligible for *app* and *title* filter. +
-    Passes one argument: $YABAI_WINDOW_ID
+    Passes one argument: $YABAI_ZIG_WINDOW_ID
 
 *window_moved*::
     Triggered when a window changes position. +
     Eligible for *app*, *title* and *active* filter. +
-    Passes one argument: $YABAI_WINDOW_ID
+    Passes one argument: $YABAI_ZIG_WINDOW_ID
 
 *window_resized*::
     Triggered when a window changes dimensions. +
     Eligible for *app*, *title* and *active* filter. +
-    Passes one argument: $YABAI_WINDOW_ID
+    Passes one argument: $YABAI_ZIG_WINDOW_ID
 
 *window_minimized*::
     Triggered when a window has been minimized. +
     Eligible for *app*, *title* and *active* filter. +
-    Passes one argument: $YABAI_WINDOW_ID
+    Passes one argument: $YABAI_ZIG_WINDOW_ID
 
 *window_deminimized*::
     Triggered when a window has been deminimized. +
     Eligible for *app* and *title* filter. +
-    Passes one argument: $YABAI_WINDOW_ID
+    Passes one argument: $YABAI_ZIG_WINDOW_ID
 
 *window_title_changed*::
     Triggered when a window changes its title. +
     Eligible for *app*, *title* and *active* filter. +
-    Passes one argument: $YABAI_WINDOW_ID
+    Passes one argument: $YABAI_ZIG_WINDOW_ID
 
 *space_created*::
     Triggered when a space is created. +
-    Passes two arguments: $YABAI_SPACE_ID, $YABAI_SPACE_INDEX
+    Passes two arguments: $YABAI_ZIG_SPACE_ID, $YABAI_ZIG_SPACE_INDEX
 
 *space_destroyed*::
     Triggered when a space is destroyed. +
-    Passes one argument: $YABAI_SPACE_ID
+    Passes one argument: $YABAI_ZIG_SPACE_ID
 
 *space_changed*::
     Triggered when the active space has changed. +
-    Passes four arguments: $YABAI_SPACE_ID, $YABAI_SPACE_INDEX, $YABAI_RECENT_SPACE_ID, $YABAI_RECENT_SPACE_INDEX
+    Passes four arguments: $YABAI_ZIG_SPACE_ID, $YABAI_ZIG_SPACE_INDEX, $YABAI_ZIG_RECENT_SPACE_ID, $YABAI_ZIG_RECENT_SPACE_INDEX
 
 *display_added*::
     Triggered when a new display has been added. +
-    Passes two arguments: $YABAI_DISPLAY_ID, $YABAI_DISPLAY_INDEX
+    Passes two arguments: $YABAI_ZIG_DISPLAY_ID, $YABAI_ZIG_DISPLAY_INDEX
 
 *display_removed*::
     Triggered when a display has been removed. +
-    Passes one argument: $YABAI_DISPLAY_ID
+    Passes one argument: $YABAI_ZIG_DISPLAY_ID
 
 *display_moved*::
     Triggered when a change has been made to display arrangement. +
-    Passes two arguments: $YABAI_DISPLAY_ID, $YABAI_DISPLAY_INDEX
+    Passes two arguments: $YABAI_ZIG_DISPLAY_ID, $YABAI_ZIG_DISPLAY_INDEX
 
 *display_resized*::
     Triggered when a display has changed resolution. +
-    Passes two arguments: $YABAI_DISPLAY_ID, $YABAI_DISPLAY_INDEX
+    Passes two arguments: $YABAI_ZIG_DISPLAY_ID, $YABAI_ZIG_DISPLAY_INDEX
 
 *display_changed*::
     Triggered when the active display has changed. +
-    Passes four arguments: $YABAI_DISPLAY_ID, $YABAI_DISPLAY_INDEX, $YABAI_RECENT_DISPLAY_ID, $YABAI_RECENT_DISPLAY_INDEX
+    Passes four arguments: $YABAI_ZIG_DISPLAY_ID, $YABAI_ZIG_DISPLAY_INDEX, $YABAI_ZIG_RECENT_DISPLAY_ID, $YABAI_ZIG_RECENT_DISPLAY_INDEX
 
 *mission_control_enter*::
     Triggered when mission-control activates. +
-    Passes one argument: $YABAI_MISSION_CONTROL_MODE
+    Passes one argument: $YABAI_ZIG_MISSION_CONTROL_MODE
 
 *mission_control_exit*::
     Triggered when mission-control deactivates. +
-    Passes one argument: $YABAI_MISSION_CONTROL_MODE
+    Passes one argument: $YABAI_ZIG_MISSION_CONTROL_MODE
 
 *dock_did_change_pref*::
     Triggered when the macOS Dock preferences changes.
@@ -902,7 +902,7 @@ DATAFORMAT
 Exit Codes
 ----------
 
-If *yabai* can't handle a message, it will return a non-zero exit code.
+If *yabai-zig* can't handle a message, it will return a non-zero exit code.
 
 Author
 ------

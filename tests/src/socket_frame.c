@@ -1,5 +1,5 @@
 /* Socket wire format, exercised through production code only: frames come
- * from socket_frame_encode() (the client send path in src/yabai.c) and go
+ * from socket_frame_encode() (the client send path in src/yabai-zig.c) and go
  * over a socketpair into daemon_read_message() / the DAEMON_MESSAGE
  * handler in src/event_loop.c. A rejected frame is closed without a reply
  * and handle_message is never called, so the client sees 0 bytes.

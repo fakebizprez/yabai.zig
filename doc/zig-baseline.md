@@ -19,13 +19,13 @@ and "Routing map" below.
 
 ## Reference binary
 
-- `./bin/yabai --version` prints `yabai-v7.1.25`, exit 0.
-- `./bin/yabai --help` prints the option list in src/yabai.c
+- `./bin/yabai-zig --version` prints `yabai-zig-v7.1.25`, exit 0.
+- `./bin/yabai-zig --help` prints the option list in src/yabai-zig.c
   (`--load-sa`, `--uninstall-sa`, `--install-service`,
   `--uninstall-service`, `--start-service`, `--restart-service`,
   `--message/-m`, `--config/-c`, `--verbose/-V`, `--version/-v`,
-  `--help/-h`) plus the `man yabai` pointer.
-- `lipo -info ./bin/yabai`: fat file with `x86_64 arm64` slices.
+  `--help/-h`) plus the `man yabai-zig` pointer.
+- `lipo -info ./bin/yabai-zig`: fat file with `x86_64 arm64` slices.
 - Suite: `cd tests && make` runs the 106 entries in `TEST_LIST`
   (tests/src/tests.m) as `tests/bin/tests`, then the `tests/bin/osax27`
   Dock payload helper checks, then the same suite built for x86_64
@@ -272,7 +272,7 @@ frozen `ref_area_make_pair` in tests/src/ref_upstream_view.c).
   every `yabai_*` prototype against its export.
 - Both makefiles depend on one stamp, `zig/bin/build.stamp`, so
   `make -j` runs build.sh once for all objects.
-- The root makefile links all eight objects into `bin/yabai` (still a
+- The root makefile links all eight objects into `bin/yabai-zig` (still a
   fat x86_64+arm64 binary, `--version` unchanged); 107 `yabai_*`
   exports. The objects need no Zig runtime; geometry, message, util,
   window, display and mouse need only libc/libm, while rule and view
@@ -283,16 +283,16 @@ frozen `ref_area_make_pair` in tests/src/ref_upstream_view.c).
 
 ## CLI/daemon wire format (frozen)
 
-- Socket path: `/tmp/yabai_$USER.socket` (SOCKET_PATH_FMT in src/yabai.c),
+- Socket path: `/tmp/yabai-zig_$USER.socket` (SOCKET_PATH_FMT in src/yabai-zig.c),
   created with mode `0600` (message_loop_begin in src/message.c).
 - Accept thread (message_loop_run) hands each fd to the event worker;
   `daemon_read_message` in src/event_loop.c reads a native `int` byte
   length, then loops until exactly that many payload bytes arrive.
 - Encoder (`socket_frame_encode`, called by client_send_message in
-  src/yabai.c):
+  src/yabai-zig.c):
   `length = argc + sum(strlen(argv[i]))`; frame = native `int` length,
   then each argument bytes plus `'\0'`, then one final `'\0'`.
-  Example: `yabai query --windows` encodes a 17-byte payload
+  Example: `yabai-zig query --windows` encodes a 17-byte payload
   `query\0--windows\0\0`.
 - Failure marker: responses starting with byte `0x07` (FAILURE_MESSAGE in
   src/misc/macros.h) go to stderr and force a non-zero CLI exit.
@@ -359,3 +359,25 @@ Never ported (coupled, needs live sessions): display/space/window
 selector resolution beyond parse_rule's call-through, node
 add/remove/flush/update/capture, window/space/display AX/SLS query
 paths, all manager tables and event/signal flow, easing dispatch.
+
+## Renamed to yabai-zig (deliberate)
+
+The program names itself `yabai-zig` everywhere so it can run beside, and
+never be mistaken for, upstream yabai. Wire format, command domains, and
+query JSON are unchanged; only names and paths moved:
+
+- Binary `bin/yabai-zig`; `--version` prints `yabai-zig-v7.1.25`; help,
+  usage, and error prefixes say `yabai-zig` / `yabai-zig-msg`.
+- Sockets and lock: `/tmp/yabai-zig_$USER.socket`,
+  `/tmp/yabai-zig_$USER.lock`, `/tmp/yabai-zig-sa_$USER.socket`.
+- launchd label `com.fakebizprez.yabai-zig`; logs
+  `/tmp/yabai-zig_$USER.{out,err}.log`.
+- Config file `yabai-zigrc` (`$XDG_CONFIG_HOME/yabai-zig/`,
+  `~/.config/yabai-zig/`, or `~/.yabai-zigrc`).
+- Signal environment variables `YABAI_ZIG_*` (was `YABAI_*`).
+- Bundle id `com.fakebizprez.yabai-zig`; scripting addition
+  `/Library/ScriptingAdditions/yabai-zig.osax`
+  (`com.fakebizprez.yabai-zig-osax`, payload `com.fakebizprez.yabai-zig-sa`).
+- Man page `doc/yabai-zig.1`; signing identity `yabai-zig-cert`.
+
+Internal `yabai_*` C/Zig symbol names are unchanged.

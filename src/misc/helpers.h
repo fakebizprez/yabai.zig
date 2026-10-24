@@ -446,14 +446,14 @@ static bool get_config_file(char *restrict filename, char *restrict buffer, int 
 {
     char *xdg_home = getenv("XDG_CONFIG_HOME");
     if (xdg_home && *xdg_home) {
-        snprintf(buffer, buffer_size, "%s/yabai/%s", xdg_home, filename);
+        snprintf(buffer, buffer_size, "%s/yabai-zig/%s", xdg_home, filename);
         if (file_exists(buffer)) return true;
     }
 
     char *home = getenv("HOME");
     if (!home) return false;
 
-    snprintf(buffer, buffer_size, "%s/.config/yabai/%s", home, filename);
+    snprintf(buffer, buffer_size, "%s/.config/yabai-zig/%s", home, filename);
     if (file_exists(buffer)) return true;
 
     snprintf(buffer, buffer_size, "%s/.%s", home, filename);
@@ -462,14 +462,14 @@ static bool get_config_file(char *restrict filename, char *restrict buffer, int 
 
 static void exec_config_file(char *config_file, int config_file_size)
 {
-    if (config_file[0] == '\0' && !get_config_file("yabairc", config_file, config_file_size)) {
-        warn("yabai: could not locate config file..\n");
+    if (config_file[0] == '\0' && !get_config_file("yabai-zigrc", config_file, config_file_size)) {
+        warn("yabai-zig: could not locate config file..\n");
         notify("configuration", "could not locate config file..");
         return;
     }
 
     if (!file_exists(config_file)) {
-        warn("yabai: configuration file '%s' does not exist..\n", config_file);
+        warn("yabai-zig: configuration file '%s' does not exist..\n", config_file);
         notify("configuration", "file '%s' does not exist..", config_file);
         return;
     }
@@ -481,7 +481,7 @@ static void exec_config_file(char *config_file, int config_file_size)
                     : (char*[]){ "/usr/bin/env", "sh", config_file, NULL};
         exit(execvp(exec[0], exec));
     } else if (pid == -1) {
-        warn("yabai: failed to load config file '%s'\n", config_file);
+        warn("yabai-zig: failed to load config file '%s'\n", config_file);
         notify("configuration", "failed to load file '%s'", config_file);
     }
 }

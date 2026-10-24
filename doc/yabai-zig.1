@@ -1,13 +1,13 @@
 '\" t
-.\"     Title: yabai
+.\"     Title: yabai-zig
 .\"    Author: [see the "AUTHOR(S)" section]
 .\" Generator: Asciidoctor 2.0.26
 .\"      Date: 2026-05-08
-.\"    Manual: Yabai Manual
-.\"    Source: Yabai
+.\"    Manual: Yabai-zig Manual
+.\"    Source: Yabai-zig
 .\"  Language: English
 .\"
-.TH "YABAI" "1" "2026-05-08" "Yabai" "Yabai Manual"
+.TH "YABAI" "1" "2026-05-08" "Yabai-zig" "Yabai-zig Manual"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -28,7 +28,7 @@
 .  LINKSTYLE blue R < >
 .\}
 .SH "NAME"
-yabai \- window manager
+yabai-zig \- window manager
 .SH "SYNOPSIS"
 .sp
 \fByabai\fP [\fB\-\-load\-sa\fP|\fB\-\-uninstall\-sa\fP|\fB\-\-install\-service\fP|\fB\-\-uninstall\-service\fP|\fB\-\-start\-service\fP|\fB\-\-restart\-service\fP|\fB\-\-stop\-service\fP|\fB\-\-message\fP,\fB\-m\fP \fImsg\fP|\fB\-\-config\fP,\fB\-c\fP \fIconfig_file\fP|\fB\-\-verbose\fP,\fB\-V\fP|\fB\-\-version\fP,\fB\-v\fP|\fB\-\-help\fP,\fB\-h\fP]
@@ -90,7 +90,7 @@ Stops a running instance of the service and unloads it.
 .sp
 \fB\-\-message\fP, \fB\-m\fP \fI<msg>\fP
 .RS 4
-Send message to a running instance of yabai.
+Send message to a running instance of yabai-zig.
 .RE
 .sp
 \fB\-\-config\fP, \fB\-c\fP \fI<config_file>\fP
@@ -160,12 +160,12 @@ EASING\&      := ease_in_sine\&  | ease_out_sine\&  | ease_in_out_sine\&  |
 .SS "Config"
 .SS "General Syntax"
 .sp
-yabai \-m config <global setting>
+yabai-zig \-m config <global setting>
 .RS 4
 Get or set the value of <global setting>.
 .RE
 .sp
-yabai \-m config [\-\-space \fI<SPACE_SEL>\fP] <space setting>
+yabai-zig \-m config [\-\-space \fI<SPACE_SEL>\fP] <space setting>
 .RS 4
 Get or set the value of <space setting>.
 .RE
@@ -388,7 +388,7 @@ Balance the window tree upon change, so that all windows occupy an equally sized
 .SS "Display"
 .SS "General Syntax"
 .sp
-yabai \-m display [\fI<DISPLAY_SEL\fP>] \fI<COMMAND>\fP
+yabai-zig \-m display [\fI<DISPLAY_SEL\fP>] \fI<COMMAND>\fP
 .SS "COMMAND"
 .sp
 \fB\-\-focus\fP \fI<DISPLAY_SEL>\fP
@@ -414,7 +414,7 @@ If the command is called without an argument it will try to remove a previously 
 .SS "Space"
 .SS "General Syntax"
 .sp
-yabai \-m space [\fI<SPACE_SEL>\fP] \fI<COMMAND>\fP
+yabai-zig \-m space [\fI<SPACE_SEL>\fP] \fI<COMMAND>\fP
 .SS "COMMAND"
 .sp
 \fB\-\-focus\fP \fI<SPACE_SEL>\fP
@@ -533,7 +533,7 @@ If the command is called without an argument it will try to remove a previously 
 .SS "Window"
 .SS "General Syntax"
 .sp
-yabai \-m window [\fI<WINDOW_SEL>\fP] \fI<COMMAND>\fP
+yabai-zig \-m window [\fI<WINDOW_SEL>\fP] \fI<COMMAND>\fP
 .SS "COMMAND"
 .sp
 \fB\-\-focus\fP [\fI<WINDOW_SEL>\fP]
@@ -696,7 +696,7 @@ System Integrity Protection must be partially disabled.
 .SS "Query"
 .SS "General Syntax"
 .sp
-yabai \-m query \fI<COMMAND>\fP [\fI<PROPERTIES>\fP] [\fI<ARGUMENT>\fP]
+yabai-zig \-m query \fI<COMMAND>\fP [\fI<PROPERTIES>\fP] [\fI<ARGUMENT>\fP]
 .SS "COMMAND"
 .sp
 \fB\-\-displays\fP
@@ -831,23 +831,23 @@ WINDOW
 .fi
 .if n .RE
 .sp
-Some window properties are only accessible when yabai has a valid AX\-reference for that window.
+Some window properties are only accessible when yabai-zig has a valid AX\-reference for that window.
 .br
 This AX\-reference can only be retrieved when the space that the window is visible on, is active.
 .br
-If windows are already opened on inactive spaces when yabai is launched, yabai will attempt to detect
+If windows are already opened on inactive spaces when yabai-zig is launched, yabai-zig will attempt to detect
 .br
 these using a workaround, and for most applications and windows this will work. Some windows are not
 .br
-detected using this method, and for those windows yabai will retrieve a limited amount of information,
+detected using this method, and for those windows yabai-zig will retrieve a limited amount of information,
 .br
-until the window that space belongs to becomes active \(em yabai window commands will NOT WORK for these windows.
+until the window that space belongs to becomes active \(em yabai-zig window commands will NOT WORK for these windows.
 .br
 These windows can be identified by looking at the \f(CRhas\-ax\-reference\fP property. Once the space that the window
 .br
-belongs to becomes active, yabai will automatically create an AX\-reference. The queries will from that point
+belongs to becomes active, yabai-zig will automatically create an AX\-reference. The queries will from that point
 .br
-forwards contain complete information, and the window  can be used with yabai window commands.
+forwards contain complete information, and the window  can be used with yabai-zig window commands.
 .sp
 The properties that contain incorrect information for windows with \f(CRhas\-ax\-reference: false\fP are as follows:
 .sp
@@ -874,7 +874,7 @@ If the display and space properties are both set, the space property will take p
 The following properties require System Integrity Protection to be partially disabled: sticky, sub\-layer, opacity, scratchpad.
 .SS "General Syntax"
 .sp
-yabai \-m rule \fI<COMMAND>\fP
+yabai-zig \-m rule \fI<COMMAND>\fP
 .SS "COMMAND"
 .sp
 \fB\-\-add [\-\-one\-shot] [\fI<ARGUMENT>\fP]\fP
@@ -1044,7 +1044,7 @@ A signal is a simple way for the user to react to some event that has been proce
 Arguments are passed through environment variables.
 .SS "General Syntax"
 .sp
-yabai \-m signal \fI<COMMAND>\fP
+yabai-zig \-m signal \fI<COMMAND>\fP
 .SS "COMMAND"
 .sp
 \fB\-\-add event=\fI<EVENT>\fP action=\fI<ACTION>\fP [label=\fI<LABEL>\fP] [app[!]=\fI<REGEX>\fP] [title[!]=\fI<REGEX>\fP] [active=\fIyes|no\fP]\fP
@@ -1071,7 +1071,7 @@ Triggered when a new application is launched.
 .br
 Eligible for \fBapp\fP filter.
 .br
-Passes one argument: $YABAI_PROCESS_ID
+Passes one argument: $YABAI_ZIG_PROCESS_ID
 .RE
 .sp
 \fBapplication_terminated\fP
@@ -1080,14 +1080,14 @@ Triggered when an application is terminated.
 .br
 Eligible for \fBapp\fP and \fBactive\fP filter.
 .br
-Passes one argument: $YABAI_PROCESS_ID
+Passes one argument: $YABAI_ZIG_PROCESS_ID
 .RE
 .sp
 \fBapplication_front_switched\fP
 .RS 4
 Triggered when the front\-most application changes.
 .br
-Passes two arguments: $YABAI_PROCESS_ID, $YABAI_RECENT_PROCESS_ID
+Passes two arguments: $YABAI_ZIG_PROCESS_ID, $YABAI_ZIG_RECENT_PROCESS_ID
 .RE
 .sp
 \fBapplication_activated\fP
@@ -1096,7 +1096,7 @@ Triggered when an application is activated.
 .br
 Eligible for \fBapp\fP filter.
 .br
-Passes one argument: $YABAI_PROCESS_ID
+Passes one argument: $YABAI_ZIG_PROCESS_ID
 .RE
 .sp
 \fBapplication_deactivated\fP
@@ -1105,7 +1105,7 @@ Triggered when an application is deactivated.
 .br
 Eligible for \fBapp\fP filter.
 .br
-Passes one argument: $YABAI_PROCESS_ID
+Passes one argument: $YABAI_ZIG_PROCESS_ID
 .RE
 .sp
 \fBapplication_visible\fP
@@ -1114,7 +1114,7 @@ Triggered when an application is unhidden.
 .br
 Eligible for \fBapp\fP filter.
 .br
-Passes one argument: $YABAI_PROCESS_ID
+Passes one argument: $YABAI_ZIG_PROCESS_ID
 .RE
 .sp
 \fBapplication_hidden\fP
@@ -1123,7 +1123,7 @@ Triggered when an application is hidden.
 .br
 Eligible for \fBapp\fP and \fBactive\fP filter.
 .br
-Passes one argument: $YABAI_PROCESS_ID
+Passes one argument: $YABAI_ZIG_PROCESS_ID
 .RE
 .sp
 \fBwindow_created\fP
@@ -1134,7 +1134,7 @@ Also applies to windows that are implicitly created at application launch.
 .br
 Eligible for \fBapp\fP and \fBtitle\fP filter.
 .br
-Passes one argument: $YABAI_WINDOW_ID
+Passes one argument: $YABAI_ZIG_WINDOW_ID
 .RE
 .sp
 \fBwindow_destroyed\fP
@@ -1145,7 +1145,7 @@ Also applies to windows that are implicitly destroyed at application exit.
 .br
 Eligible for \fBapp\fP and \fBactive\fP filter.
 .br
-Passes one argument: $YABAI_WINDOW_ID
+Passes one argument: $YABAI_ZIG_WINDOW_ID
 .RE
 .sp
 \fBwindow_focused\fP
@@ -1154,7 +1154,7 @@ Triggered when a window becomes the key\-window.
 .br
 Eligible for \fBapp\fP and \fBtitle\fP filter.
 .br
-Passes one argument: $YABAI_WINDOW_ID
+Passes one argument: $YABAI_ZIG_WINDOW_ID
 .RE
 .sp
 \fBwindow_moved\fP
@@ -1163,7 +1163,7 @@ Triggered when a window changes position.
 .br
 Eligible for \fBapp\fP, \fBtitle\fP and \fBactive\fP filter.
 .br
-Passes one argument: $YABAI_WINDOW_ID
+Passes one argument: $YABAI_ZIG_WINDOW_ID
 .RE
 .sp
 \fBwindow_resized\fP
@@ -1172,7 +1172,7 @@ Triggered when a window changes dimensions.
 .br
 Eligible for \fBapp\fP, \fBtitle\fP and \fBactive\fP filter.
 .br
-Passes one argument: $YABAI_WINDOW_ID
+Passes one argument: $YABAI_ZIG_WINDOW_ID
 .RE
 .sp
 \fBwindow_minimized\fP
@@ -1181,7 +1181,7 @@ Triggered when a window has been minimized.
 .br
 Eligible for \fBapp\fP, \fBtitle\fP and \fBactive\fP filter.
 .br
-Passes one argument: $YABAI_WINDOW_ID
+Passes one argument: $YABAI_ZIG_WINDOW_ID
 .RE
 .sp
 \fBwindow_deminimized\fP
@@ -1190,7 +1190,7 @@ Triggered when a window has been deminimized.
 .br
 Eligible for \fBapp\fP and \fBtitle\fP filter.
 .br
-Passes one argument: $YABAI_WINDOW_ID
+Passes one argument: $YABAI_ZIG_WINDOW_ID
 .RE
 .sp
 \fBwindow_title_changed\fP
@@ -1199,77 +1199,77 @@ Triggered when a window changes its title.
 .br
 Eligible for \fBapp\fP, \fBtitle\fP and \fBactive\fP filter.
 .br
-Passes one argument: $YABAI_WINDOW_ID
+Passes one argument: $YABAI_ZIG_WINDOW_ID
 .RE
 .sp
 \fBspace_created\fP
 .RS 4
 Triggered when a space is created.
 .br
-Passes two arguments: $YABAI_SPACE_ID, $YABAI_SPACE_INDEX
+Passes two arguments: $YABAI_ZIG_SPACE_ID, $YABAI_ZIG_SPACE_INDEX
 .RE
 .sp
 \fBspace_destroyed\fP
 .RS 4
 Triggered when a space is destroyed.
 .br
-Passes one argument: $YABAI_SPACE_ID
+Passes one argument: $YABAI_ZIG_SPACE_ID
 .RE
 .sp
 \fBspace_changed\fP
 .RS 4
 Triggered when the active space has changed.
 .br
-Passes four arguments: $YABAI_SPACE_ID, $YABAI_SPACE_INDEX, $YABAI_RECENT_SPACE_ID, $YABAI_RECENT_SPACE_INDEX
+Passes four arguments: $YABAI_ZIG_SPACE_ID, $YABAI_ZIG_SPACE_INDEX, $YABAI_ZIG_RECENT_SPACE_ID, $YABAI_ZIG_RECENT_SPACE_INDEX
 .RE
 .sp
 \fBdisplay_added\fP
 .RS 4
 Triggered when a new display has been added.
 .br
-Passes two arguments: $YABAI_DISPLAY_ID, $YABAI_DISPLAY_INDEX
+Passes two arguments: $YABAI_ZIG_DISPLAY_ID, $YABAI_ZIG_DISPLAY_INDEX
 .RE
 .sp
 \fBdisplay_removed\fP
 .RS 4
 Triggered when a display has been removed.
 .br
-Passes one argument: $YABAI_DISPLAY_ID
+Passes one argument: $YABAI_ZIG_DISPLAY_ID
 .RE
 .sp
 \fBdisplay_moved\fP
 .RS 4
 Triggered when a change has been made to display arrangement.
 .br
-Passes two arguments: $YABAI_DISPLAY_ID, $YABAI_DISPLAY_INDEX
+Passes two arguments: $YABAI_ZIG_DISPLAY_ID, $YABAI_ZIG_DISPLAY_INDEX
 .RE
 .sp
 \fBdisplay_resized\fP
 .RS 4
 Triggered when a display has changed resolution.
 .br
-Passes two arguments: $YABAI_DISPLAY_ID, $YABAI_DISPLAY_INDEX
+Passes two arguments: $YABAI_ZIG_DISPLAY_ID, $YABAI_ZIG_DISPLAY_INDEX
 .RE
 .sp
 \fBdisplay_changed\fP
 .RS 4
 Triggered when the active display has changed.
 .br
-Passes four arguments: $YABAI_DISPLAY_ID, $YABAI_DISPLAY_INDEX, $YABAI_RECENT_DISPLAY_ID, $YABAI_RECENT_DISPLAY_INDEX
+Passes four arguments: $YABAI_ZIG_DISPLAY_ID, $YABAI_ZIG_DISPLAY_INDEX, $YABAI_ZIG_RECENT_DISPLAY_ID, $YABAI_ZIG_RECENT_DISPLAY_INDEX
 .RE
 .sp
 \fBmission_control_enter\fP
 .RS 4
 Triggered when mission\-control activates.
 .br
-Passes one argument: $YABAI_MISSION_CONTROL_MODE
+Passes one argument: $YABAI_ZIG_MISSION_CONTROL_MODE
 .RE
 .sp
 \fBmission_control_exit\fP
 .RS 4
 Triggered when mission\-control deactivates.
 .br
-Passes one argument: $YABAI_MISSION_CONTROL_MODE
+Passes one argument: $YABAI_ZIG_MISSION_CONTROL_MODE
 .RE
 .sp
 \fBdock_did_change_pref\fP

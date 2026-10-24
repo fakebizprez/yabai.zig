@@ -1,6 +1,6 @@
 /* CLI golden-fixture tests (headless-safe daemon invocations).
  *
- * The daemon binary under test is the freshly built ../bin/yabai (repo
+ * The daemon binary under test is the freshly built ../bin/yabai-zig (repo
  * root bin/ relative to the tests/ working directory). Only invocations
  * that exit without a display server or a running daemon are pinned:
  * --help/-h (stdout), --version/-v (stdout, shape only), and bare -m
@@ -8,14 +8,14 @@
  * commands that reach the socket (-m <args>) are daemon-state dependent
  * and are deliberately NOT pinned here.
  *
- * --version is shape-checked (yabai-vMajor.Minor.Patch newline) instead
+ * --version is shape-checked (yabai-zig-vMajor.Minor.Patch newline) instead
  * of byte-compared so version bumps do not break the suite. The
  * tests/data/version.txt golden is a record-time reference only; the
  * suite asserts it is well-formed, never that live output equals it.
  *
- * Bump procedure: after a version change, re-run ./bin/yabai --help and
- * --version headless and overwrite tests/data/help.txt (it embeds the
- * version in the `man yabai` pointer line), tests/data/version.txt, and
+ * Bump procedure: after a version change, re-run ./bin/yabai-zig --help and
+ * --version headless and overwrite tests/data/help.txt,
+ * tests/data/version.txt, and
  * tests/data/m_no_args.txt if the usage text changed.
  */
 
@@ -34,7 +34,7 @@ static bool cli_paths_init(void)
     static const char *roots[] = { "..", "../.." };
     int i = 0;
     for (i = 0; i < array_count(roots); ++i) {
-        snprintf(cli_bin_path, sizeof(cli_bin_path), "%s/bin/yabai", roots[i]);
+        snprintf(cli_bin_path, sizeof(cli_bin_path), "%s/bin/yabai-zig", roots[i]);
         FILE *probe = fopen(cli_bin_path, "rb");
         if (probe) {
             fclose(probe);
@@ -90,7 +90,7 @@ static bool cli_read_golden(const char *name, struct cli_output *out)
     return n < sizeof(out->bytes) - 1;
 }
 
-/* Shape check for "yabai-v<major>.<minor>.<patch>\n"; components must be
+/* Shape check for "yabai-zig-v<major>.<minor>.<patch>\n"; components must be
  * non-negative decimal integers with no extra trailing bytes. */
 static bool cli_version_shape_ok(const char *s, int n)
 {
@@ -100,7 +100,7 @@ static bool cli_version_shape_ok(const char *s, int n)
     int consumed = 0;
 
     if (n <= 0) return false;
-    if (sscanf(s, "yabai-v%d.%d.%d%n", &major, &minor, &patch, &consumed) != 3) return false;
+    if (sscanf(s, "yabai-zig-v%d.%d.%d%n", &major, &minor, &patch, &consumed) != 3) return false;
     if (major < 0 || minor < 0 || patch < 0) return false;
 
     return consumed == n - 1 && s[consumed] == '\n' && s[consumed + 1] == '\0';
