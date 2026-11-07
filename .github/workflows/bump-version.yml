@@ -63,8 +63,9 @@ jobs:
         CURRENT="$MAJOR.$MINOR.$PATCH"
         if [ -n "$EXACT" ]; then
           EXACT="${EXACT#v}"
-          if ! [[ "$EXACT" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
-            echo "::error::version must look like 1.2.3, got '$EXACT'"; exit 1
+          # No leading zeros: they would become octal literals in the C source.
+          if ! [[ "$EXACT" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "::error::version must look like 1.2.3 (no leading zeros), got '$EXACT'"; exit 1
           fi
           MAJOR=${BASH_REMATCH[1]}; MINOR=${BASH_REMATCH[2]}; PATCH=${BASH_REMATCH[3]}
         else
