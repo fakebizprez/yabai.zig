@@ -106,6 +106,9 @@ struct frame_field
 /* ------------------------------------------------------------------ */
 /* Prototypes of every Zig export                                     */
 /* ------------------------------------------------------------------ */
+/* Not every export is called by the daemon: some are ported but left
+ * unrouted on purpose and are only exercised by tests. The "Routing map"
+ * in doc/zig-baseline.md lists which are which. */
 
 /* zig/geometry.zig */
 void yabai_area_make_pair(int split, int gap, float ratio, const struct area *parent, struct area *left, struct area *right);

@@ -19,7 +19,7 @@ OSAX_PATH      = ./src/osax
 INFO_PLIST     = $(ASSET_PATH)/Info.plist
 BINS           = $(BUILD_PATH)/yabai-zig
 
-.PHONY: all asan tsan install man icon archive publish sign clean-build clean
+.PHONY: all asan tsan install man icon archive sign clean-build clean
 
 all: clean-build $(BINS)
 
@@ -45,10 +45,6 @@ man:
 
 icon:
 	python3 $(SCRIPT_PATH)/seticon.py $(ASSET_PATH)/icon/2x/icon-512px@2x.png $(BUILD_PATH)/yabai-zig
-
-publish:
-	sed -i '' "60s/^VERSION=.*/VERSION=\"$(shell $(BUILD_PATH)/yabai-zig --version | cut -d "v" -f 2)\"/" $(SCRIPT_PATH)/install.sh
-	sed -i '' "61s/^EXPECTED_HASH=.*/EXPECTED_HASH=\"$(shell shasum -a 256 $(BUILD_PATH)/$(shell $(BUILD_PATH)/yabai-zig --version).tar.gz | cut -d " " -f 1)\"/" $(SCRIPT_PATH)/install.sh
 
 archive: man install sign icon
 	rm -rf $(ARCH_PATH)

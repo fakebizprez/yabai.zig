@@ -1,6 +1,6 @@
-// View-tree traversal boundary for the yabai migration (step 3).
+// View-tree boundary (Zig version: zig/ZIG_VERSION).
 //
-// Pinned toolchain: Zig 0.17.0. Mirrors the pure tree helpers in
+// Mirrors the pure tree helpers in
 // src/view.c. WindowNode mirrors struct window_node in src/view.h
 // byte for byte (344 bytes); the mirror lives in zig/abi.zig, pinned
 // on the C side by src/zig_abi.h.

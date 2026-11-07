@@ -1,6 +1,6 @@
-// Rule boundary for the yabai migration (step 3).
+// Rule boundary (Zig version: zig/ZIG_VERSION).
 //
-// Pinned toolchain: Zig 0.17.0. Mirrors rule_combine_effects(),
+// Mirrors rule_combine_effects(),
 // rule_serialize() and rule_destroy() in src/rule.c plus the rule flag
 // helpers in src/rule.h and ts_string_escape() in
 // src/misc/helpers.h. The RuleEffects/Rule mirrors (regex_t

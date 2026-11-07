@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## yabai-zig (unreleased, forked from yabai 7.1.25 at `dd84572`)
+### Added
+- Pure-logic modules (geometry, message tokenizing and frame decoding, view tree, easing, rules, window math, display serialization, mouse drop action) ported to Zig and called from C through a C ABI; see [doc/zig-baseline.md](doc/zig-baseline.md).
+- macOS 27 support backported from [Christian-SC26/yabai](https://github.com/Christian-SC26/yabai): version detection, modern window notifications, and Space-switching gestures that work with SIP enabled.
+- Headless parity tests comparing each Zig port against the original C.
+
+### Changed
+- The program, socket, config file (`~/.config/yabai-zig/yabai-zigrc`), environment variables (`YABAI_ZIG_*`), scripting addition, and launchd label (`com.fakebizprez.yabai-zig`) are renamed so yabai-zig can run next to upstream yabai.
+- Socket frames are validated before they are decoded.
+- Every build is ad-hoc signed.
+
+# Upstream history (asmvik/yabai)
+
 ## [Unreleased]
 ### Changed
 - Fixed scripting-addition *add_space* pattern for macOS 26.6 Apple Silicon arm64 [#2799](https://github.com/asmvik/yabai/issues/2799)

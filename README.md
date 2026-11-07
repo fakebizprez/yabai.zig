@@ -6,26 +6,24 @@
   <b>Tiling window management for the Mac.</b>
 </p>
 <p align="center">
-  <a href="https://github.com/asmvik/yabai/blob/master/LICENSE.txt">
-    <img src="https://img.shields.io/github/license/asmvik/yabai.svg?color=green" alt="License Badge">
+  <a href="LICENSE">
+    <img src="https://img.shields.io/github/license/fakebizprez/yabai.zig.svg?color=green" alt="License Badge">
   </a>
   <a href="doc/yabai-zig.asciidoc">
     <img src="https://img.shields.io/badge/view-documentation-green.svg" alt="Documentation Badge">
   </a>
-  <a href="https://github.com/asmvik/yabai/wiki">
-    <img src="https://img.shields.io/badge/view-wiki-green.svg" alt="Wiki Badge">
-  </a>
-  <a href="https://github.com/asmvik/yabai/blob/master/CHANGELOG.md">
+  <a href="CHANGELOG.md">
     <img src="https://img.shields.io/badge/view-changelog-green.svg" alt="Changelog Badge">
-  </a>
-  <a href="https://github.com/asmvik/yabai/releases">
-    <img src="https://img.shields.io/github/commits-since/asmvik/yabai/latest.svg?color=green" alt="Version Badge">
   </a>
 </p>
 
-## About
+yabai-zig is a fork of [&nearr;&nbsp;asmvik/yabai][gh-yabai] by Åsmund Vikane (7.1.25, commit `dd84572`) that is being ported to Zig piece by piece, with macOS 27 support backported from [&nearr;&nbsp;Christian-SC26/yabai][gh-christian].
+The C/Objective-C daemon is still the program; pure logic moves into Zig objects that the C code calls through a C ABI.
+It is renamed throughout (binary, socket, config file, scripting addition, service label), so it can be installed next to upstream yabai.
+There are no releases or CI yet; build it from source.
+Report bugs in this fork here, not upstream.
 
-<img align="right" width="40%" src="assets/screenshot.png" alt="Screenshot">
+## About
 
 yabai-zig is a window management utility that is designed to work as an extension to the built-in window manager of macOS.
 yabai-zig allows you to control your windows, spaces and displays freely using an intuitive command line interface and optionally set user-defined keyboard shortcuts using [&nearr;&nbsp;skhd][gh-skhd] and other third-party software.
@@ -33,10 +31,22 @@ yabai-zig allows you to control your windows, spaces and displays freely using a
 The primary function of yabai-zig is tiling window management; automatically modifying your window layout using a binary space partitioning algorithm to allow you to focus on the content of your windows without distractions.
 Additional features of yabai-zig include focus-follows-mouse, disabling animations for switching spaces, creating spaces past the limit of 16 spaces, and much more.
 
-## Installation and Configuration
+## Building
 
-- The [&nearr;&nbsp;yabai-zig&nbsp;wiki][yabai-wiki] has both brief and detailed installation instructions for multiple installation methods, and also explains how to uninstall yabai-zig completely.
-- Sample configuration files can be found in the [&nearr;&nbsp;examples][yabai-examples] directory. Refer to the [&nearr;&nbsp;documentation][yabai-docs] or the wiki for further information.
+Requires Xcode command line tools and Zig 0.17.0 (the version pinned in `zig/ZIG_VERSION`).
+
+```sh
+make install          # optimized universal build at bin/yabai-zig
+cd tests && make      # headless test suite
+make sign             # optional: sign with a "yabai-zig-cert" identity (see scripts/codesign)
+```
+
+`make install` only builds; copy `bin/yabai-zig` somewhere on your `PATH`, then run `yabai-zig --install-service` and `yabai-zig --start-service`.
+
+## Configuration
+
+- Sample configuration files can be found in the [examples][yabai-examples] directory. Refer to the [documentation][yabai-docs] for every command and setting.
+- The [&nearr;&nbsp;upstream yabai wiki][yabai-wiki] is still a useful reference; substitute `yabai-zig` for `yabai` in its commands and paths.
 - Keyboard shortcuts can be defined with [&nearr;&nbsp;skhd][gh-skhd] or any other suitable software you may prefer.
 
 ## Requirements and Caveats
@@ -44,11 +54,8 @@ Additional features of yabai-zig include focus-follows-mouse, disabling animatio
 Please read the below requirements carefully.
 Make sure you fulfil all of them before filing an issue.
 
-This Zig fork includes macOS 27 compatibility backports from
-[Christian-SC26/yabai](https://github.com/Christian-SC26/yabai). Universal
-builds and headless tests pass on 27.0.1. A live trial ran; switching
-across several Spaces still flashes, and that is unresolved.
-Moving or reordering entire Spaces remains unsupported on 27.
+On macOS 27, universal builds and headless tests pass on 27.0.1.
+Switching across several Spaces at once still flashes, and moving or reordering entire Spaces is unsupported.
 See the [verification record](doc/zig-release.md) for the tested scope.
 
 |Requirement|Note|
@@ -78,6 +85,8 @@ Please also take note of the following caveats.
 yabai-zig is licensed under the [&nearr;&nbsp;MIT&nbsp;License][yabai-license], a short and simple permissive license with conditions only requiring preservation of copyright and license notices.
 Licensed works, modifications, and larger works may be distributed under different terms and without source code.
 
+yabai was created by Åsmund Vikane ([&nearr;&nbsp;asmvik/yabai][gh-yabai]); this fork keeps the original copyright notice alongside its own.
+
 Thanks to [@fools-mate][gh-fools-mate] for creating a logo and banner for this project and making them available for free.
 
 Thanks to [@dominiklohmann][gh-dominiklohmann] for contributing great documentation, support, and more, for free.
@@ -89,12 +98,14 @@ I take no responsibility if anything should happen to your machine while trying 
 You acknowledge that you understand the potential risk that may come from disabling [&nearr;&nbsp;System&nbsp;Integrity&nbsp;Protection][external-about-sip] on your system, and I make no recommendation as to whether you should or should not disable System Integrity Protection.
 
 <!-- Project internal links -->
-[yabai-license]: LICENSE.txt
-[yabai-examples]: https://github.com/asmvik/yabai/tree/master/examples
+[yabai-license]: LICENSE
+[yabai-examples]: examples/
 [yabai-wiki]: https://github.com/asmvik/yabai/wiki
 [yabai-docs]: doc/yabai-zig.asciidoc
 
 <!-- Links to other GitHub projects/users -->
+[gh-yabai]: https://github.com/asmvik/yabai
+[gh-christian]: https://github.com/Christian-SC26/yabai
 [gh-skhd]: https://github.com/asmvik/skhd
 [gh-fools-mate]: https://github.com/fools-mate
 [gh-dominiklohmann]: https://github.com/dominiklohmann

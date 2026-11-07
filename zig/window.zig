@@ -1,7 +1,8 @@
-// Window-manager math boundary for the yabai migration (step 3).
+// Window math boundary (Zig version: zig/ZIG_VERSION).
 //
-// Pinned toolchain: Zig 0.17.0. Mirrors resize_frame_math() in
-// src/window_manager.c. CgRect mirrors CGRect on 64-bit macOS
+// Mirrors resize_frame_math() and move_frame_math() in
+// src/window_manager.c and the size/move/resize/layer predicates in
+// src/window.c. CgRect mirrors CGRect on 64-bit macOS
 // (four doubles, 32 bytes). All arithmetic stays in f64 exactly as
 // the C promotion rules dictate, narrowing to f32 only on output.
 

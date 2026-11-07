@@ -1,6 +1,6 @@
-// Display serialization boundary for the yabai migration (step 3).
+// Display serialization boundary (Zig version: zig/ZIG_VERSION).
 //
-// Pinned toolchain: Zig 0.17.0. Mirrors display_serialize() in
+// Mirrors display_serialize() in
 // src/display.c. All manager-derived inputs arrive lifted in (seam
 // pattern): uuid_str is the ts_cfstring_copy result (NULL when the copy
 // would yield NULL), arrange_index replaces

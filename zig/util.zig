@@ -1,6 +1,6 @@
-// Pure-helper boundary for the yabai migration (step 3).
+// Pure-helper boundary (Zig version: zig/ZIG_VERSION).
 //
-// Pinned toolchain: Zig 0.17.0. Mirrors the helpers in
+// Mirrors the helpers in
 // src/misc/helpers.h, src/misc/macros.h and src/view.c.
 
 const abi = @import("abi.zig");

@@ -19,6 +19,11 @@
 // The layout below is reverse-engineered and matches the notes shared by the
 // community in InstantSpaceSwitcher issue #72
 // (https://github.com/jurplel/InstantSpaceSwitcher/issues/72).
+//
+// This file is taken from the macOS 27 backport in Christian-SC26/yabai
+// (https://github.com/Christian-SC26/yabai, MIT) with small changes; the
+// ISS/iss_ prefixes and brace style are kept from that source so the two
+// copies stay easy to compare.
 
 static const int8_t kCGEventDataTagInt64OrBinaryBlob = 0b00;
 static const int8_t kCGEventDataTagInt32 = 0b01;

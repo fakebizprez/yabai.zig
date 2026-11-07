@@ -1,6 +1,6 @@
-// Mouse-geometry boundary for the yabai migration.
+// Mouse-geometry boundary (Zig version: zig/ZIG_VERSION).
 //
-// Pinned toolchain: Zig 0.17.0. This object mirrors triangle_contains_point()
+// This object mirrors triangle_contains_point()
 // in src/misc/helpers.h, mouse_mod_from_cgflags() and
 // mouse_determine_drop_action() in src/mouse_handler.c. Struct inputs arrive
 // lifted in (seam pattern): the triangle arrives as a pointer to three
