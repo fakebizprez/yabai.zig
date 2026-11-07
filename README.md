@@ -26,7 +26,7 @@ It is a fork of yabai 7.1.25 by Åsmund Vikane, and every command, setting and q
 ## Status
 
 - **Zig port:** 107 functions have Zig versions, tested against the original C so they produce the same results bit for bit; 36 of them are what the daemon actually runs today. The rest of the program is still C and Objective-C. The [routing map](doc/zig-baseline.md#routing-map-2026-10-22-107-exports-8-objects-106-tests) lists what runs where.
-- **macOS 27:** backported from [&nearr;&nbsp;Christian-SC26/yabai][gh-christian]. Tested on Apple Silicon, macOS 27.0.1. Switching across several Spaces at once flashes the Spaces in between, and moving or reordering whole Spaces is not supported. Details are in the [verification record](doc/zig-release.md).
+- **macOS 27:** backported from [&nearr;&nbsp;Christian-SC26/yabai][gh-christian]. Tested on Apple Silicon, macOS 27.0.1, including Space switching with SIP enabled. Moving or reordering whole Spaces is not supported. Details are in the [verification record](doc/zig-release.md).
 - **Releases:** none yet; build from source. CI builds and runs the full test suite (arm64 and x86_64) on every push and pull request.
 - **Side by side with yabai:** the binary, socket, config file, environment variables, scripting addition and service label are all named `yabai-zig`, so it does not collide with an installed yabai. Do not run both at once; they would fight over the same windows.
 

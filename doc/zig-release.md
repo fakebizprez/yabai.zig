@@ -24,6 +24,10 @@ On Apple Silicon, macOS 27.0.1 (26A434), Zig 0.17.0:
 - A live daemon starts, tracks displays, Spaces and windows, and answers
   `query --spaces`, `query --windows` and `query --displays` over the
   real wire format.
+- Switching across several Spaces at once no longer flashes the Spaces in
+  between (confirmed by the maintainer in daily use, 2026-11-07). Earlier
+  builds, and upstream C yabai v7.1.29, showed each intermediate Space
+  briefly during the jump.
 
 ## macOS 27 backport
 
@@ -51,12 +55,6 @@ service features were not.
 
 ## Known issues
 
-- Switching across several Spaces at once flashes the Spaces in between
-  when the scripting addition is not loaded. Adjacent switches are smooth.
-  Upstream C yabai v7.1.29 shows the same flash on the same machine, so it
-  is not caused by the Zig port. Loading the scripting addition, which
-  switches through `scripting_addition_focus_space` instead of the gesture
-  fallback, has not been tried yet.
 - Moving or reordering entire Spaces is unsupported on macOS 27, as in
   the source fork. Moving windows between Spaces works.
 - Easing curves are not routed to Zig. Upstream's C `ease_*` functions
