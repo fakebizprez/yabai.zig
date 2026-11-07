@@ -9,16 +9,14 @@ name: Release
 # optionally followed by a number: -rc1, -rc.1, -beta-2) marks a
 # pre-release; the part before it must still match the binary.
 #
-# Signing: releases are signed with a stable code-signing identity so macOS
-# keeps the Accessibility grant across upgrades. Export your signing
-# certificate as a .p12 and add these repository secrets:
-#   MACOS_CERTIFICATE           base64 of the .p12 (`base64 -i cert.p12 | pbcopy`)
+# Signing (optional): with no setup, releases are ad-hoc signed, and macOS
+# asks users to re-enable yabai-zig under Accessibility after each upgrade.
+# To avoid that, add a stable certificate as repository secrets:
+#   MACOS_CERTIFICATE           base64 of the exported .p12 (`base64 -i cert.p12 | pbcopy`)
 #   MACOS_CERTIFICATE_PASSWORD  the .p12 password
 #   KEYCHAIN_PASSWORD           any random string (temporary CI keychain)
 # The identity name defaults to yabai-zig-cert (the `make sign` name);
 # override it with the repository variable MACOS_CERTIFICATE_NAME.
-# To ship an ad-hoc signed build anyway, set the repository variable
-# ALLOW_UNSIGNED_RELEASE to true.
 
 on:
   push:
@@ -77,21 +75,16 @@ jobs:
         fi
         echo "PRERELEASE_FLAG=$PRERELEASE_FLAG" >> "$GITHUB_ENV"
 
-    - name: Import code-signing certificate
+    - name: Import code-signing certificate (if configured)
       env:
         CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE }}
         CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
         KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
-        ALLOW_UNSIGNED_RELEASE: ${{ vars.ALLOW_UNSIGNED_RELEASE }}
       run: |
         if [ -z "$CERTIFICATE_P12" ]; then
-          if [ "$ALLOW_UNSIGNED_RELEASE" = "true" ]; then
-            echo "::warning::No certificate; shipping the ad-hoc signed build. Users will have to re-grant Accessibility after every upgrade."
-            echo "SHOULD_SIGN=false" >> "$GITHUB_ENV"
-            exit 0
-          fi
-          echo "::error::MACOS_CERTIFICATE is not set. See the comment at the top of release.yml, or set the variable ALLOW_UNSIGNED_RELEASE=true."
-          exit 1
+          echo "No MACOS_CERTIFICATE secret; shipping the ad-hoc signed build."
+          echo "SHOULD_SIGN=false" >> "$GITHUB_ENV"
+          exit 0
         fi
         CERTIFICATE_PATH="$RUNNER_TEMP/build_certificate.p12"
         KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
