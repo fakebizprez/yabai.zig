@@ -237,20 +237,23 @@ TEST_FUNC(zig_display_serialize,
     }
 
     /* Hand-pinned full-JSON golden for BOTH oracles: fixed degenerate
-     * display (did 7, NULL uuid/label, zero frame, empty spaces,
-     * focus false) over all-flags and flags==0. did 7 has no system
-     * UUID so C derives <unknown>/0/""/zero/[] without SLS; the
-     * lifted Zig inputs mirror those derivations exactly. */
+     * display (NULL uuid/label, zero frame, empty spaces, focus false)
+     * over all-flags and flags==0. The id must never have been a real
+     * display: macOS keeps reporting a 1x1 frame for the id of a display
+     * that was once attached (a small id like 7 failed on a machine that
+     * had used it), so this uses the same out-of-range id as the
+     * "<unknown>" check above. C derives <unknown>/0/""/zero/[] without
+     * SLS; the lifted Zig inputs mirror those derivations exactly. */
     {
         uint64_t all = DISPLAY_PROPERTY_ID | DISPLAY_PROPERTY_UUID | DISPLAY_PROPERTY_INDEX |
                        DISPLAY_PROPERTY_LABEL | DISPLAY_PROPERTY_FRAME |
                        DISPLAY_PROPERTY_SPACES | DISPLAY_PROPERTY_HAS_FOCUS;
-        const char *bare = "{\n\t\"id\":7,\n\t\"uuid\":\"<unknown>\",\n\t\"index\":0,\n\t\"label\":\"\",\n\t\"frame\":{\n\t\t\"x\":0.0000,\n\t\t\"y\":0.0000,\n\t\t\"w\":0.0000,\n\t\t\"h\":0.0000\n\t},\n\t\"spaces\":[],\n\t\"has-focus\":false\n}";
+        const char *bare = "{\n\t\"id\":2147483392,\n\t\"uuid\":\"<unknown>\",\n\t\"index\":0,\n\t\"label\":\"\",\n\t\"frame\":{\n\t\t\"x\":0.0000,\n\t\t\"y\":0.0000,\n\t\t\"w\":0.0000,\n\t\t\"h\":0.0000\n\t},\n\t\"spaces\":[],\n\t\"has-focus\":false\n}";
         uint32_t saved_focus = g_display_manager.current_display_id;
-        display_manager_remove_label_for_display(&g_display_manager, 7);
+        display_manager_remove_label_for_display(&g_display_manager, 0x7fffff00);
         g_display_manager.current_display_id = 1;
-        TEST_CHECK(serialize_display_golden_both(7, all, NULL, 0, NULL, 0, 0, 0, 0, NULL, 0, false, bare), 1);
-        TEST_CHECK(serialize_display_golden_both(7, 0, NULL, 0, NULL, 0, 0, 0, 0, NULL, 0, false, bare), 1);
+        TEST_CHECK(serialize_display_golden_both(0x7fffff00, all, NULL, 0, NULL, 0, 0, 0, 0, NULL, 0, false, bare), 1);
+        TEST_CHECK(serialize_display_golden_both(0x7fffff00, 0, NULL, 0, NULL, 0, 0, 0, 0, NULL, 0, false, bare), 1);
         g_display_manager.current_display_id = saved_focus;
     }
 
