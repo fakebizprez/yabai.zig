@@ -1,6 +1,6 @@
 <!-- Please be careful editing the below HTML, as GitHub is quite finicky with anything that looks like an HTML tag in GitHub Flavored Markdown. -->
 <p align="center">
-  <img width="75%" src="assets/banner/banner.svg" alt="Banner">
+  <img width="75%" src="assets/banner/banner.svg" alt="yabai-zig banner">
 </p>
 <p align="center">
   <b>Tiling window management for the Mac.</b>
@@ -87,7 +87,7 @@ Licensed works, modifications, and larger works may be distributed under differe
 
 yabai was created by Åsmund Vikane ([&nearr;&nbsp;asmvik/yabai][gh-yabai]); this fork keeps the original copyright notice alongside its own.
 
-Thanks to [@fools-mate][gh-fools-mate] for creating a logo and banner for this project and making them available for free.
+Thanks to [@fools-mate][gh-fools-mate] for creating the original yabai logo and banner, which the yabai-zig banner is adapted from, and making them available for free.
 
 Thanks to [@dominiklohmann][gh-dominiklohmann] for contributing great documentation, support, and more, for free.
 
