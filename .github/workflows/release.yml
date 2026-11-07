@@ -1,6 +1,8 @@
 name: Release
 
-# Push an annotated tag named after the version the binary reports:
+# Easiest: run the "Bump version" workflow, which sets the version, tags and
+# calls this one. Or push an annotated tag yourself, named after the version
+# the binary reports:
 #
 #   git tag -a v7.1.25 -m "release notes..."   # must match `yabai-zig --version`
 #   git push origin v7.1.25
@@ -24,6 +26,18 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_call:
+    inputs:
+      tag:
+        description: Existing annotated tag to release
+        type: string
+        required: true
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing annotated tag to release (re-run a failed release)
+        type: string
+        required: true
 
 permissions:
   contents: write
@@ -33,10 +47,11 @@ jobs:
     runs-on: macos-latest
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      TAG_NAME: ${{ github.ref_name }}
+      TAG_NAME: ${{ inputs.tag || github.ref_name }}
     steps:
     - uses: actions/checkout@v7
       with:
+        ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || github.ref }}
         fetch-depth: 0
 
     - name: Fetch annotated tag objects

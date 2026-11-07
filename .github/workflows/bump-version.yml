@@ -1,0 +1,129 @@
+name: Bump version
+
+# Run from the Actions tab (or `gh workflow run bump-version.yml -f bump=minor -f notes="..."`).
+# It sets MAJOR/MINOR/PATCH in src/yabai-zig.c, commits that to main, pushes an
+# annotated tag carrying the notes, and runs the Release workflow on that tag.
+#
+# Tags pushed with GITHUB_TOKEN do not trigger other workflows, so the release
+# is called directly below instead of through the tag push. If main is
+# protected, allow github-actions[bot] to push to it.
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Part of the version to increase (ignored when version is set)
+        type: choice
+        options: [patch, minor, major]
+        default: patch
+      version:
+        description: Exact version instead of a bump, e.g. 0.1.0 (optional)
+        type: string
+        required: false
+      prerelease:
+        description: Pre-release suffix, e.g. rc1 or beta.2 (optional)
+        type: string
+        required: false
+      notes:
+        description: Release notes (become the tag message and the release body)
+        type: string
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: bump-version
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        fetch-depth: 0
+
+    - name: Work out the new version
+      id: version
+      env:
+        BUMP: ${{ inputs.bump }}
+        EXACT: ${{ inputs.version }}
+        PRE: ${{ inputs.prerelease }}
+      run: |
+        FILE=src/yabai-zig.c
+        read_part() { sed -nE "s/^#define $1 +([0-9]+).*/\1/p" "$FILE"; }
+        MAJOR=$(read_part MAJOR); MINOR=$(read_part MINOR); PATCH=$(read_part PATCH)
+        if [ -z "$MAJOR" ] || [ -z "$MINOR" ] || [ -z "$PATCH" ]; then
+          echo "::error::Could not read MAJOR/MINOR/PATCH from $FILE"; exit 1
+        fi
+        CURRENT="$MAJOR.$MINOR.$PATCH"
+        if [ -n "$EXACT" ]; then
+          EXACT="${EXACT#v}"
+          if ! [[ "$EXACT" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+            echo "::error::version must look like 1.2.3, got '$EXACT'"; exit 1
+          fi
+          MAJOR=${BASH_REMATCH[1]}; MINOR=${BASH_REMATCH[2]}; PATCH=${BASH_REMATCH[3]}
+        else
+          case "$BUMP" in
+            major) MAJOR=$((MAJOR+1)); MINOR=0; PATCH=0 ;;
+            minor) MINOR=$((MINOR+1)); PATCH=0 ;;
+            patch) PATCH=$((PATCH+1)) ;;
+          esac
+        fi
+        NEW="$MAJOR.$MINOR.$PATCH"
+        TAG="v$NEW"
+        if [ -n "$PRE" ]; then
+          PRE="${PRE#-}"
+          if ! [[ "-$PRE" =~ ^-(alpha|beta|rc)([.-]?[A-Za-z0-9]+)?$ ]]; then
+            echo "::error::prerelease must start with alpha, beta or rc (e.g. rc1, beta.2), got '$PRE'"; exit 1
+          fi
+          TAG="$TAG-$PRE"
+        fi
+        if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null || git ls-remote --exit-code --tags origin "$TAG" >/dev/null; then
+          echo "::error::Tag $TAG already exists"; exit 1
+        fi
+        echo "Current $CURRENT -> $NEW (tag $TAG)"
+        {
+          echo "current=$CURRENT"; echo "new=$NEW"; echo "tag=$TAG"
+          echo "major=$MAJOR"; echo "minor=$MINOR"; echo "patch=$PATCH"
+        } >> "$GITHUB_OUTPUT"
+
+    - name: Commit the version
+      if: steps.version.outputs.new != steps.version.outputs.current
+      env:
+        NEW: ${{ steps.version.outputs.new }}
+        MAJOR: ${{ steps.version.outputs.major }}
+        MINOR: ${{ steps.version.outputs.minor }}
+        PATCH: ${{ steps.version.outputs.patch }}
+      run: |
+        sed -i -E \
+          -e "s/^(#define MAJOR +)[0-9]+/\1$MAJOR/" \
+          -e "s/^(#define MINOR +)[0-9]+/\1$MINOR/" \
+          -e "s/^(#define PATCH +)[0-9]+/\1$PATCH/" \
+          src/yabai-zig.c
+        git diff --stat
+        git config user.name "github-actions[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        git commit -am "Bump version to $NEW"
+        git push origin HEAD:main
+
+    - name: Tag
+      env:
+        TAG: ${{ steps.version.outputs.tag }}
+        NOTES: ${{ inputs.notes }}
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        git tag -a "$TAG" -m "$NOTES"
+        git push origin "$TAG"
+
+  release:
+    needs: bump
+    uses: ./.github/workflows/release.yml
+    with:
+      tag: ${{ needs.bump.outputs.tag }}
+    secrets: inherit
