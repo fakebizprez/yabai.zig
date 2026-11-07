@@ -1,0 +1,3 @@
+{
+  "ignorePatterns": "assets/**\ntests/data/**\ndoc/yabai-zig.1"
+}

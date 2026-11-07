@@ -1,0 +1,6 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+reviews:
+  path_filters:
+    - "!assets/**"
+    - "!tests/data/**"
+    - "!doc/yabai-zig.1" # generated from doc/yabai-zig.asciidoc
