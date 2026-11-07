@@ -13,7 +13,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 ### Changed
 - The program, socket, config file (`~/.config/yabai-zig/yabai-zigrc`), environment variables (`YABAI_ZIG_*`), scripting addition, and launchd label (`com.fakebizprez.yabai-zig`) are renamed so yabai-zig can run next to upstream yabai.
 - Socket frames are validated before they are decoded.
-- Every build is ad-hoc signed.
+- Every build is ad-hoc signed; `make sign` (and a release with a certificate configured) replaces that with a stable identity.
 
 # Upstream history (asmvik/yabai)
 

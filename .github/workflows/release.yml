@@ -69,7 +69,8 @@ jobs:
           exit 1
         fi
         PRERELEASE_FLAG=""
-        if [[ "$TAG_NAME" =~ -(alpha|beta|rc)([.-]?[A-Za-z0-9]+)?$ ]]; then
+        SUFFIX="${TAG_VERSION#"$BASE_VERSION"}"
+        if [[ "$SUFFIX" =~ ^-(alpha|beta|rc)([.-]?[A-Za-z0-9]+)?$ ]]; then
           PRERELEASE_FLAG="--prerelease"
         elif [ "$TAG_VERSION" != "$BASE_VERSION" ]; then
           echo "::error::Unrecognized suffix in $TAG_NAME; use -alpha, -beta or -rc."

@@ -21,13 +21,13 @@
 </p>
 
 yabai-zig is the [&nearr;&nbsp;yabai][gh-yabai] tiling window manager for macOS with two changes: it runs on macOS 27 (Golden Gate), including Space switching with System Integrity Protection left on, and its logic is being moved from C into Zig one tested piece at a time.
-It is a fork of yabai 7.1.25 by Åsmund Vikane, and every command, setting and query works the same way.
+It is a fork of yabai 7.1.25 by Åsmund Vikane, and every command, setting and query works the same way, except for the macOS 27 limits listed under Status.
 
 ## Status
 
 - **Zig port:** 107 functions have Zig versions, tested against the original C so they produce the same results bit for bit; 36 of them are what the daemon actually runs today. The rest of the program is still C and Objective-C. The [routing map](doc/zig-baseline.md#routing-map-2026-10-22-107-exports-8-objects-106-tests) lists what runs where.
 - **macOS 27:** backported from [&nearr;&nbsp;Christian-SC26/yabai][gh-christian]. Tested on Apple Silicon, macOS 27.0.1, including Space switching with SIP enabled. Moving or reordering whole Spaces is not supported. Details are in the [verification record](doc/zig-release.md).
-- **Releases:** none yet; build from source. CI builds and runs the full test suite (arm64 and x86_64) on every push and pull request.
+- **Releases:** none yet; build from source. CI builds and runs the test suite on every push and pull request to `main`; the x86_64 copy of the suite runs only when the runner has Rosetta.
 - **Side by side with yabai:** the binary, socket, config file, environment variables, scripting addition and service label are all named `yabai-zig`, so it does not collide with an installed yabai. Do not run both at once; they would fight over the same windows.
 
 Report bugs in this fork [here](https://github.com/fakebizprez/yabai.zig/issues), not upstream.
@@ -46,12 +46,13 @@ You need the Xcode command line tools and Zig 0.17.0 (the version pinned in `zig
 
 ```sh
 make install                                  # optimized universal build at bin/yabai-zig (it does not install anything)
+make sign                                     # optional: stable identity, see below
 cp bin/yabai-zig /usr/local/bin/              # or anywhere on your PATH
 yabai-zig --install-service && yabai-zig --start-service
 ```
 
 macOS asks for Accessibility permission on first launch; restart the service after granting it.
-To keep that permission across rebuilds, sign the binary with a stable identity: create a code-signing certificate named `yabai-zig-cert` in Keychain Access, then run `make sign`.
+To keep that permission across rebuilds, sign the binary with a stable identity: create a code-signing certificate named `yabai-zig-cert` in Keychain Access, then run `make sign` before the `cp` step, on the first install and after every rebuild.
 
 Run the headless test suite with `cd tests && make`.
 
