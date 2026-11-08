@@ -1,12 +1,14 @@
 # Refactoring yabai in Zig
 
+> This is the original migration plan, written at upstream commit `dd84572` before the rename to yabai-zig. Names such as `/tmp/yabai_$USER.socket`, `yabai-cert` and the `com.asmvik.yabai` service label are the upstream ones; the rename is recorded in [zig-baseline.md](zig-baseline.md). The current state of the port is in [zig-baseline.md](zig-baseline.md) and [zig-release.md](zig-release.md).
+
 This plan describes a feature-compatible Zig migration of yabai at commit `dd84572` (yabai 7.1.25). The recommended result is a Zig daemon and CLI with a small native macOS bridge and the existing Dock scripting addition. A literal all-Zig rewrite is a separate, higher-risk project whose `arm64e` toolchain path must first be proved.
 
 When this plan was written the local Zig compiler was 0.16.0; the pin has since moved to 0.17.0 (`zig/ZIG_VERSION`). Pin the version used for the migration and validate build instructions against that version: Zig's [0.16.0 language reference](https://ziglang.org/documentation/0.16.0/) documents C imports, C ABI exports, and mixed Zig/C objects; its [release notes](https://ziglang.org/download/0.16.0/release-notes.html) describe the current toolchain and its known limitations. None of those facilities translates Objective-C source or removes yabai's macOS private API dependencies.
 
 ## What exists today
 
-`makefile` compiles [`src/manifest.m`](../src/manifest.m), which textually includes the C and Objective-C implementation files into one translation unit. [`src/yabai.c`](../src/yabai.c) provides both the CLI and daemon entry point. Startup checks Accessibility and Spaces settings, initializes global managers, starts OS observers and an event worker, opens a Unix socket, executes the config file, then runs the Cocoa application loop.
+`makefile` compiles [`src/manifest.m`](../src/manifest.m), which textually includes the C and Objective-C implementation files into one translation unit. [`src/yabai-zig.c`](../src/yabai-zig.c) provides both the CLI and daemon entry point. Startup checks Accessibility and Spaces settings, initializes global managers, starts OS observers and an event worker, opens a Unix socket, executes the config file, then runs the Cocoa application loop.
 
 ```text
 CLI -m -> /tmp/yabai_$USER.socket -> accept thread -> event queue
@@ -15,20 +17,20 @@ OS callbacks -----------------------> event queue -> layout and signals
 daemon -> /tmp/yabai-sa_$USER.socket -> Dock scripting addition (optional)
 ```
 
-The daemon's state is spread across globals in [`src/yabai.c`](../src/yabai.c), the window and space managers, and the BSP/stack/float view tree in [`src/view.c`](../src/view.c). The event loop serializes mutations and flushes signals after each event ([`src/event_loop.c`](../src/event_loop.c)). Command parsing is coupled to live manager state ([`src/message.c`](../src/message.c)); the view file mixes geometry with window updates and feedback drawing. Neither whole file is a pure logic module that can simply be translated in isolation.
+The daemon's state is spread across globals in [`src/yabai-zig.c`](../src/yabai-zig.c), the window and space managers, and the BSP/stack/float view tree in [`src/view.c`](../src/view.c). The event loop serializes mutations and flushes signals after each event ([`src/event_loop.c`](../src/event_loop.c)). Command parsing is coupled to live manager state ([`src/message.c`](../src/message.c)); the view file mixes geometry with window updates and feedback drawing. Neither whole file is a pure logic module that can simply be translated in isolation.
 
 | Area | Current code | Zig migration requirement |
 | --- | --- | --- |
-| CLI and daemon protocol | [`src/yabai.c`](../src/yabai.c), [`src/message.c`](../src/message.c), [`src/event_loop.c`](../src/event_loop.c) | Preserve one executable's flags, socket path, framing, command order, responses, errors, and query JSON. |
+| CLI and daemon protocol | [`src/yabai-zig.c`](../src/yabai-zig.c), [`src/message.c`](../src/message.c), [`src/event_loop.c`](../src/event_loop.c) | Preserve one executable's flags, socket path, framing, command order, responses, errors, and query JSON. |
 | Layout and state | [`src/view.c`](../src/view.c), [`src/space_manager.c`](../src/space_manager.c), [`src/window_manager.c`](../src/window_manager.c) | Port geometry first, then the tree and manager state; keep OS effects outside the geometry boundary. |
 | Events and rules | [`src/event_loop.c`](../src/event_loop.c), [`src/rule.c`](../src/rule.c), [`src/event_signal.c`](../src/event_signal.c) | Preserve callback ordering, regex/rule effects, signal execution, and per-event temporary lifetime. |
 | macOS bridge | [`src/misc/extern.h`](../src/misc/extern.h), [`src/application.c`](../src/application.c), [`src/workspace.m`](../src/workspace.m), [`src/mouse_handler.c`](../src/mouse_handler.c) | Bind C-compatible APIs; retain a narrow Objective-C shim for Cocoa/KVO, blocks, exceptions, and application lifecycle. |
 | Dock scripting addition | [`src/sa.m`](../src/sa.m), [`src/osax/`](../src/osax/) | Keep its loader and payload initially; retain their bundle, handshake, and binary socket protocol. |
-| Build and release | [`makefile`](../makefile), [`scripts/install.sh`](../scripts/install.sh) | Reproduce architecture slices, embedded binaries/plist, signing, service behavior, archive layout, and installer hash workflow. |
+| Build and release | [`makefile`](../makefile), `scripts/install.sh` (since removed) | Reproduce architecture slices, embedded binaries/plist, signing, service behavior, archive layout, and installer hash workflow. |
 
 ## Compatibility that must be recorded before replacement
 
-1. **CLI and daemon wire format.** `-m` sends a native `int` byte length followed by NUL-separated arguments and a final NUL ([`src/yabai.c`](../src/yabai.c)); the daemon reads that payload on its event worker ([`src/event_loop.c`](../src/event_loop.c)). Keep `/tmp/yabai_$USER.socket`, mode `0600`, the failure marker byte `0x07`, output/exit behavior, all current option names, and the seven command domains. When rewriting the decoder, validate lengths before allocating or parsing while preserving valid messages byte for byte.
+1. **CLI and daemon wire format.** `-m` sends a native `int` byte length followed by NUL-separated arguments and a final NUL ([`src/yabai-zig.c`](../src/yabai-zig.c)); the daemon reads that payload on its event worker ([`src/event_loop.c`](../src/event_loop.c)). Keep `/tmp/yabai_$USER.socket`, mode `0600`, the failure marker byte `0x07`, output/exit behavior, all current option names, and the seven command domains. When rewriting the decoder, validate lengths before allocating or parsing while preserving valid messages byte for byte.
 2. **Observable layout behavior.** Capture representative BSP, stack, and float layouts; split ratios and rounding; gaps and padding; window insertion/removal; focus; display/space changes; rules; and JSON query output. Use the current binary as the reference for these fixtures.
 3. **Scripting addition protocol.** The daemon uses `/tmp/yabai-sa_$USER.socket`, an `OSAX_VERSION` handshake, feature bits, and binary opcodes from [`src/osax/common.h`](../src/osax/common.h). Preserve the exact native field sizes, byte order, framing, and failure behavior while the existing payload remains in use. Add checked lengths to any new Zig decoder.
 4. **Event ownership and ordering.** AX, CoreGraphics, Carbon, SkyLight, and Cocoa callbacks enqueue work; the single consumer applies mutations, flushes signals, and resets temporary storage ([`src/event_loop.c`](../src/event_loop.c)). Record which callback data is retained, copied, or borrowed before moving it across the Zig/C boundary.
@@ -50,7 +52,7 @@ Preserve these artifact properties from [`makefile`](../makefile):
 
 - Main executable: macOS 11 minimum, `x86_64` and `arm64` slices, Carbon/Cocoa/CoreServices/CoreVideo/private SkyLight linkage, and the embedded `__TEXT,__info_plist`.
 - Embedded Dock loader and payload: `x86_64` and **`arm64e`** slices. The current build converts each helper to bytes and links those bytes into the main executable; [`src/sa.m`](../src/sa.m) writes the bundles at install time and signs the extracted helpers.
-- Release commands: debug and optimized builds, sanitizer targets where supported, `yabai-cert` signing, manpage, icon, archive contents, and the version/hash updates used by [`scripts/install.sh`](../scripts/install.sh).
+- Release commands: debug and optimized builds, sanitizer targets where supported, `yabai-cert` signing, manpage, icon, archive contents, and the version/hash updates used by `scripts/install.sh` (since removed).
 - Service identity: the existing launchd label, plist location, logs, executable path, and `--install-service`/start/stop behavior in [`src/misc/service.h`](../src/misc/service.h). Re-signing also changes the SHA-256 value users put in the `--load-sa` sudoers rule.
 
 Use the existing Makefile to drive the first Zig object build if that is the smallest reproducible change. Introduce `build.zig` only when it can reproduce the full macOS artifact and release steps; do not switch build systems merely to begin porting code.

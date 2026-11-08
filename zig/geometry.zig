@@ -1,8 +1,8 @@
-// First Zig/C boundary for the yabai migration (doc/zig-refactor-plan.md step 2).
+// Area geometry boundary (Zig version: zig/ZIG_VERSION).
 //
-// Pinned toolchain: Zig 0.17.0. This object mirrors area_make_pair() in
-// src/view.c exactly: same inputs, same outputs, same C float-to-int
-// rounding (truncation toward zero via (int) casts, round-half-up via
+// Mirrors area_make_pair() in src/view.c and the directional area helpers
+// (area_is_in_direction, area_distance_in_direction) exactly: same inputs,
+// same outputs, same C float-to-int rounding (truncation toward zero via (int) casts, round-half-up via
 // +0.5f before the cast on the offset). The split codes match
 // enum window_node_split in src/view.h (SPLIT_Y = 1, SPLIT_X = 2).
 

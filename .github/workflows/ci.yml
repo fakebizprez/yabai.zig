@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: macos-latest
+    steps:
+    - uses: actions/checkout@v7
+
+    - name: Read pinned Zig version
+      id: zig
+      run: echo "version=$(cat zig/ZIG_VERSION)" >> "$GITHUB_OUTPUT"
+
+    - name: Setup Zig
+      uses: mlugg/setup-zig@v2
+      with:
+        version: ${{ steps.zig.outputs.version }}
+
+    - name: Build (debug, universal)
+      run: make
+
+    - name: Check the binary
+      run: |
+        lipo -info bin/yabai-zig | grep -q "x86_64 arm64"
+        bin/yabai-zig --version
+        codesign --verify --verbose=2 bin/yabai-zig
+
+    # Runs the main suite, the Dock payload helper checks, and the x86_64
+    # copy of the suite under Rosetta (skipped with a message if the runner
+    # has no Rosetta).
+    - name: Run tests
+      run: make -C tests
+
+    - name: Build (release, universal)
+      run: make install
+
+    - name: Lint shell scripts
+      run: sh -n zig/build.sh && bash -n scripts/codesign

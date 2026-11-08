@@ -11,6 +11,10 @@ case "$0" in
   */*) SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd);;
   *) SCRIPT_DIR=$(pwd);;
 esac
+if [ ! -f "$SCRIPT_DIR/ZIG_VERSION" ]; then
+  echo "usage: ./zig/build.sh (from the repo root) or ../zig/build.sh (from tests/)" >&2
+  exit 1
+fi
 ROOT_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
 ZIG_DIR="$ROOT_DIR/zig"
 BIN_DIR="$ZIG_DIR/bin"

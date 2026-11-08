@@ -1,6 +1,6 @@
-// Message tokenizer boundary for the yabai migration (step 3).
+// Message tokenizer and socket-frame boundary (Zig version: zig/ZIG_VERSION).
 //
-// Pinned toolchain: Zig 0.17.0. Mirrors the token helpers in
+// Mirrors the token helpers in
 // src/message.c. The mirrored C structs live in zig/abi.zig, pinned on
 // the C side by src/zig_abi.h.
 

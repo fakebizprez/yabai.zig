@@ -3,23 +3,11 @@ extern struct display_manager g_display_manager;
 extern struct space_manager g_space_manager;
 extern struct window_manager g_window_manager;
 
-/* Zig delegates (zig/view.zig): the swap, rotate, mirror, leaf walk,
- * window lookup, directional search, fence, contains/index,
- * invalid/dirty predicates, stack insert, serializer, window-list walk,
- * and view lifecycle (create/clear/destroy) below are wrappers around Zig
- * exports. The exports replace the dd84572 bodies frozen as ref_* in
- * tests/src/ref_upstream_view.c and are parity-tested against them. The
- * directional-search wrapper lifts the SLS space_window_list here
- * exactly as the dd84572 body derived it. The lifecycle wrappers lift the
- * SLS uuid and the manager-defaults block here exactly as those bodies
- * did, then call the Zig exports; the SLS-backed trailing
- * view_update stays in the wrappers. Signatures in src/view.h are
- * unchanged. view_find_window_list delegates to Zig: the export
- * returns caller-frees malloc memory (where C returned temp-pool
- * memory), and the sole daemon caller
- * (window_manager_validate_windows_on_space in src/window_manager.c)
- * frees it after its last use. Prototypes and the defaults block live
- * in src/zig_abi.h. */
+/* Most tree operations below are thin wrappers around zig/view.zig
+ * exports; doc/zig-baseline.md ("Routing map") lists which. Wrappers that
+ * need SkyLight or manager state (space window lists, uuids, the
+ * defaults block, the trailing view_update) gather it here and pass it in.
+ * view_find_window_list returns malloc'd memory that its caller frees. */
 
 #define INSERT_FEEDBACK_WIDTH 2
 #define INSERT_FEEDBACK_RADIUS 9

@@ -1,0 +1,188 @@
+name: Release
+
+# Easiest: run the "Bump version" workflow, which sets the version, tags and
+# calls this one. Or push an annotated tag yourself, named after the version
+# the binary reports:
+#
+#   git tag -a v7.1.25 -m "release notes..."   # must match `yabai-zig --version`
+#   git push origin v7.1.25
+#
+# The tag message becomes the release notes. A suffix (-alpha, -beta, -rc,
+# optionally followed by a number: -rc1, -rc.1, -beta-2) marks a
+# pre-release; the part before it must still match the binary.
+#
+# Signing: releases are signed with a stable code-signing identity so macOS
+# keeps the Accessibility grant across upgrades. Export your signing
+# certificate as a .p12 and add these repository secrets:
+#   MACOS_CERTIFICATE           base64 of the .p12 (`base64 -i cert.p12 | pbcopy`)
+#   MACOS_CERTIFICATE_PASSWORD  the .p12 password
+#   KEYCHAIN_PASSWORD           any random string (temporary CI keychain)
+# The identity name defaults to yabai-zig-cert (the `make sign` name);
+# override it with the repository variable MACOS_CERTIFICATE_NAME.
+# To ship an ad-hoc signed build anyway, set the repository variable
+# ALLOW_UNSIGNED_RELEASE to true.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_call:
+    inputs:
+      tag:
+        description: Existing annotated tag to release
+        type: string
+        required: true
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing annotated tag to release (re-run a failed release)
+        type: string
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TAG_NAME: ${{ inputs.tag || github.ref_name }}
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || github.ref }}
+        fetch-depth: 0
+
+    - name: Fetch annotated tag objects
+      # checkout can fetch the tag ref without the annotated tag object, in
+      # which case %(contents) silently falls back to the commit message.
+      run: git fetch --tags --force origin
+
+    - name: Read pinned Zig version
+      id: zig
+      run: echo "version=$(cat zig/ZIG_VERSION)" >> "$GITHUB_OUTPUT"
+
+    - name: Setup Zig
+      uses: mlugg/setup-zig@v2
+      with:
+        version: ${{ steps.zig.outputs.version }}
+
+    - name: Run tests
+      run: make -C tests
+
+    - name: Build (release, universal)
+      run: make install
+
+    - name: Check the tag matches the binary
+      run: |
+        TAG_VERSION="${TAG_NAME#v}"
+        BASE_VERSION="${TAG_VERSION%%-*}"
+        BIN_VERSION="$(bin/yabai-zig --version)"
+        if [ "$BIN_VERSION" != "yabai-zig-v$BASE_VERSION" ]; then
+          echo "::error::Tag $TAG_NAME does not match the binary ($BIN_VERSION). Update MAJOR/MINOR/PATCH in src/yabai-zig.c or fix the tag."
+          exit 1
+        fi
+        PRERELEASE_FLAG=""
+        SUFFIX="${TAG_VERSION#"$BASE_VERSION"}"
+        if [[ "$SUFFIX" =~ ^-(alpha|beta|rc)([.-]?[A-Za-z0-9]+)?$ ]]; then
+          PRERELEASE_FLAG="--prerelease"
+        elif [ "$TAG_VERSION" != "$BASE_VERSION" ]; then
+          echo "::error::Unrecognized suffix in $TAG_NAME; use -alpha, -beta or -rc."
+          exit 1
+        fi
+        echo "PRERELEASE_FLAG=$PRERELEASE_FLAG" >> "$GITHUB_ENV"
+
+    - name: Import code-signing certificate
+      env:
+        CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE }}
+        CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        ALLOW_UNSIGNED_RELEASE: ${{ vars.ALLOW_UNSIGNED_RELEASE }}
+      run: |
+        if [ -z "$CERTIFICATE_P12" ]; then
+          if [ "$ALLOW_UNSIGNED_RELEASE" = "true" ]; then
+            echo "::warning::No certificate; shipping the ad-hoc signed build. Users will have to re-grant Accessibility after every upgrade."
+            echo "SHOULD_SIGN=false" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          echo "::error::MACOS_CERTIFICATE is not set. See the comment at the top of release.yml, or set the variable ALLOW_UNSIGNED_RELEASE=true."
+          exit 1
+        fi
+        CERTIFICATE_PATH="$RUNNER_TEMP/build_certificate.p12"
+        KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
+        echo -n "$CERTIFICATE_P12" | base64 --decode -o "$CERTIFICATE_PATH"
+        security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+        security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+        security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+        security import "$CERTIFICATE_PATH" -P "$CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+        security list-keychain -d user -s "$KEYCHAIN_PATH"
+        security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+        echo "SHOULD_SIGN=true" >> "$GITHUB_ENV"
+
+    - name: Sign
+      if: env.SHOULD_SIGN == 'true'
+      env:
+        CERT_NAME: ${{ vars.MACOS_CERTIFICATE_NAME || 'yabai-zig-cert' }}
+      run: |
+        codesign -fs "$CERT_NAME" bin/yabai-zig
+        codesign --verify --verbose=2 bin/yabai-zig
+
+    - name: Package
+      run: |
+        ARCHIVE="yabai-zig-$TAG_NAME"
+        mkdir -p "$ARCHIVE/bin" "$ARCHIVE/doc"
+        cp bin/yabai-zig "$ARCHIVE/bin/"
+        cp doc/yabai-zig.1 doc/yabai-zig.asciidoc "$ARCHIVE/doc/"
+        cp -R examples "$ARCHIVE/"
+        cp LICENSE README.md CHANGELOG.md "$ARCHIVE/"
+        tar -czf "$ARCHIVE.tar.gz" "$ARCHIVE"
+        shasum -a 256 "$ARCHIVE.tar.gz" > "$ARCHIVE.tar.gz.sha256"
+        cat "$ARCHIVE.tar.gz.sha256"
+        echo "ARCHIVE=$ARCHIVE" >> "$GITHUB_ENV"
+
+    - name: Write release notes
+      run: |
+        # Notes come only from the annotated tag message. CHANGELOG.md is not
+        # used as a fallback: it still holds upstream's history, so a version
+        # number shared with upstream would pick up upstream's notes.
+        NOTES=""
+        if [ "$(git cat-file -t "$TAG_NAME")" = "tag" ]; then
+          NOTES="$(git tag -l --format='%(contents)' "$TAG_NAME")"
+        fi
+        if [ -z "$(echo "$NOTES" | tr -d '[:space:]')" ]; then
+          echo "::error::$TAG_NAME has no annotation. Delete it and push an annotated tag: git tag -a $TAG_NAME -m \"notes\"."
+          exit 1
+        fi
+        if [ "$SHOULD_SIGN" != "true" ]; then
+          NOTES="$NOTES"$'\n\n> This build is ad-hoc signed. macOS will ask for Accessibility permission again after every upgrade.'
+        fi
+        {
+          echo "$NOTES"
+          echo
+          echo "## Install"
+          echo
+          echo '```sh'
+          echo "curl -LO https://github.com/${{ github.repository }}/releases/download/$TAG_NAME/$ARCHIVE.tar.gz"
+          echo "shasum -a 256 -c <(curl -sL https://github.com/${{ github.repository }}/releases/download/$TAG_NAME/$ARCHIVE.tar.gz.sha256)"
+          echo "tar -xzf $ARCHIVE.tar.gz"
+          echo "cp $ARCHIVE/bin/yabai-zig /usr/local/bin/"
+          echo "yabai-zig --install-service && yabai-zig --start-service"
+          echo '```'
+          echo
+          echo "The binary is universal (Apple Silicon and Intel)."
+        } > "$RUNNER_TEMP/notes.md"
+
+    - name: Publish release
+      run: |
+        gh release create "$TAG_NAME" \
+          --repo "${{ github.repository }}" \
+          --title "$TAG_NAME" \
+          --notes-file "$RUNNER_TEMP/notes.md" \
+          --verify-tag \
+          $PRERELEASE_FLAG \
+          "$ARCHIVE.tar.gz" "$ARCHIVE.tar.gz.sha256"
+
+    - name: Clean up keychain
+      if: always() && env.SHOULD_SIGN == 'true'
+      run: security delete-keychain "$RUNNER_TEMP/app-signing.keychain-db" || true

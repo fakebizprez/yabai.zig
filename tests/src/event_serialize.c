@@ -1,9 +1,23 @@
+#include <sys/sysctl.h>
+
+/* True when this x86_64 build is running under Rosetta on Apple Silicon. */
+static bool event_serialize_test_translated(void)
+{
+    int translated = 0;
+    size_t size = sizeof(translated);
+    return sysctlbyname("sysctl.proc_translated", &translated, &size, NULL, 0) == 0 && translated == 1;
+}
+
 /* No events are posted: exercise CoreGraphics serialization and the raw HID payload. */
 static CGEventRef event_serialize_test_event(int phase, double velocity)
 {
     CGEventRef event = CGEventCreate(NULL);
     if (!event) return NULL;
-    CGEventSetTimestamp(event, 123456789);
+    /* A whole number of Apple Silicon mach ticks (125 ns = 3 ticks), so the
+     * value survives Rosetta's nanosecond-to-tick conversion exactly; an
+     * arbitrary value like 123456789 comes back as 123456750 under the
+     * x86_64 test run. */
+    CGEventSetTimestamp(event, 125000000);
     CGEventSetIntegerValueField(event, (CGEventField)55, 30);
     CGEventSetIntegerValueField(event, (CGEventField)110, 23);
     CGEventSetIntegerValueField(event, (CGEventField)115, 2);
@@ -36,7 +50,7 @@ TEST_FUNC(event_serialize_roundtrip,
         CGEventRef augmented = iss_augment_dock_swipe_event(event);
         TEST_CHECK(augmented != NULL, true);
         if (augmented) {
-            TEST_CHECK(CGEventGetTimestamp(augmented) == 123456789, true);
+            TEST_CHECK(CGEventGetTimestamp(augmented) == 125000000, true);
             TEST_CHECK(CGEventGetIntegerValueField(augmented, (CGEventField)132) == phase, true);
             TEST_CHECK(CGEventGetDoubleValueField(augmented, (CGEventField)129) == 9999.0, true);
             ISSCGEventParsedData before = {0};
@@ -48,6 +62,11 @@ TEST_FUNC(event_serialize_roundtrip,
                 for (size_t i = 0; i < before.field_count; ++i) {
                     ISSCGEventParsedField *field = &before.fields[i];
                     if (field->field_id == 4205) continue;
+                    /* Field 169 is a mach-time stamp CoreGraphics fills in.
+                     * Under Rosetta it is converted to nanoseconds and back
+                     * when the event is rebuilt, which rounds it; native
+                     * arm64 and real Intel runs keep it exact. */
+                    if (field->field_id == 169 && event_serialize_test_translated()) continue;
                     bool preserved = false;
                     for (size_t j = 0; j < after.field_count; ++j) {
                         ISSCGEventParsedField *other = &after.fields[j];
@@ -72,7 +91,7 @@ TEST_FUNC(event_serialize_roundtrip,
                     memcpy(&header, field->payload, sizeof(header));
                     memcpy(&fluid, field->payload + 28, sizeof(fluid));
                     memcpy(&velocity, field->payload + 68, sizeof(velocity));
-                    TEST_CHECK(header.timestamp == 123456789, true);
+                    TEST_CHECK(header.timestamp == 125000000, true);
                     TEST_CHECK(header.event_count == 2, true);
                     TEST_CHECK(fluid.base.size == 40 && fluid.base.type == 23, true);
                     TEST_CHECK(fluid.base.options == (uint32_t)phase << 24, true);
